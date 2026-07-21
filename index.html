@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v48</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v49</div>
 
 <script type="importmap">
 {
@@ -135,7 +135,7 @@ const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerH
 // --- LIGHTING ---
 const sun = new THREE.DirectionalLight(0xfff4e0, 1.2);
 sun.castShadow = true;
-sun.shadow.mapSize.set(4096, 4096);
+sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.left = -40;
 sun.shadow.camera.right = 40;
 sun.shadow.camera.top = 40;
@@ -179,6 +179,8 @@ scene.add(hemi);
 const ambient = new THREE.AmbientLight(0x404050, 0.3);
 scene.add(ambient);
 
+const GLOBE_RADIUS = 20;
+
 // Stars
 const starCount = 500;
 const starGeo = new THREE.BufferGeometry();
@@ -218,7 +220,6 @@ scene.add(fireflies);
 const globePivot = new THREE.Group();
 scene.add(globePivot);
 
-const GLOBE_RADIUS = 20;
 const globeGeo = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
 const globeMat = new THREE.MeshStandardMaterial({
   color: 0xffffff,
@@ -325,7 +326,7 @@ for (let i = 0; i < 60; i++) {
 }
 
 // --- ROCKS ---
-// --- ROCKS ---
+const rockData = [];
 for (let i = 0; i < 40; i++) {
   const { lat, lon } = randomPointOnSphere();
   const size = 0.2 + rng() * 0.5;
@@ -341,6 +342,7 @@ for (let i = 0; i < 40; i++) {
   rock.castShadow = true;
   placeOnGlobe(rock, lat, lon);
   globePivot.add(rock);
+  rockData.push({ lat, lon, radius: size * 0.8 });
   collidables.push({ lat, lon, radius: size * 0.8 });
 }
 
@@ -421,7 +423,6 @@ for (let i = trees.length - 1; i >= 0; i--) {
   }
   if (inWater) {
     globePivot.remove(trees[i].obj);
-    collidables.splice(collidables.findIndex(c => c.lat === trees[i].lat && c.lon === trees[i].lon), 1);
     trees.splice(i, 1);
     continue;
   }
@@ -437,6 +438,10 @@ for (let i = trees.length - 1; i >= 0; i--) {
     }
   }
 }
+// Rebuild collidables from current tree and rock positions
+collidables.length = 0;
+for (const t of trees) { collidables.push({ lat: t.lat, lon: t.lon, radius: 0.08 }); }
+for (const r of rockData) { collidables.push({ lat: r.lat, lon: r.lon, radius: r.radius }); }
 
 // --- DEFORM GLOBE (hills, lake basins, river channels) ---
 // Simple noise function for hills
