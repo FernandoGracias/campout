@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v42</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v43</div>
 
 <script type="importmap">
 {
@@ -608,6 +608,7 @@ const leverRange = 10;
 
 leverZone.addEventListener('touchstart', (e) => {
   e.preventDefault();
+  if (isSleeping) return;
   leverTouchId = e.changedTouches[0].identifier;
   leverActive = true;
   updateLever(e.changedTouches[0]);
@@ -794,11 +795,13 @@ scene.add(flashlight);
 scene.add(flashlight.target);
 
 document.getElementById('btn-flashlight').addEventListener('click', () => {
+  if (isSleeping) return;
   flashlightOn = !flashlightOn;
   document.getElementById('btn-flashlight').style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
 });
 document.getElementById('btn-flashlight').addEventListener('touchstart', (e) => {
   e.preventDefault();
+  if (isSleeping) return;
   flashlightOn = !flashlightOn;
   document.getElementById('btn-flashlight').style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
 });
@@ -854,6 +857,7 @@ document.getElementById('tent-style').addEventListener('change', (e) => {
 });
 
 function pitchCamp() {
+  if (isSleeping) return;
   if (campPitched && campGroup) {
     globePivot.remove(campGroup);
     campPitched = false;
