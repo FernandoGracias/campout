@@ -51,12 +51,12 @@ canvas { display: block; }
 </style>
 </head>
 <body>
-<div id="lever-zone" style="position:fixed;bottom:30px;left:30px;width:60px;height:80px;z-index:100;-webkit-tap-highlight-color:transparent;">
+<div id="lever-zone" style="position:fixed;bottom:32px;left:30px;width:60px;height:80px;z-index:100;-webkit-tap-highlight-color:transparent;">
   <div id="lever-track" style="position:absolute;width:8px;height:60px;left:26px;top:10px;border-radius:4px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);"></div>
-  <div id="lever-knob" style="position:absolute;width:44px;height:44px;left:8px;top:18px;border-radius:50%;background:rgba(255,255,255,0.25);border:2px solid rgba(255,255,255,0.4);"></div>
+  <div id="lever-knob" style="position:absolute;width:48px;height:48px;left:6px;top:16px;border-radius:50%;background:rgba(255,255,255,0.25);border:2px solid rgba(255,255,255,0.4);"></div>
 </div>
 
-<div id="action-btns" style="position:fixed;bottom:30px;left:110px;display:flex;gap:12px;z-index:100;">
+<div id="action-btns" style="position:fixed;bottom:30px;left:110px;display:flex;gap:12px;z-index:100;align-items:center;">
   <div id="btn-pitch" style="width:48px;height:48px;border-radius:50%;background:rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><path d="M12 2L3 20h18L12 2z"/><line x1="12" y1="20" x2="12" y2="14"/></svg></div>
   <div id="btn-flashlight" style="width:48px;height:48px;border-radius:50%;background:rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M9 8l-1 4v6a2 2 0 002 2h4a2 2 0 002-2v-6l-1-4"/><line x1="12" y1="12" x2="12" y2="16"/></svg></div>
 </div>
@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v28</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v29</div>
 
 <script type="importmap">
 {
@@ -134,20 +134,44 @@ const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerH
 
 // --- LIGHTING ---
 const sun = new THREE.DirectionalLight(0xfff4e0, 1.2);
-sun.position.set(5, 40, 5);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.left = -10;
-sun.shadow.camera.right = 10;
-sun.shadow.camera.top = 10;
-sun.shadow.camera.bottom = -10;
-sun.shadow.camera.near = 10;
-sun.shadow.camera.far = 60;
+sun.shadow.camera.left = -15;
+sun.shadow.camera.right = 15;
+sun.shadow.camera.top = 15;
+sun.shadow.camera.bottom = -15;
+sun.shadow.camera.near = 5;
+sun.shadow.camera.far = 80;
 sun.shadow.bias = -0.0005;
 sun.shadow.normalBias = 0.02;
-sun.target.position.set(0, 20, 0);
 scene.add(sun);
 scene.add(sun.target);
+
+const moon = new THREE.DirectionalLight(0x8888ff, 0.3);
+moon.castShadow = true;
+moon.shadow.mapSize.set(1024, 1024);
+moon.shadow.camera.left = -15;
+moon.shadow.camera.right = 15;
+moon.shadow.camera.top = 15;
+moon.shadow.camera.bottom = -15;
+moon.shadow.camera.near = 5;
+moon.shadow.camera.far = 80;
+moon.shadow.bias = -0.0005;
+moon.shadow.normalBias = 0.02;
+scene.add(moon);
+scene.add(moon.target);
+
+// Visual sun and moon spheres
+const sunSphere = new THREE.Mesh(
+  new THREE.SphereGeometry(1.5, 16, 12),
+  new THREE.MeshBasicMaterial({ color: 0xffee88 })
+);
+scene.add(sunSphere);
+const moonSphere = new THREE.Mesh(
+  new THREE.SphereGeometry(1.0, 16, 12),
+  new THREE.MeshBasicMaterial({ color: 0xddeeff })
+);
+scene.add(moonSphere);
 
 const hemi = new THREE.HemisphereLight(0x88bbff, 0x446622, 0.6);
 scene.add(hemi);
@@ -601,7 +625,7 @@ leverZone.addEventListener('touchend', (e) => {
       leverActive = false;
       leverTouchId = null;
       leverY = 0;
-      leverKnob.style.top = '18px';
+      leverKnob.style.top = '16px';
     }
   }
 });
@@ -613,7 +637,7 @@ function updateLever(touch) {
   if (dy > leverRange) dy = leverRange;
   if (dy < -leverRange) dy = -leverRange;
   leverY = dy / leverRange;
-  leverKnob.style.top = (18 + dy) + 'px';
+  leverKnob.style.top = (16 + dy) + 'px';
 }
 
 // --- CAMERA ORBIT STATE ---
@@ -774,6 +798,35 @@ let campGroup = null;
 let tentColor = 0xcc5522;
 let tentStyle = 'aframe';
 
+// Fire animation state
+let campCoals = [];
+let campFireGeo = null;
+let campFireAlphas = null;
+let campFireLifespan = null;
+let campSmokeGeo = null;
+let campSmokeVelocities = [];
+let campFireLight = null;
+let campFireLight2 = null;
+
+function respawnCampFireParticle(positions, i, randomHeight) {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 0.08 + Math.random() * 0.3;
+  positions[i * 3] = Math.cos(angle) * dist;
+  positions[i * 3 + 1] = randomHeight ? Math.random() * 0.5 : 0;
+  positions[i * 3 + 2] = Math.sin(angle) * dist;
+  const r = Math.random();
+  if (r < 0.01) {
+    campFireLifespan[i] = 0.4 + Math.random() * 2.5;
+    campFireAlphas[i] = 1;
+  } else if (r < 0.08) {
+    campFireLifespan[i] = 0.5 + Math.random() * 0.4;
+    campFireAlphas[i] = 0;
+  } else {
+    campFireLifespan[i] = 0.15 + Math.random() * 0.25;
+    campFireAlphas[i] = 0;
+  }
+}
+
 const tentColorsDiv = document.getElementById('tent-colors');
 tentColorsDiv.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-color]');
@@ -842,32 +895,129 @@ function pitchCamp() {
     campGroup.add(tent);
   }
 
-  // Fireplace
-  for (let i = 0; i < 8; i++) {
-    const angle = (i / 8) * Math.PI * 2;
-    const rockGeo = new THREE.DodecahedronGeometry(0.08, 0);
-    const rockMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.9 });
+  // Fireplace - ported from camping-sim (physics-based fire)
+  const fireOffset = new THREE.Vector3(1.5, 0, 0);
+  const fireAnchor = new THREE.Group();
+  fireAnchor.position.copy(fireOffset);
+  campGroup.add(fireAnchor);
+
+  for (let i = 0; i < 14; i++) {
+    const size = 0.08 + rng() * 0.12;
+    const segments = 3 + Math.floor(rng() * 4);
+    const rockGeo = new THREE.SphereGeometry(size, segments, segments);
+    const shade = 0.25 + rng() * 0.25;
+    const rockMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(shade + rng() * 0.05, shade, shade - rng() * 0.03),
+      roughness: 0.8 + rng() * 0.2,
+    });
     const rock = new THREE.Mesh(rockGeo, rockMat);
-    rock.position.set(Math.cos(angle) * 0.35, 0.05, Math.sin(angle) * 0.35);
-    rock.scale.y = 0.5;
-    campGroup.add(rock);
+    const a = (i / 14) * Math.PI * 2 + (rng() - 0.5) * 0.3;
+    const dist = 0.55 + rng() * 0.2;
+    rock.position.set(Math.cos(a) * dist, size * 0.4, Math.sin(a) * dist);
+    rock.scale.set(0.8 + rng() * 0.5, 0.4 + rng() * 0.4, 0.8 + rng() * 0.5);
+    rock.rotation.set(rng() * 0.4, rng() * Math.PI, rng() * 0.4);
+    rock.castShadow = true;
+    fireAnchor.add(rock);
   }
-  const fireMat = new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: 0xff4400, emissiveIntensity: 0.8 });
-  const fire = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.4, 5), fireMat);
-  fire.position.set(0, 0.2, 0);
-  campGroup.add(fire);
 
-  const fireLight = new THREE.PointLight(0xff6622, 2, 5);
-  fireLight.position.set(0, 0.5, 0);
-  campGroup.add(fireLight);
+  for (let i = 0; i < 5; i++) {
+    const logGeo = new THREE.CylinderGeometry(0.06, 0.08, 0.7, 5);
+    const logMat = new THREE.MeshStandardMaterial({ color: 0x3d2810, roughness: 1.0 });
+    const log = new THREE.Mesh(logGeo, logMat);
+    const angle = (i / 5) * Math.PI * 2;
+    log.position.set(Math.cos(angle) * 0.25, 0.25, Math.sin(angle) * 0.25);
+    log.rotation.z = Math.PI / 2 - 0.4;
+    log.rotation.y = angle;
+    fireAnchor.add(log);
+  }
 
-  // Place on globe surface aligned to terrain
+  campCoals = [];
+  for (let i = 0; i < 20; i++) {
+    const size = 0.03 + rng() * 0.06;
+    const coalGeo = new THREE.SphereGeometry(size, 4, 3);
+    const coalMat = new THREE.MeshStandardMaterial({
+      color: 0x1a0800,
+      emissive: 0xff3300,
+      emissiveIntensity: 0.3 + rng() * 0.7,
+      roughness: 1.0,
+    });
+    const coal = new THREE.Mesh(coalGeo, coalMat);
+    const angle = rng() * Math.PI * 2;
+    const dist = rng() * 0.4;
+    coal.position.set(Math.cos(angle) * dist, 0.05 + rng() * 0.1, Math.sin(angle) * dist);
+    coal.scale.y = 0.4 + rng() * 0.4;
+    campCoals.push(coal);
+    fireAnchor.add(coal);
+  }
+
+  // Fire particles
+  campFireGeo = new THREE.BufferGeometry();
+  const firePositions = new Float32Array(80 * 3);
+  campFireAlphas = new Float32Array(80);
+  campFireLifespan = new Float32Array(80);
+  for (let i = 0; i < 80; i++) {
+    respawnCampFireParticle(firePositions, i, true);
+  }
+  campFireGeo.setAttribute('position', new THREE.BufferAttribute(firePositions, 3));
+  const fireParticleMat = new THREE.PointsMaterial({
+    color: 0xff6600, size: 0.25, transparent: true, opacity: 0.8,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const fireParticles = new THREE.Points(campFireGeo, fireParticleMat);
+  fireParticles.position.set(0, 0.2, 0);
+  fireAnchor.add(fireParticles);
+
+  // Smoke particles
+  campSmokeGeo = new THREE.BufferGeometry();
+  const smokePositions = new Float32Array(30 * 3);
+  campSmokeVelocities = [];
+  for (let i = 0; i < 30; i++) {
+    smokePositions[i * 3] = (rng() - 0.5) * 0.3;
+    smokePositions[i * 3 + 1] = 1.5 + rng() * 2;
+    smokePositions[i * 3 + 2] = (rng() - 0.5) * 0.3;
+    campSmokeVelocities.push({
+      x: (rng() - 0.5) * 0.005,
+      y: 0.01 + rng() * 0.015,
+      z: (rng() - 0.5) * 0.005,
+    });
+  }
+  campSmokeGeo.setAttribute('position', new THREE.BufferAttribute(smokePositions, 3));
+  const smokeMat = new THREE.PointsMaterial({
+    color: 0x888888, size: 0.4, transparent: true, opacity: 0.3, depthWrite: false,
+  });
+  const campSmoke = new THREE.Points(campSmokeGeo, smokeMat);
+  campSmoke.position.set(0, 0.3, 0);
+  fireAnchor.add(campSmoke);
+
+  campFireLight = new THREE.PointLight(0xff6622, 2, 8);
+  campFireLight.position.set(0, 0.8, 0);
+  campFireLight.castShadow = true;
+  fireAnchor.add(campFireLight);
+  campFireLight2 = new THREE.PointLight(0xff4400, 1, 5);
+  campFireLight2.position.set(0.2, 0.5, 0.1);
+  fireAnchor.add(campFireLight2);
+
+  // Place on globe surface using raycast for proper terrain height
   const inverseRot = globeRotation.clone().invert();
   const surfaceNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(inverseRot);
   const pos = surfaceNormal.clone().multiplyScalar(GLOBE_RADIUS);
-  campGroup.position.copy(pos);
-  const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), surfaceNormal);
-  campGroup.quaternion.copy(quat);
+
+  // Raycast from well above to find actual deformed terrain surface
+  globe.updateMatrixWorld();
+  const rayOrigin = pos.clone().addScaledVector(surfaceNormal, 10);
+  const rayDir = surfaceNormal.clone().negate();
+  const campRay = new THREE.Raycaster(rayOrigin, rayDir, 0, 20);
+  const campHits = campRay.intersectObject(globe, false);
+  if (campHits.length > 0) {
+    campGroup.position.copy(campHits[0].point);
+    const hitNormal = campHits[0].face.normal.clone().transformDirection(globe.matrixWorld).normalize();
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), hitNormal);
+    campGroup.quaternion.copy(quat);
+  } else {
+    campGroup.position.copy(pos);
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), surfaceNormal);
+    campGroup.quaternion.copy(quat);
+  }
 
   globePivot.add(campGroup);
   campPitched = true;
@@ -882,26 +1032,50 @@ document.getElementById('btn-pitch').addEventListener('touchstart', (e) => {
 
 function updateDayNight() {
   const hour = timeOfDay;
+
+  // Sun/moon orbit: sun rises at 6, overhead at 12, sets at 18
+  // Full circle over 24 hours, 0h = directly below (nadir)
+  const sunAngle = ((hour - 6) / 24) * Math.PI * 2;
+  const orbitRadius = 40;
+  const sunX = Math.cos(sunAngle) * orbitRadius;
+  const sunY = GLOBE_RADIUS + Math.sin(sunAngle) * orbitRadius;
+  const sunZ = Math.cos(sunAngle * 0.3) * 8;
+
+  sun.position.set(sunX, sunY, sunZ);
+  sun.target.position.set(0, GLOBE_RADIUS, 0);
+  sunSphere.position.copy(sun.position);
+
+  // Moon is opposite the sun
+  moon.position.set(-sunX, GLOBE_RADIUS + Math.sin(sunAngle + Math.PI) * orbitRadius, -sunZ);
+  moon.target.position.set(0, GLOBE_RADIUS, 0);
+  moonSphere.position.copy(moon.position);
+
+  // Intensity based on altitude
+  const sunAltitude = Math.sin(sunAngle);
   let sunIntensity, skyColor, ambientIntensity;
 
-  if (hour < 5 || hour > 21) {
+  if (sunAltitude < -0.1) {
     sunIntensity = 0;
     skyColor = new THREE.Color(0x0a0a1e);
     ambientIntensity = 0.05 + moonlightStrength * 0.15;
-  } else if (hour < 7) {
-    const t = (hour - 5) / 2;
+    moon.intensity = 0.2 + moonlightStrength * 0.3;
+    moonSphere.visible = true;
+    sunSphere.visible = false;
+  } else if (sunAltitude < 0.1) {
+    const t = (sunAltitude + 0.1) / 0.2;
     sunIntensity = t * 1.2;
-    skyColor = new THREE.Color(0x0a0a1e).lerp(new THREE.Color(0x87ceeb), t);
+    skyColor = new THREE.Color(0x0a0a1e).lerp(new THREE.Color(0xffaa55), t).lerp(new THREE.Color(0x87ceeb), Math.max(0, t - 0.5) * 2);
     ambientIntensity = 0.1 + t * 0.2;
-  } else if (hour > 19) {
-    const t = (21 - hour) / 2;
-    sunIntensity = t * 1.2;
-    skyColor = new THREE.Color(0x0a0a1e).lerp(new THREE.Color(0x87ceeb), t);
-    ambientIntensity = 0.1 + t * 0.2;
+    moon.intensity = (1 - t) * (0.2 + moonlightStrength * 0.3);
+    moonSphere.visible = t < 0.5;
+    sunSphere.visible = t > 0.3;
   } else {
     sunIntensity = 1.2;
     skyColor = new THREE.Color(0x87ceeb);
     ambientIntensity = 0.3;
+    moon.intensity = 0;
+    moonSphere.visible = false;
+    sunSphere.visible = true;
   }
 
   sun.intensity = sunIntensity;
@@ -915,7 +1089,6 @@ function updateDayNight() {
     scene.fog = null;
   }
 
-  const isNight = hour < 6 || hour > 20;
   flashlight.intensity = flashlightOn ? 3 : 0;
   if (flashlightOn) {
     flashlight.position.set(
@@ -1006,6 +1179,66 @@ function animate() {
   }
 
   updateDayNight();
+
+  // Animate fire if camp is pitched
+  if (campPitched && campFireGeo) {
+    const elapsed = clock.elapsedTime;
+
+    // Fire light flicker
+    campFireLight.intensity += (Math.random() - 0.5) * 0.4;
+    campFireLight.intensity = Math.max(0.5, Math.min(4, campFireLight.intensity));
+    campFireLight2.intensity = campFireLight.intensity * 0.6 + (Math.random() - 0.5) * 0.2;
+
+    // Coal pulsing
+    for (let i = 0; i < campCoals.length; i++) {
+      const pulse = 0.3 + Math.sin(elapsed * (1.5 + i * 0.3) + i * 2) * 0.25 + Math.random() * 0.1;
+      campCoals[i].material.emissiveIntensity = pulse;
+    }
+
+    // Fire particle physics
+    const fp = campFireGeo.attributes.position.array;
+    for (let i = 0; i < 80; i++) {
+      const x = fp[i * 3];
+      const y = fp[i * 3 + 1];
+      const z = fp[i * 3 + 2];
+      const distFromCenter = Math.sqrt(x * x + z * z);
+
+      if (campFireAlphas[i] === 1) {
+        fp[i * 3] += (Math.random() - 0.5) * 0.003;
+        fp[i * 3 + 1] += 0.03 + Math.random() * 0.02;
+        fp[i * 3 + 2] += (Math.random() - 0.5) * 0.003;
+      } else if (distFromCenter > 0.06) {
+        const pullStrength = 0.006 + distFromCenter * 0.012;
+        fp[i * 3] -= (x / distFromCenter) * pullStrength;
+        fp[i * 3 + 2] -= (z / distFromCenter) * pullStrength;
+        fp[i * 3 + 1] += 0.006 + (1 - distFromCenter) * 0.008;
+      } else {
+        fp[i * 3] += (Math.random() - 0.5) * 0.003;
+        fp[i * 3 + 1] += 0.012 + Math.random() * 0.008;
+        fp[i * 3 + 2] += (Math.random() - 0.5) * 0.003;
+      }
+
+      if (fp[i * 3 + 1] > campFireLifespan[i]) {
+        respawnCampFireParticle(fp, i, false);
+      }
+    }
+    campFireGeo.attributes.position.needsUpdate = true;
+
+    // Smoke animation
+    const sp = campSmokeGeo.attributes.position.array;
+    for (let i = 0; i < 30; i++) {
+      sp[i * 3] += campSmokeVelocities[i].x;
+      sp[i * 3 + 1] += campSmokeVelocities[i].y;
+      sp[i * 3 + 2] += campSmokeVelocities[i].z;
+      if (sp[i * 3 + 1] > 5) {
+        sp[i * 3] = (Math.random() - 0.5) * 0.3;
+        sp[i * 3 + 1] = 1.5;
+        sp[i * 3 + 2] = (Math.random() - 0.5) * 0.3;
+      }
+    }
+    campSmokeGeo.attributes.position.needsUpdate = true;
+  }
+
   renderer.render(scene, camera);
 }
 animate();
