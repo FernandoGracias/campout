@@ -102,7 +102,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v31</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v32</div>
 
 <script type="importmap">
 {
@@ -622,6 +622,7 @@ leverZone.addEventListener('touchend', (e) => {
       leverActive = false;
       leverTouchId = null;
       leverY = 0;
+      leverKnob.style.transform = 'translate(-50%, -50%)';
     }
   }
 });
@@ -633,6 +634,7 @@ function updateLever(touch) {
   if (dy > leverRange) dy = leverRange;
   if (dy < -leverRange) dy = -leverRange;
   leverY = dy / leverRange;
+  leverKnob.style.transform = `translate(-50%, calc(-50% + ${dy}px))`;
 }
 
 // --- CAMERA ORBIT STATE ---
@@ -1099,15 +1101,17 @@ function updateDayNight() {
 
   flashlight.intensity = flashlightOn ? 3 : 0;
   if (flashlightOn) {
+    const handOffsetRight = 0.35;
+    const handHeight = 0.55;
     flashlight.position.set(
-      Math.sin(playerFacing + 0.3) * 0.4,
-      GLOBE_RADIUS + 0.6,
-      Math.cos(playerFacing + 0.3) * 0.4
+      Math.sin(playerFacing) * 0.3 + Math.sin(playerFacing + Math.PI/2) * handOffsetRight,
+      GLOBE_RADIUS + handHeight,
+      Math.cos(playerFacing) * 0.3 + Math.cos(playerFacing + Math.PI/2) * handOffsetRight
     );
     flashlight.target.position.set(
-      Math.sin(playerFacing) * 4,
-      GLOBE_RADIUS - 0.3,
-      Math.cos(playerFacing) * 4
+      Math.sin(playerFacing) * 5,
+      GLOBE_RADIUS - 0.5,
+      Math.cos(playerFacing) * 5
     );
   }
 }
@@ -1140,15 +1144,26 @@ function animate() {
     const newRotation = globeRotation.clone().premultiply(rotX).premultiply(rotZ);
 
     const playerWorldPos = new THREE.Vector3(0, GLOBE_RADIUS, 0);
-    let blocked = false;
+    let pushX = 0, pushZ = 0;
     for (const c of collidables) {
       const objPos = latLonToWorld(c.lat, c.lon).applyQuaternion(newRotation);
       const dist = playerWorldPos.distanceTo(objPos);
-      if (dist < c.radius + 0.3) { blocked = true; break; }
+      const minDist = c.radius + 0.3;
+      if (dist < minDist) {
+        const overlap = minDist - dist;
+        const dx = playerWorldPos.x - objPos.x;
+        const dz = playerWorldPos.z - objPos.z;
+        const len = Math.sqrt(dx * dx + dz * dz) || 1;
+        pushX += (dx / len) * overlap * 0.6;
+        pushZ += (dz / len) * overlap * 0.6;
+      }
     }
-    if (!blocked) {
-      globeRotation.copy(newRotation);
+    if (pushX !== 0 || pushZ !== 0) {
+      const deflectX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pushZ * 0.05);
+      const deflectZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -pushX * 0.05);
+      newRotation.premultiply(deflectX).premultiply(deflectZ);
     }
+    globeRotation.copy(newRotation);
   }
 
   globePivot.quaternion.copy(globeRotation);
