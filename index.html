@@ -49,7 +49,7 @@ canvas { display: block; }
     <div id="joystick-knob"></div>
   </div>
 </div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v10</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v11</div>
 
 <script type="importmap">
 {
@@ -356,21 +356,13 @@ function buildPlayer() {
   nose.position.set(0, 1.03, 0.17);
   group.add(nose);
 
-  const beardGeo = new THREE.SphereGeometry(0.2, 7, 5);
+  const beardGeo = new THREE.SphereGeometry(0.18, 7, 5);
   const beardMat = new THREE.MeshStandardMaterial({ color: 0xaa2200, roughness: 0.85 });
   const beard = new THREE.Mesh(beardGeo, beardMat);
-  beard.position.set(0, 0.88, 0.12);
-  beard.scale.set(1, 1.3, 0.8);
+  beard.position.set(0, 0.82, 0.1);
+  beard.scale.set(1.1, 1.5, 0.7);
   beard.castShadow = true;
   group.add(beard);
-
-  const beardTip = new THREE.Mesh(
-    new THREE.ConeGeometry(0.12, 0.2, 6),
-    beardMat
-  );
-  beardTip.position.set(0, 0.72, 0.14);
-  beardTip.rotation.x = 0.1;
-  group.add(beardTip);
 
   const hatGeo = new THREE.CylinderGeometry(0.12, 0.2, 0.14, 8);
   const hatMat = new THREE.MeshStandardMaterial({ color: 0x5c3d1e, roughness: 0.8 });
@@ -400,30 +392,41 @@ function buildPlayer() {
 
   const armMat = new THREE.MeshStandardMaterial({ color: 0xd35f3e, roughness: 0.7 });
   const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.2, 3, 6), armMat);
-  leftArm.position.set(-0.3, 0.6, 0);
+  leftArm.position.set(-0.24, 0.6, 0);
+  leftArm.rotation.z = -0.15;
   leftArm.castShadow = true;
   group.add(leftArm);
   group.userData.leftArm = leftArm;
 
   const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.2, 3, 6), armMat);
-  rightArm.position.set(0.3, 0.6, 0);
+  rightArm.position.set(0.24, 0.6, 0);
+  rightArm.rotation.z = 0.15;
   rightArm.castShadow = true;
   group.add(rightArm);
   group.userData.rightArm = rightArm;
 
-  const packGeo = new THREE.BoxGeometry(0.3, 0.35, 0.2);
+  const packGeo = new THREE.BoxGeometry(0.28, 0.32, 0.18);
   const packMat = new THREE.MeshStandardMaterial({ color: 0x3d6b35, roughness: 0.8 });
   const pack = new THREE.Mesh(packGeo, packMat);
-  pack.position.set(0, 0.65, -0.22);
+  pack.position.set(0, 0.62, -0.22);
   pack.castShadow = true;
   group.add(pack);
 
   const packFlap = new THREE.Mesh(
-    new THREE.BoxGeometry(0.28, 0.08, 0.18),
+    new THREE.BoxGeometry(0.26, 0.06, 0.16),
     new THREE.MeshStandardMaterial({ color: 0x2d5528, roughness: 0.8 })
   );
-  packFlap.position.set(0, 0.84, -0.22);
+  packFlap.position.set(0, 0.8, -0.22);
   group.add(packFlap);
+
+  const sleepingBag = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.07, 0.07, 0.28, 8),
+    new THREE.MeshStandardMaterial({ color: 0x4488aa, roughness: 0.7 })
+  );
+  sleepingBag.position.set(0, 0.88, -0.22);
+  sleepingBag.rotation.z = Math.PI / 2;
+  sleepingBag.castShadow = true;
+  group.add(sleepingBag);
 
   return group;
 }
