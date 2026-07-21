@@ -31,8 +31,8 @@ canvas { display: block; }
   position: absolute;
   width: 44px;
   height: 44px;
-  left: 43px;
-  top: 43px;
+  left: 33px;
+  top: 33px;
   border-radius: 50%;
   background: rgba(255,255,255,0.25);
   border: 2px solid rgba(255,255,255,0.4);
@@ -49,7 +49,7 @@ canvas { display: block; }
     <div id="joystick-knob"></div>
   </div>
 </div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v4</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v5</div>
 
 <script type="importmap">
 {
@@ -397,8 +397,8 @@ joystickZone.addEventListener('touchend', (e) => {
       joystickActive = false;
       joystickTouchId = null;
       joystickX = joystickY = 0;
-      joystickKnob.style.left = '43px';
-      joystickKnob.style.top = '43px';
+      joystickKnob.style.left = '33px';
+      joystickKnob.style.top = '33px';
     }
   }
 });
@@ -413,13 +413,13 @@ function updateJoystick(touch) {
   if (dist > joyRadius) { dx = dx / dist * joyRadius; dy = dy / dist * joyRadius; }
   joystickX = dx / joyRadius;
   joystickY = dy / joyRadius;
-  joystickKnob.style.left = (43 + dx) + 'px';
-  joystickKnob.style.top = (43 + dy) + 'px';
+  joystickKnob.style.left = (33 + dx) + 'px';
+  joystickKnob.style.top = (33 + dy) + 'px';
 }
 
 // --- CAMERA ORBIT STATE ---
-let cameraAngle = 0;
-let cameraTargetAngle = 0;
+let cameraAngle = Math.PI;
+let cameraTargetAngle = Math.PI;
 let cameraDistance = 12;
 let cameraHeight = 6;
 let cameraManual = false;
@@ -532,6 +532,7 @@ function animate() {
   }
 
   if (Math.abs(moveInput) > 0.1) {
+    cameraManual = false;
     const step = moveSpeed * moveInput;
     const rotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), step * Math.cos(playerFacing));
     const rotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -step * Math.sin(playerFacing));
@@ -541,12 +542,10 @@ function animate() {
   globePivot.quaternion.copy(globeRotation);
   player.rotation.y = playerFacing;
 
-  // Camera follows behind player when walking, stays when manual
-  if (isWalking) {
-    cameraManual = false;
+  // Camera follows behind player ONLY when actively walking
+  const isMoving = Math.abs(moveInput) > 0.1;
+  if (isMoving && !cameraManual) {
     cameraTargetAngle = playerFacing + Math.PI;
-  }
-  if (!cameraManual) {
     let angleDiff = cameraTargetAngle - cameraAngle;
     while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
     while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
