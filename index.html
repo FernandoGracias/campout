@@ -113,7 +113,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v54</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v55</div>
 
 <script type="importmap">
 {
@@ -906,6 +906,8 @@ const timeDisplay = document.getElementById('time-display');
 let timeOfDay = 12;
 let moonlightStrength = 0.5;
 let fogDensity = 0;
+let tentColor = 0xcc5522;
+let tentStyle = 'aframe';
 
 // Load saved settings from localStorage
 (function loadSettings() {
@@ -971,9 +973,6 @@ document.getElementById('btn-flashlight').addEventListener('touchstart', (e) => 
 // --- PITCH CAMP ---
 let campPitched = false;
 let campGroup = null;
-
-let tentColor = 0xcc5522;
-let tentStyle = 'aframe';
 
 // Fire animation state
 let campCoals = [];
