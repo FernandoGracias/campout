@@ -49,7 +49,7 @@ canvas { display: block; }
     <div id="joystick-knob"></div>
   </div>
 </div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v3</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v4</div>
 
 <script type="importmap">
 {
@@ -225,6 +225,79 @@ for (let i = 0; i < 60; i++) {
 
   placeOnGlobe(group, lat, lon);
   globePivot.add(group);
+}
+
+// --- LAKES ---
+function buildLake(lat, lon, radius) {
+  const group = new THREE.Group();
+  const waterGeo = new THREE.CircleGeometry(radius, 20);
+  const waterMat = new THREE.MeshStandardMaterial({
+    color: 0x3399bb,
+    roughness: 0.1,
+    metalness: 0.15,
+    transparent: true,
+    opacity: 0.75,
+  });
+  const water = new THREE.Mesh(waterGeo, waterMat);
+  water.rotation.x = -Math.PI / 2;
+  water.position.y = 0.05;
+  group.add(water);
+
+  const bankGeo = new THREE.CircleGeometry(radius + 0.3, 20);
+  const bankMat = new THREE.MeshStandardMaterial({ color: 0x6b5b3a, roughness: 1.0 });
+  const bank = new THREE.Mesh(bankGeo, bankMat);
+  bank.rotation.x = -Math.PI / 2;
+  bank.position.y = 0.02;
+  group.add(bank);
+
+  placeOnGlobe(group, lat, lon);
+  return group;
+}
+
+for (let i = 0; i < 4; i++) {
+  const { lat, lon } = randomPointOnSphere();
+  const radius = 1.0 + rng() * 1.5;
+  globePivot.add(buildLake(lat, lon, radius));
+}
+
+// --- RIVER ---
+function buildRiver(startLat, startLon, segments) {
+  const group = new THREE.Group();
+  let lat = startLat;
+  let lon = startLon;
+  const dir = rng() * Math.PI * 2;
+
+  for (let i = 0; i < segments; i++) {
+    const segLen = 0.04 + rng() * 0.02;
+    lat += Math.cos(dir + Math.sin(i * 0.5) * 0.8) * segLen;
+    lon += Math.sin(dir + Math.sin(i * 0.5) * 0.8) * segLen;
+
+    const pos = latLonToWorld(lat, lon);
+    const normal = pos.clone().normalize();
+
+    const segGeo = new THREE.PlaneGeometry(0.4, 0.9);
+    const segMat = new THREE.MeshStandardMaterial({
+      color: 0x3399bb,
+      roughness: 0.1,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0.7,
+      side: THREE.DoubleSide,
+    });
+    const seg = new THREE.Mesh(segGeo, segMat);
+    seg.position.copy(pos.add(normal.clone().multiplyScalar(0.06)));
+    const up = new THREE.Vector3(0, 1, 0);
+    const quat = new THREE.Quaternion().setFromUnitVectors(up, normal);
+    seg.quaternion.copy(quat);
+    seg.rotateOnAxis(new THREE.Vector3(0, 0, 1), dir + Math.sin(i * 0.5) * 0.8);
+    group.add(seg);
+  }
+  return group;
+}
+
+for (let i = 0; i < 3; i++) {
+  const { lat, lon } = randomPointOnSphere();
+  globePivot.add(buildRiver(lat, lon, 20 + Math.floor(rng() * 15)));
 }
 
 // --- PLAYER ---
@@ -446,12 +519,12 @@ function animate() {
   if (keys['a'] || keys['arrowleft']) turnInput = 1;
   if (keys['d'] || keys['arrowright']) turnInput = -1;
   if (joystickActive) {
-    moveInput = -joystickY;
+    moveInput = joystickY;
     turnInput = -joystickX;
   }
 
   const isWalking = Math.abs(moveInput) > 0.1 || Math.abs(turnInput) > 0.15;
-  const moveSpeed = 0.4 * delta;
+  const moveSpeed = 0.2 * delta;
   const turnSpeed = 1.8 * delta;
 
   if (Math.abs(turnInput) > 0.1) {
