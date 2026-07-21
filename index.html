@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v37</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v38</div>
 
 <script type="importmap">
 {
@@ -1045,13 +1045,17 @@ const tapRaycaster = new THREE.Raycaster();
 const tapMouse = new THREE.Vector2();
 
 renderer.domElement.addEventListener('click', (e) => {
-  if (!campPitched || isSleeping || !campGroup) return;
+  if (!campPitched || !campGroup) return;
   tapMouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   tapMouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
   tapRaycaster.setFromCamera(tapMouse, camera);
   const hits = tapRaycaster.intersectObjects(campGroup.children, true);
   if (hits.length > 0) {
-    walkingToTent = true;
+    if (isSleeping) {
+      wakeUp();
+    } else {
+      walkingToTent = true;
+    }
   }
 });
 
@@ -1059,21 +1063,37 @@ function enterTent() {
   isSleeping = true;
   walkingToTent = false;
   player.visible = false;
-  const overlay = document.createElement('div');
-  overlay.id = 'sleep-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:300;flex-direction:column;gap:16px;cursor:pointer;';
-  overlay.innerHTML = '<div style="color:#f0c040;font-size:24px;font-family:monospace;">💤 Sleeping...</div><div style="color:#aaa;font-size:14px;font-family:monospace;">Tap to wake up</div>';
-  overlay.addEventListener('click', wakeUp);
-  overlay.addEventListener('touchstart', (e) => { e.preventDefault(); wakeUp(); });
-  document.body.appendChild(overlay);
+
+  // Spawn floating Z particles above the tent
+  const zCount = 8;
+  const zGeo = new THREE.BufferGeometry();
+  sleepZPositions = new Float32Array(zCount * 3);
+  sleepZVelocities = [];
+  for (let i = 0; i < zCount; i++) {
+    sleepZPositions[i * 3] = (Math.random() - 0.5) * 0.5;
+    sleepZPositions[i * 3 + 1] = 1.0 + Math.random() * 0.5;
+    sleepZPositions[i * 3 + 2] = (Math.random() - 0.5) * 0.5;
+    sleepZVelocities.push({ y: 0.3 + Math.random() * 0.2, life: Math.random() });
+  }
+  zGeo.setAttribute('position', new THREE.BufferAttribute(sleepZPositions, 3));
+  const zMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.3, transparent: true, opacity: 0.8, depthWrite: false });
+  sleepZs = new THREE.Points(zGeo, zMat);
+  // Position at tent location in world space
+  sleepZs.position.copy(campGroup.position);
+  sleepZs.quaternion.copy(campGroup.quaternion);
+  globePivot.add(sleepZs);
 }
 
 function wakeUp() {
   isSleeping = false;
   player.visible = true;
-  const overlay = document.getElementById('sleep-overlay');
-  if (overlay) overlay.remove();
+  if (sleepZs) { globePivot.remove(sleepZs); sleepZs = null; }
 }
+
+// Z particles for sleeping
+let sleepZs = null;
+let sleepZPositions = null;
+let sleepZVelocities = [];
 
 document.getElementById('btn-pitch').addEventListener('click', pitchCamp);
 document.getElementById('btn-pitch').addEventListener('touchstart', (e) => {
@@ -1278,6 +1298,23 @@ function animate() {
   }
 
   updateDayNight();
+
+  // Animate sleep Zs
+  if (isSleeping && sleepZs && sleepZPositions) {
+    const zp = sleepZs.geometry.attributes.position.array;
+    for (let i = 0; i < sleepZVelocities.length; i++) {
+      zp[i * 3 + 1] += sleepZVelocities[i].y * delta;
+      zp[i * 3] += Math.sin(sleepZVelocities[i].life * 5 + clock.elapsedTime) * 0.2 * delta;
+      sleepZVelocities[i].life += delta;
+      if (zp[i * 3 + 1] > 4.0) {
+        zp[i * 3] = (Math.random() - 0.5) * 0.5;
+        zp[i * 3 + 1] = 1.0;
+        zp[i * 3 + 2] = (Math.random() - 0.5) * 0.5;
+        sleepZVelocities[i].life = 0;
+      }
+    }
+    sleepZs.geometry.attributes.position.needsUpdate = true;
+  }
 
   // Animate fire if camp is pitched
   if (campPitched && campFireGeo) {
