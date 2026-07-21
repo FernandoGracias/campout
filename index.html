@@ -93,7 +93,10 @@ scene.add(hemi);
 const ambient = new THREE.AmbientLight(0x404050, 0.3);
 scene.add(ambient);
 
-// --- GLOBE ---
+// --- GLOBE PIVOT (everything on the globe goes in here) ---
+const globePivot = new THREE.Group();
+scene.add(globePivot);
+
 const GLOBE_RADIUS = 20;
 const globeGeo = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
 const globeMat = new THREE.MeshStandardMaterial({
@@ -103,7 +106,7 @@ const globeMat = new THREE.MeshStandardMaterial({
 });
 const globe = new THREE.Mesh(globeGeo, globeMat);
 globe.receiveShadow = true;
-scene.add(globe);
+globePivot.add(globe);
 
 // --- SEEDED RANDOM ---
 function mulberry32(a) {
@@ -179,7 +182,7 @@ for (let i = 0; i < 120; i++) {
   const foliageColor = new THREE.Color().setHSL(0.28 + rng() * 0.08, 0.5 + rng() * 0.2, 0.3 + rng() * 0.15);
   const tree = makeTree(height, trunkColor, foliageColor);
   placeOnGlobe(tree, lat, lon);
-  scene.add(tree);
+  globePivot.add(tree);
   trees.push({ obj: tree, lat, lon });
 }
 
@@ -198,7 +201,7 @@ for (let i = 0; i < 40; i++) {
   rock.scale.set(1, 0.5 + rng() * 0.5, 1);
   rock.castShadow = true;
   placeOnGlobe(rock, lat, lon);
-  scene.add(rock);
+  globePivot.add(rock);
 }
 
 // --- FLOWERS ---
@@ -220,12 +223,10 @@ for (let i = 0; i < 60; i++) {
   group.add(petal);
 
   placeOnGlobe(group, lat, lon);
-  scene.add(group);
+  globePivot.add(group);
 }
 
 // --- PLAYER ---
-let playerLat = 0;
-let playerLon = 0;
 let playerFacing = 0;
 let walkCycle = 0;
 
@@ -287,14 +288,12 @@ function buildPlayer() {
 }
 
 const player = buildPlayer();
-placeOnGlobe(player, playerLat, playerLon);
+player.position.set(0, GLOBE_RADIUS, 0);
 scene.add(player);
 
 // --- CAMERA SETUP ---
-const cameraOffset = new THREE.Vector3(0, 3, 7);
-const camTarget = player.position.clone();
-camera.position.copy(player.position).add(cameraOffset);
-camera.lookAt(player.position);
+camera.position.set(0, GLOBE_RADIUS + 6, 12);
+const camLookAt = new THREE.Vector3(0, GLOBE_RADIUS + 1, 0);
 
 // --- INPUT ---
 const keys = {};
@@ -346,6 +345,7 @@ function updateJoystick(touch) {
 
 // --- ANIMATION ---
 const clock = new THREE.Clock();
+const globeRotation = new THREE.Quaternion();
 
 function animate() {
   requestAnimationFrame(animate);
@@ -362,24 +362,23 @@ function animate() {
   }
 
   const isWalking = Math.abs(moveInput) > 0.1 || Math.abs(turnInput) > 0.15;
-  const moveSpeed = 0.8 * delta;
-  const turnSpeed = 1.5 * delta;
+  const moveSpeed = 1.2 * delta;
+  const turnSpeed = 2.0 * delta;
 
   if (Math.abs(turnInput) > 0.1) {
     playerFacing += turnSpeed * turnInput;
   }
+
   if (Math.abs(moveInput) > 0.1) {
     const step = moveSpeed * moveInput;
-    playerLat += step * Math.cos(playerFacing) / GLOBE_RADIUS;
-    playerLon += step * Math.sin(playerFacing) / (GLOBE_RADIUS * Math.max(0.1, Math.cos(playerLat)));
+    const rotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), step * Math.cos(playerFacing));
+    const rotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -step * Math.sin(playerFacing));
+    globeRotation.premultiply(rotX).premultiply(rotZ);
   }
 
-  const playerPos = latLonToWorld(playerLat, playerLon);
-  player.position.copy(playerPos);
-  const normal = playerPos.clone().normalize();
-  const globeQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-  const facingQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), playerFacing);
-  player.quaternion.copy(globeQuat).multiply(facingQuat);
+  globePivot.quaternion.copy(globeRotation);
+
+  player.rotation.y = playerFacing;
 
   if (isWalking) {
     walkCycle += delta * 8;
@@ -390,22 +389,13 @@ function animate() {
     player.userData.rightArm.rotation.x = swing * 0.4;
   } else {
     walkCycle = 0;
-    player.userData.leftLeg.rotation.x *= 0.9;
-    player.userData.rightLeg.rotation.x *= 0.9;
-    player.userData.leftArm.rotation.x *= 0.9;
-    player.userData.rightArm.rotation.x *= 0.9;
+    player.userData.leftLeg.rotation.x *= 0.85;
+    player.userData.rightLeg.rotation.x *= 0.85;
+    player.userData.leftArm.rotation.x *= 0.85;
+    player.userData.rightArm.rotation.x *= 0.85;
   }
 
-  // Camera: smooth follow behind player
-  const camBehind = new THREE.Vector3(0, 3, 7);
-  camBehind.applyQuaternion(player.quaternion);
-  const desiredPos = player.position.clone().add(camBehind);
-  camera.position.lerp(desiredPos, 3 * delta);
-
-  const lookTarget = player.position.clone().add(normal.multiplyScalar(1.2));
-  camTarget.lerp(lookTarget, 4 * delta);
-  camera.lookAt(camTarget);
-
+  camera.lookAt(camLookAt);
   renderer.render(scene, camera);
 }
 animate();
