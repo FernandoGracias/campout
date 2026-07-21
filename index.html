@@ -52,7 +52,8 @@ canvas { display: block; }
 <body>
 <div id="controls-row" style="position:fixed;bottom:calc(30px + env(safe-area-inset-bottom, 0px));left:30px;z-index:100;">
   <div style="display:flex;gap:12px;align-items:center;">
-    <div style="position:relative;width:48px;height:48px;">
+    <div style="position:relative;width:48px;height:48px;" id="lever-wrapper">
+      <div id="joystick-base" style="display:none;position:absolute;width:90px;height:90px;left:-21px;top:-21px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);pointer-events:none;"></div>
       <div id="lever-track" style="position:absolute;width:4px;height:80px;left:50%;top:50%;transform:translate(-50%,-50%);border-radius:2px;background:rgba(255,255,255,0.15);pointer-events:none;"></div>
       <div id="lever-zone" style="position:absolute;left:0;top:0;width:48px;height:48px;border-radius:50%;background:#222;border:2px solid rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 512 512" fill="#ddd" stroke="none"><path d="M111.512 21.176c-6.65.088-13.7 1.088-21.162 3.088-87.625 23.48-77.956 222.752-9.297 310.984l.002-.002 99.513-26.664c-3.273-35.578.003-76.04 19.313-113.947 2.605-89.97-24.095-174.31-88.368-173.46zm294.38 0c-64.273-.852-90.972 83.488-88.37 173.46 19.31 37.905 22.587 78.368 19.314 113.946l99.514 26.664.002.002c68.658-88.232 78.327-287.505-9.297-310.984-7.463-2-14.513-3-21.162-3.088zM188.878 350.06l-101.26 27.13c5.495 191.896 200.51 104.13 101.26-27.13zm139.65 0c-99.25 131.26 95.767 219.026 101.262 27.13l-101.263-27.13z"/></svg></div>
     </div>
@@ -77,6 +78,13 @@ canvas { display: block; }
   <div class="control-row">
     <label>Fog</label>
     <input type="range" id="fog-slider" min="0" max="100" step="1" value="0">
+  </div>
+  <div class="control-row">
+    <label>Control Mode</label>
+    <select id="control-mode" style="width:100%;background:#333;color:#ddd;border:1px solid #555;padding:4px;border-radius:4px;font-size:11px;">
+      <option value="pan">Pan to Steer</option>
+      <option value="joystick">Joystick</option>
+    </select>
   </div>
   <hr style="border:none;border-top:1px solid #444;margin:12px 0;">
   <h3 style="margin-bottom:12px;color:#f0c040;font-size:14px;">TENT OPTIONS</h3>
@@ -105,7 +113,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v49</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v50</div>
 
 <script type="importmap">
 {
@@ -688,9 +696,17 @@ const keys = {};
 document.addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; });
 document.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
 
-let leverY = 0, leverActive = false, leverTouchId = null;
+let leverY = 0, leverX = 0, leverActive = false, leverTouchId = null;
+let controlMode = 'pan';
 const leverZone = document.getElementById('lever-zone');
 const leverRange = 10;
+const joystickRange = 20;
+
+document.getElementById('control-mode').addEventListener('change', (e) => {
+  controlMode = e.target.value;
+  document.getElementById('joystick-base').style.display = controlMode === 'joystick' ? 'block' : 'none';
+  document.getElementById('lever-track').style.display = controlMode === 'pan' ? 'block' : 'none';
+});
 
 leverZone.addEventListener('touchstart', (e) => {
   e.preventDefault();
@@ -711,19 +727,32 @@ leverZone.addEventListener('touchend', (e) => {
       leverActive = false;
       leverTouchId = null;
       leverY = 0;
+      leverX = 0;
       leverZone.style.transform = '';
     }
   }
 });
 
 function updateLever(touch) {
-  const rect = leverZone.getBoundingClientRect();
+  const rect = document.getElementById('lever-wrapper').getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
   const cy = rect.top + rect.height / 2;
   let dy = touch.clientY - cy;
-  if (dy > leverRange) dy = leverRange;
-  if (dy < -leverRange) dy = -leverRange;
-  leverY = dy / leverRange;
-  leverZone.style.transform = `translateY(${dy}px)`;
+  let dx = touch.clientX - cx;
+  if (controlMode === 'pan') {
+    if (dy > leverRange) dy = leverRange;
+    if (dy < -leverRange) dy = -leverRange;
+    leverY = dy / leverRange;
+    leverX = 0;
+    leverZone.style.transform = `translateY(${dy}px)`;
+  } else {
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const maxDist = joystickRange;
+    if (dist > maxDist) { dx = dx / dist * maxDist; dy = dy / dist * maxDist; }
+    leverX = dx / maxDist;
+    leverY = dy / maxDist;
+    leverZone.style.transform = `translate(${dx}px, ${dy}px)`;
+  }
 }
 
 // --- CAMERA ORBIT STATE ---
@@ -1377,6 +1406,10 @@ function animate() {
   let moveInput = 0;
   if (keys['w'] || keys['arrowup']) moveInput = 1;
   if (keys['s'] || keys['arrowdown']) moveInput = -1;
+  if (controlMode === 'joystick') {
+    if (keys['a'] || keys['arrowleft']) playerFacing -= 2.5 * delta;
+    if (keys['d'] || keys['arrowright']) playerFacing += 2.5 * delta;
+  }
   if (leverActive) {
     moveInput = leverY;
     walkingToTent = false;
@@ -1397,8 +1430,22 @@ function animate() {
 
   if (isSleeping) { moveInput = 0; }
 
-  // Player always faces where camera is looking
-  playerFacing = cameraAngle + Math.PI;
+  // Control mode: pan = camera angle drives facing, joystick = leverX turns character
+  if (controlMode === 'pan') {
+    playerFacing = cameraAngle + Math.PI;
+  } else {
+    if (leverActive && Math.abs(leverX) > 0.1) {
+      playerFacing += leverX * 2.5 * delta;
+    }
+    // Camera follows behind player in joystick mode
+    const targetCamAngle = playerFacing - Math.PI;
+    let angleDiff = targetCamAngle - cameraAngle;
+    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+    if (Math.abs(moveInput) > 0.1) {
+      cameraAngle += angleDiff * 3 * delta;
+    }
+  }
 
   const isWalking = Math.abs(moveInput) > 0.1 || walkingToTent;
   const moveSpeed = 0.2 * delta;
