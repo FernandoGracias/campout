@@ -49,7 +49,7 @@ canvas { display: block; }
     <div id="joystick-knob"></div>
   </div>
 </div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v8</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v9</div>
 
 <script type="importmap">
 {
@@ -125,10 +125,10 @@ function mulberry32(a) {
 const rng = mulberry32(42);
 
 // --- UTILITY: place on globe surface ---
-function placeOnGlobe(obj, lat, lon) {
+function placeOnGlobe(obj, lat, lon, offset = 0) {
   const pos = latLonToWorld(lat, lon);
-  obj.position.copy(pos);
   const normal = pos.clone().normalize();
+  obj.position.copy(pos).addScaledVector(normal, offset);
   const up = new THREE.Vector3(0, 1, 0);
   const quat = new THREE.Quaternion().setFromUnitVectors(up, normal);
   obj.quaternion.copy(quat);
@@ -186,7 +186,7 @@ for (let i = 0; i < 120; i++) {
   const trunkColor = new THREE.Color().setHSL(0.07, 0.5 + rng() * 0.2, 0.2 + rng() * 0.1);
   const foliageColor = new THREE.Color().setHSL(0.28 + rng() * 0.08, 0.5 + rng() * 0.2, 0.3 + rng() * 0.15);
   const tree = makeTree(height, trunkColor, foliageColor);
-  placeOnGlobe(tree, lat, lon);
+  placeOnGlobe(tree, lat, lon, -0.15);
   globePivot.add(tree);
   trees.push({ obj: tree, lat, lon });
   collidables.push({ lat, lon, radius: 0.4 });
@@ -264,40 +264,53 @@ function buildLake(lat, lon, radius) {
 // --- RIVER ---
 function buildRiver(startLat, startLon, endLat, endLon, segments) {
   const group = new THREE.Group();
+  const waterWidth = 0.3;
+  const bankWidth = 0.5;
 
-  for (let i = 0; i < segments; i++) {
-    const t = i / (segments - 1);
-    const lat = startLat + (endLat - startLat) * t + Math.sin(t * Math.PI * 3) * 0.08;
-    const lon = startLon + (endLon - startLon) * t + Math.cos(t * Math.PI * 2.5) * 0.06;
-
-    const pos = latLonToWorld(lat, lon);
-    const normal = pos.clone().normalize();
-    const surfacePos = pos.clone().add(normal.clone().multiplyScalar(0.05));
-
-    const segGeo = new THREE.PlaneGeometry(0.6, 0.7);
-    const segMat = new THREE.MeshStandardMaterial({
-      color: 0x3399bb,
-      roughness: 0.1,
-      metalness: 0.1,
-      transparent: true,
-      opacity: 0.75,
-      side: THREE.DoubleSide,
-    });
-    const seg = new THREE.Mesh(segGeo, segMat);
-    seg.position.copy(surfacePos);
-    seg.lookAt(0, 0, 0);
-
-    const nextT = Math.min(1, (i + 1) / (segments - 1));
-    const nextLat = startLat + (endLat - startLat) * nextT + Math.sin(nextT * Math.PI * 3) * 0.08;
-    const nextLon = startLon + (endLon - startLon) * nextT + Math.cos(nextT * Math.PI * 2.5) * 0.06;
-    const nextPos = latLonToWorld(nextLat, nextLon);
-    const tangent = nextPos.clone().sub(pos).normalize();
-    const localTangent = tangent.clone().sub(normal.clone().multiplyScalar(tangent.dot(normal)));
-    const angle = Math.atan2(localTangent.x, localTangent.z);
-    seg.rotateZ(angle);
-
-    group.add(seg);
+  const pathPoints = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const lat = startLat + (endLat - startLat) * t + Math.sin(t * Math.PI * 4) * 0.06;
+    const lon = startLon + (endLon - startLon) * t + Math.cos(t * Math.PI * 3) * 0.05;
+    pathPoints.push({ lat, lon });
   }
+
+  function makeRibbonMesh(width, color, opacity, yOffset) {
+    const verts = [];
+    for (let i = 0; i < pathPoints.length; i++) {
+      const pos = latLonToWorld(pathPoints[i].lat, pathPoints[i].lon);
+      const normal = pos.clone().normalize();
+      let tangent;
+      if (i < pathPoints.length - 1) {
+        tangent = latLonToWorld(pathPoints[i+1].lat, pathPoints[i+1].lon).sub(pos).normalize();
+      } else {
+        tangent = pos.clone().sub(latLonToWorld(pathPoints[i-1].lat, pathPoints[i-1].lon)).normalize();
+      }
+      const binormal = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+      const surfacePos = pos.add(normal.clone().multiplyScalar(yOffset));
+      const left = surfacePos.clone().add(binormal.clone().multiplyScalar(-width));
+      const right = surfacePos.clone().add(binormal.clone().multiplyScalar(width));
+      verts.push(left.x, left.y, left.z, right.x, right.y, right.z);
+    }
+
+    const indices = [];
+    for (let i = 0; i < pathPoints.length - 1; i++) {
+      const a = i * 2, b = i * 2 + 1, c = (i + 1) * 2, d = (i + 1) * 2 + 1;
+      indices.push(a, c, b, b, c, d);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({
+      color, roughness: 0.2, metalness: 0.1, transparent: true, opacity, side: THREE.DoubleSide,
+    });
+    return new THREE.Mesh(geo, mat);
+  }
+
+  group.add(makeRibbonMesh(bankWidth, 0x6b5b3a, 1.0, 0.02));
+  group.add(makeRibbonMesh(waterWidth, 0x3399bb, 0.8, 0.04));
   return group;
 }
 
@@ -312,7 +325,7 @@ for (let i = 0; i < 5; i++) {
 for (let i = 0; i < lakePosArray.length - 1; i += 2) {
   const a = lakePosArray[i];
   const b = lakePosArray[i + 1];
-  globePivot.add(buildRiver(a.lat, a.lon, b.lat, b.lon, 40));
+  globePivot.add(buildRiver(a.lat, a.lon, b.lat, b.lon, 80));
 }
 
 // --- PLAYER ---
@@ -592,12 +605,16 @@ function animate() {
     player.userData.rightLeg.rotation.x = -swing;
     player.userData.leftArm.rotation.x = -swing * 0.4;
     player.userData.rightArm.rotation.x = swing * 0.4;
+    player.rotation.z = Math.sin(walkCycle) * 0.03;
+    player.position.y = GLOBE_RADIUS - 0.05 + Math.abs(Math.sin(walkCycle * 2)) * 0.02;
   } else {
     walkCycle = 0;
     player.userData.leftLeg.rotation.x *= 0.85;
     player.userData.rightLeg.rotation.x *= 0.85;
     player.userData.leftArm.rotation.x *= 0.85;
     player.userData.rightArm.rotation.x *= 0.85;
+    player.rotation.z *= 0.9;
+    player.position.y += (GLOBE_RADIUS - 0.05 - player.position.y) * 0.1;
   }
 
   renderer.render(scene, camera);
