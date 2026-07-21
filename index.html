@@ -690,10 +690,8 @@ renderer.domElement.addEventListener('touchmove', (e) => {
   for (const touch of e.changedTouches) {
     if (touch.identifier === orbitTouchId) {
       const dx = touch.clientX - orbitStartX;
-      const dy = touch.clientY - orbitStartY;
       cameraAngle = orbitStartAngle + dx * 0.01;
       cameraTargetAngle = cameraAngle;
-      cameraHeight = Math.max(1, Math.min(12, orbitStartHeight - dy * 0.02));
     }
   }
 });
@@ -866,7 +864,7 @@ function animate() {
   if (keys['w'] || keys['arrowup']) moveInput = 1;
   if (keys['s'] || keys['arrowdown']) moveInput = -1;
   if (leverActive) {
-    moveInput = -leverY;
+    moveInput = leverY;
   }
 
   // Player always faces where camera is looking
@@ -901,14 +899,16 @@ function animate() {
   camera.position.set(camX, GLOBE_RADIUS + cameraHeight, camZ);
   camera.lookAt(0, GLOBE_RADIUS + 1, 0);
 
-  if (isWalking) {
-    walkCycle += delta * 8;
-    const swing = Math.sin(walkCycle) * 0.5;
+  const isTurning = isDragging || orbitTouchId !== null;
+
+  if (isWalking || isTurning) {
+    walkCycle += delta * (isWalking ? 8 : 5);
+    const swing = Math.sin(walkCycle) * (isWalking ? 0.5 : 0.3);
     player.userData.leftLeg.rotation.x = swing;
     player.userData.rightLeg.rotation.x = -swing;
     player.userData.leftArm.rotation.x = -swing * 0.4;
     player.userData.rightArm.rotation.x = swing * 0.4;
-    player.rotation.z = Math.sin(walkCycle) * 0.04;
+    player.rotation.z = Math.sin(walkCycle) * (isWalking ? 0.04 : 0.02);
   } else {
     walkCycle = 0;
     player.userData.leftLeg.rotation.x *= 0.85;
