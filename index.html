@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v47</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v48</div>
 
 <script type="importmap">
 {
@@ -324,44 +324,6 @@ for (let i = 0; i < 60; i++) {
   collidables.push({ lat, lon, radius: 0.08 });
 }
 
-// Remove trees in water (below grade) and spread out trees too close together
-for (let i = trees.length - 1; i >= 0; i--) {
-  const treePos = latLonToWorld(trees[i].lat, trees[i].lon);
-  const origLen = treePos.length();
-  // Check if this position is below the water sphere level (deformed below GLOBE_RADIUS - 0.25)
-  // Use the globe vertex positions to check if the terrain is depressed here
-  let inWater = false;
-  for (const lake of lakeData) {
-    const lakePos = latLonToWorld(lake.lat, lake.lon);
-    const dist = treePos.distanceTo(lakePos);
-    const angle = Math.atan2(treePos.z - lakePos.z, treePos.x - lakePos.x);
-    const irregularRadius = lake.radius * (0.7 + 0.3 * Math.sin(angle * 3) + 0.15 * Math.sin(angle * 7 + 1));
-    if (dist < irregularRadius) { inWater = true; break; }
-  }
-  if (inWater) {
-    globePivot.remove(trees[i].obj);
-    collidables.splice(collidables.findIndex(c => c.lat === trees[i].lat && c.lon === trees[i].lon), 1);
-    trees.splice(i, 1);
-    continue;
-  }
-  // Spread out trees that are too close (< 0.8 units apart)
-  for (let j = i - 1; j >= 0; j--) {
-    const otherPos = latLonToWorld(trees[j].lat, trees[j].lon);
-    if (treePos.distanceTo(otherPos) < 0.8) {
-      // Push this tree away
-      const midLat = (trees[i].lat + trees[j].lat) / 2;
-      const midLon = (trees[i].lon + trees[j].lon) / 2;
-      const pushLat = trees[i].lat + (trees[i].lat - midLat) * 1.5;
-      const pushLon = trees[i].lon + (trees[i].lon - midLon) * 1.5;
-      trees[i].lat = pushLat;
-      trees[i].lon = pushLon;
-      placeOnGlobe(trees[i].obj, pushLat, pushLon, -0.15);
-      collidables[collidables.findIndex(c => c.lat === trees[i].lat)] = { lat: pushLat, lon: pushLon, radius: 0.08 };
-      break;
-    }
-  }
-}
-
 // --- ROCKS ---
 // --- ROCKS ---
 for (let i = 0; i < 40; i++) {
@@ -444,6 +406,36 @@ for (let i = 0; i < 3; i++) {
 // Rivers flow OUT of the big lake to smaller ones
 for (let i = 1; i < lakePosArray.length; i++) {
   buildRiver(bigLakeLat, bigLakeLon, lakePosArray[i].lat, lakePosArray[i].lon, 80);
+}
+
+// Remove trees in water and spread out trees too close together
+for (let i = trees.length - 1; i >= 0; i--) {
+  const treePos = latLonToWorld(trees[i].lat, trees[i].lon);
+  let inWater = false;
+  for (const lake of lakeData) {
+    const lakePos = latLonToWorld(lake.lat, lake.lon);
+    const dist = treePos.distanceTo(lakePos);
+    const angle = Math.atan2(treePos.z - lakePos.z, treePos.x - lakePos.x);
+    const irregularRadius = lake.radius * (0.7 + 0.3 * Math.sin(angle * 3) + 0.15 * Math.sin(angle * 7 + 1));
+    if (dist < irregularRadius) { inWater = true; break; }
+  }
+  if (inWater) {
+    globePivot.remove(trees[i].obj);
+    collidables.splice(collidables.findIndex(c => c.lat === trees[i].lat && c.lon === trees[i].lon), 1);
+    trees.splice(i, 1);
+    continue;
+  }
+  for (let j = i - 1; j >= 0; j--) {
+    const otherPos = latLonToWorld(trees[j].lat, trees[j].lon);
+    if (treePos.distanceTo(otherPos) < 0.8) {
+      const pushLat = trees[i].lat + (trees[i].lat - trees[j].lat) * 0.75;
+      const pushLon = trees[i].lon + (trees[i].lon - trees[j].lon) * 0.75;
+      trees[i].lat = pushLat;
+      trees[i].lon = pushLon;
+      placeOnGlobe(trees[i].obj, pushLat, pushLon, -0.15);
+      break;
+    }
+  }
 }
 
 // --- DEFORM GLOBE (hills, lake basins, river channels) ---
@@ -817,10 +809,12 @@ renderer.domElement.addEventListener('touchmove', (e) => {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const scale = pinchStartDist / dist;
     cameraDistance = Math.max(4, Math.min(60, pinchStartZoom * scale));
+    // Tilt only with deliberate two-finger vertical drag (avgY moved > 30px)
     const avgY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-    if (!pinchStartAvgY) pinchStartAvgY = avgY;
     const tiltDelta = avgY - pinchStartAvgY;
-    cameraHeight = Math.max(1, Math.min(12, pinchStartHeight + tiltDelta * 0.02));
+    if (Math.abs(tiltDelta) > 30) {
+      cameraHeight = Math.max(1, Math.min(12, pinchStartHeight + (tiltDelta - Math.sign(tiltDelta) * 30) * 0.03));
+    }
     return;
   }
   for (const touch of e.changedTouches) {
