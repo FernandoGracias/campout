@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v44</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v45</div>
 
 <script type="importmap">
 {
@@ -270,7 +270,23 @@ for (let i = 0; i < 120; i++) {
   placeOnGlobe(tree, lat, lon, -0.15);
   globePivot.add(tree);
   trees.push({ obj: tree, lat, lon });
-  collidables.push({ lat, lon, radius: 0.15 });
+  collidables.push({ lat, lon, radius: 0.08 });
+}
+
+// Dense forest cluster
+const forestCenterLat = -0.6;
+const forestCenterLon = 3.5;
+for (let i = 0; i < 60; i++) {
+  const lat = forestCenterLat + (rng() - 0.5) * 0.5;
+  const lon = forestCenterLon + (rng() - 0.5) * 0.5;
+  const height = 3.5 + rng() * 3.5;
+  const trunkColor = new THREE.Color().setHSL(0.07, 0.5 + rng() * 0.2, 0.15 + rng() * 0.1);
+  const foliageColor = new THREE.Color().setHSL(0.35 + rng() * 0.04, 0.65 + rng() * 0.15, 0.14 + rng() * 0.06);
+  const tree = makeTree(height, trunkColor, foliageColor);
+  placeOnGlobe(tree, lat, lon, -0.15);
+  globePivot.add(tree);
+  trees.push({ obj: tree, lat, lon });
+  collidables.push({ lat, lon, radius: 0.08 });
 }
 
 // --- ROCKS ---
@@ -594,7 +610,7 @@ player.position.set(0, GLOBE_RADIUS - 0.05, 0);
 scene.add(player);
 
 // --- CAMERA SETUP ---
-camera.position.set(0, GLOBE_RADIUS + 6, 12);
+camera.position.set(0, GLOBE_RADIUS + 6, 6);
 camera.lookAt(0, GLOBE_RADIUS + 1, 0);
 
 // --- INPUT ---
@@ -643,7 +659,7 @@ function updateLever(touch) {
 // --- CAMERA ORBIT STATE ---
 let cameraAngle = Math.PI;
 let cameraTargetAngle = Math.PI;
-let cameraDistance = 12;
+let cameraDistance = 6;
 let cameraHeight = 6;
 let cameraManual = false;
 let lastTouchAngle = null;
@@ -1155,7 +1171,16 @@ function updateDayNight() {
 
   // Sun/moon orbit: sun rises at 6, overhead at 12, sets at 18
   // Full circle over 24 hours, 0h = directly below (nadir)
-  const sunAngle = ((hour - 6) / 24) * Math.PI * 2;
+  // Sun orbit: rises at 6, sets at 21 (summer timing)
+  // Map 6-21 (15h of daylight) to 0-PI for the sun arc above horizon
+  // Map 21-6 (9h of night) to PI-2PI for below horizon
+  let sunAngle;
+  if (hour >= 6 && hour <= 21) {
+    sunAngle = ((hour - 6) / 15) * Math.PI;
+  } else {
+    const nightHour = hour >= 21 ? hour - 21 : hour + 3;
+    sunAngle = Math.PI + (nightHour / 9) * Math.PI;
+  }
   const orbitRadius = 40;
   const sunX = Math.cos(sunAngle) * orbitRadius;
   const sunY = GLOBE_RADIUS + Math.sin(sunAngle) * orbitRadius;
