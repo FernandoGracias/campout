@@ -56,6 +56,11 @@ canvas { display: block; }
   </div>
 </div>
 
+<div id="action-btns" style="position:fixed;bottom:12px;left:160px;display:flex;gap:12px;z-index:100;">
+  <div id="btn-pitch" style="width:48px;height:48px;border-radius:50%;background:rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;-webkit-tap-highlight-color:transparent;">&#x26FA;</div>
+  <div id="btn-flashlight" style="width:48px;height:48px;border-radius:50%;background:rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;-webkit-tap-highlight-color:transparent;">&#x1F526;</div>
+</div>
+
 <div id="sidebar-toggle" style="position:fixed;top:12px;right:12px;width:44px;height:44px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.3);border-radius:8px;font-size:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:200;-webkit-tap-highlight-color:transparent;">&#x1F3D5;&#xFE0F;</div>
 
 <div id="controls" style="position:fixed;top:0;right:0;bottom:0;width:260px;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#ddd;padding:60px 16px 16px;z-index:150;overflow-y:auto;transform:translateX(100%);transition:transform 0.3s ease;font-family:monospace;">
@@ -74,10 +79,7 @@ canvas { display: block; }
     <input type="range" id="fog-slider" min="0" max="100" step="1" value="0">
   </div>
   <hr style="border:none;border-top:1px solid #444;margin:12px 0;">
-  <h3 style="margin-bottom:12px;color:#f0c040;font-size:14px;">PITCH CAMP</h3>
-  <div class="control-row">
-    <button id="btn-pitch" style="width:100%;padding:8px;font-size:12px;">Pitch Camp Here</button>
-  </div>
+  <h3 style="margin-bottom:12px;color:#f0c040;font-size:14px;">TENT OPTIONS</h3>
   <div class="control-row">
     <label>Tent Color</label>
     <div id="tent-colors" style="display:flex;gap:4px;flex-wrap:wrap;">
@@ -103,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v23</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v24</div>
 
 <script type="importmap">
 {
@@ -746,11 +748,67 @@ document.getElementById('fog-slider').addEventListener('input', (e) => {
 });
 
 // --- FLASHLIGHT ---
+let flashlightOn = false;
 const flashlight = new THREE.SpotLight(0xfff5dd, 0, 15, Math.PI * 0.25, 0.5, 1);
-flashlight.position.set(0, GLOBE_RADIUS + 1, 0.3);
+flashlight.position.set(0.3, GLOBE_RADIUS + 0.6, 0.2);
 flashlight.target.position.set(0, GLOBE_RADIUS, 3);
+flashlight.castShadow = true;
 scene.add(flashlight);
 scene.add(flashlight.target);
+
+document.getElementById('btn-flashlight').addEventListener('click', () => {
+  flashlightOn = !flashlightOn;
+  document.getElementById('btn-flashlight').style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
+});
+document.getElementById('btn-flashlight').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  flashlightOn = !flashlightOn;
+  document.getElementById('btn-flashlight').style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
+});
+
+// --- PITCH CAMP ---
+let campPitched = false;
+let campGroup = null;
+
+function pitchCamp() {
+  if (campPitched && campGroup) {
+    globePivot.remove(campGroup);
+    campPitched = false;
+    document.getElementById('btn-pitch').style.borderColor = 'rgba(255,255,255,0.3)';
+    return;
+  }
+  campGroup = new THREE.Group();
+  const tentMat = new THREE.MeshStandardMaterial({ color: 0xcc5522, roughness: 0.7 });
+  const tentShape = new THREE.Shape();
+  tentShape.moveTo(-0.6, 0);
+  tentShape.lineTo(0, 0.9);
+  tentShape.lineTo(0.6, 0);
+  tentShape.closePath();
+  const tentGeo = new THREE.ExtrudeGeometry(tentShape, { depth: 1.2, bevelEnabled: false });
+  const tent = new THREE.Mesh(tentGeo, tentMat);
+  tent.position.set(-0.6, 0, -0.6);
+  tent.castShadow = true;
+  campGroup.add(tent);
+
+  const inverseRot = globeRotation.clone().invert();
+  const playerWorldUp = new THREE.Vector3(0, 1, 0);
+  const surfaceNormal = playerWorldUp.clone().applyQuaternion(inverseRot);
+  const pos = surfaceNormal.multiplyScalar(GLOBE_RADIUS);
+  campGroup.position.copy(pos);
+  const up = new THREE.Vector3(0, 1, 0);
+  const quat = new THREE.Quaternion().setFromUnitVectors(up, pos.clone().normalize());
+  campGroup.quaternion.copy(quat);
+
+  globePivot.add(campGroup);
+  campPitched = true;
+  document.getElementById('btn-pitch').style.borderColor = '#f0c040';
+}
+
+document.getElementById('btn-pitch').addEventListener('click', pitchCamp);
+document.getElementById('btn-pitch').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  pitchCamp();
+});
 
 function updateDayNight() {
   const hour = timeOfDay;
@@ -788,12 +846,17 @@ function updateDayNight() {
   }
 
   const isNight = hour < 6 || hour > 20;
-  flashlight.intensity = isNight ? 3 : 0;
-  if (isNight) {
+  flashlight.intensity = flashlightOn ? 3 : 0;
+  if (flashlightOn) {
+    flashlight.position.set(
+      Math.sin(playerFacing + 0.3) * 0.4,
+      GLOBE_RADIUS + 0.6,
+      Math.cos(playerFacing + 0.3) * 0.4
+    );
     flashlight.target.position.set(
-      Math.sin(playerFacing) * 3,
-      GLOBE_RADIUS - 0.5,
-      Math.cos(playerFacing) * 3
+      Math.sin(playerFacing) * 4,
+      GLOBE_RADIUS - 0.3,
+      Math.cos(playerFacing) * 4
     );
   }
 }
