@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v43</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v44</div>
 
 <script type="importmap">
 {
@@ -763,6 +763,13 @@ document.addEventListener('keydown', (e) => {
 document.getElementById('sidebar-toggle').addEventListener('click', () => {
   document.getElementById('controls').classList.toggle('open');
 });
+document.addEventListener('click', (e) => {
+  const controls = document.getElementById('controls');
+  const toggle = document.getElementById('sidebar-toggle');
+  if (controls.classList.contains('open') && !controls.contains(e.target) && !toggle.contains(e.target)) {
+    controls.classList.remove('open');
+  }
+});
 
 const timeSlider = document.getElementById('time-slider');
 const timeDisplay = document.getElementById('time-display');
@@ -1103,6 +1110,8 @@ function enterTent() {
   isSleeping = true;
   walkingToTent = false;
   player.visible = false;
+  document.getElementById('controls-row').style.opacity = '0.3';
+  document.getElementById('controls-row').style.pointerEvents = 'none';
   sleepZTimer = 0;
   sleepZSprites = [];
 }
@@ -1129,6 +1138,8 @@ function makeZSprite(size) {
 function wakeUp() {
   isSleeping = false;
   player.visible = true;
+  document.getElementById('controls-row').style.opacity = '';
+  document.getElementById('controls-row').style.pointerEvents = '';
   for (const z of sleepZSprites) { globePivot.remove(z.sprite); }
   sleepZSprites = [];
 }
@@ -1340,22 +1351,25 @@ function animate() {
   // Animate sleep Zs
   if (isSleeping && campGroup) {
     sleepZTimer += delta;
-    // Spawn a set of 3 Zs every 2.5 seconds
-    if (sleepZTimer > 2.5) {
+    // Spawn a set of 3 Zs every 5 seconds, staggered 250ms apart
+    if (sleepZTimer > 5) {
       sleepZTimer = 0;
       for (let i = 0; i < 3; i++) {
-        const sprite = makeZSprite(i);
-        sprite.position.set(
-          (Math.random() - 0.5) * 0.3,
-          1.0 + i * 0.2,
-          (Math.random() - 0.5) * 0.3
-        );
-        const zGroup = new THREE.Group();
-        zGroup.position.copy(campGroup.position);
-        zGroup.quaternion.copy(campGroup.quaternion);
-        zGroup.add(sprite);
-        globePivot.add(zGroup);
-        sleepZSprites.push({ sprite: zGroup, localSprite: sprite, vel: 0.4 + i * 0.1, drift: (Math.random() - 0.5) * 0.3, age: 0 });
+        setTimeout(() => {
+          if (!isSleeping) return;
+          const sprite = makeZSprite(i);
+          sprite.position.set(
+            (Math.random() - 0.5) * 0.3,
+            1.0 + i * 0.2,
+            (Math.random() - 0.5) * 0.3
+          );
+          const zGroup = new THREE.Group();
+          zGroup.position.copy(campGroup.position);
+          zGroup.quaternion.copy(campGroup.quaternion);
+          zGroup.add(sprite);
+          globePivot.add(zGroup);
+          sleepZSprites.push({ sprite: zGroup, localSprite: sprite, vel: 0.4 + i * 0.1, drift: (Math.random() - 0.5) * 0.3, age: 0 });
+        }, i * 250);
       }
     }
     // Animate existing Zs
