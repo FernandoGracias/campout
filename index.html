@@ -39,7 +39,8 @@ canvas { display: block; }
 }
 
 @media (min-width: 769px) {
-  #joystick-zone { display: none; }
+  #lever-zone { display: none; }
+  #action-btns { display: none; }
 }
 .control-row { margin-bottom: 10px; }
 .control-row label { display: block; font-size: 11px; margin-bottom: 4px; color: #aaa; }
@@ -50,18 +51,17 @@ canvas { display: block; }
 </style>
 </head>
 <body>
-<div id="joystick-zone">
-  <div id="joystick-base">
-    <div id="joystick-knob"></div>
-  </div>
+<div id="lever-zone" style="position:fixed;bottom:30px;left:30px;width:60px;height:140px;z-index:100;-webkit-tap-highlight-color:transparent;">
+  <div id="lever-track" style="position:absolute;width:8px;height:120px;left:26px;top:10px;border-radius:4px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);"></div>
+  <div id="lever-knob" style="position:absolute;width:44px;height:44px;left:8px;top:48px;border-radius:50%;background:rgba(255,255,255,0.25);border:2px solid rgba(255,255,255,0.4);"></div>
 </div>
 
-<div id="action-btns" style="position:fixed;bottom:12px;left:160px;display:flex;gap:12px;z-index:100;">
-  <div id="btn-pitch" style="width:48px;height:48px;border-radius:50%;background:rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;-webkit-tap-highlight-color:transparent;">&#x26FA;</div>
-  <div id="btn-flashlight" style="width:48px;height:48px;border-radius:50%;background:rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;-webkit-tap-highlight-color:transparent;">&#x1F526;</div>
+<div id="action-btns" style="position:fixed;bottom:30px;left:110px;display:flex;gap:12px;z-index:100;">
+  <div id="btn-pitch" style="width:48px;height:48px;border-radius:50%;background:rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><path d="M12 2L3 20h18L12 2z"/><line x1="12" y1="20" x2="12" y2="14"/></svg></div>
+  <div id="btn-flashlight" style="width:48px;height:48px;border-radius:50%;background:rgba(0,0,0,0.5);border:2px solid rgba(255,255,255,0.3);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M9 8l-1 4v6a2 2 0 002 2h4a2 2 0 002-2v-6l-1-4"/><line x1="12" y1="12" x2="12" y2="16"/></svg></div>
 </div>
 
-<div id="sidebar-toggle" style="position:fixed;top:12px;right:12px;width:44px;height:44px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.3);border-radius:8px;font-size:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:200;-webkit-tap-highlight-color:transparent;">&#x1F3D5;&#xFE0F;</div>
+<div id="sidebar-toggle" style="position:fixed;top:12px;right:12px;width:44px;height:44px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.3);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:200;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div>
 
 <div id="controls" style="position:fixed;top:0;right:0;bottom:0;width:260px;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#ddd;padding:60px 16px 16px;z-index:150;overflow-y:auto;transform:translateX(100%);transition:transform 0.3s ease;font-family:monospace;">
   <h3 style="margin-bottom:12px;color:#f0c040;font-size:14px;">CAMP CONTROLS</h3>
@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v24</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v25</div>
 
 <script type="importmap">
 {
@@ -578,47 +578,43 @@ const keys = {};
 document.addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; });
 document.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
 
-let joystickX = 0, joystickY = 0, joystickActive = false, joystickTouchId = null;
-const joystickZone = document.getElementById('joystick-zone');
-const joystickKnob = document.getElementById('joystick-knob');
-const joyRadius = 33;
+let leverY = 0, leverActive = false, leverTouchId = null;
+const leverZone = document.getElementById('lever-zone');
+const leverKnob = document.getElementById('lever-knob');
+const leverRange = 38;
 
-joystickZone.addEventListener('touchstart', (e) => {
+leverZone.addEventListener('touchstart', (e) => {
   e.preventDefault();
-  joystickTouchId = e.changedTouches[0].identifier;
-  joystickActive = true;
-  updateJoystick(e.changedTouches[0]);
+  leverTouchId = e.changedTouches[0].identifier;
+  leverActive = true;
+  updateLever(e.changedTouches[0]);
 });
-joystickZone.addEventListener('touchmove', (e) => {
+leverZone.addEventListener('touchmove', (e) => {
   e.preventDefault();
   for (const t of e.changedTouches) {
-    if (t.identifier === joystickTouchId) updateJoystick(t);
+    if (t.identifier === leverTouchId) updateLever(t);
   }
 });
-joystickZone.addEventListener('touchend', (e) => {
+leverZone.addEventListener('touchend', (e) => {
   for (const t of e.changedTouches) {
-    if (t.identifier === joystickTouchId) {
-      joystickActive = false;
-      joystickTouchId = null;
-      joystickX = joystickY = 0;
-      joystickKnob.style.left = '33px';
-      joystickKnob.style.top = '33px';
+    if (t.identifier === leverTouchId) {
+      leverActive = false;
+      leverTouchId = null;
+      leverY = 0;
+      leverKnob.style.top = '48px';
     }
   }
 });
 
-function updateJoystick(touch) {
-  const rect = joystickZone.getBoundingClientRect();
-  const cx = rect.left + rect.width / 2;
+function updateLever(touch) {
+  const rect = leverZone.getBoundingClientRect();
   const cy = rect.top + rect.height / 2;
-  let dx = touch.clientX - cx;
   let dy = touch.clientY - cy;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist > joyRadius) { dx = dx / dist * joyRadius; dy = dy / dist * joyRadius; }
-  joystickX = dx / joyRadius;
-  joystickY = dy / joyRadius;
-  joystickKnob.style.left = (33 + dx) + 'px';
-  joystickKnob.style.top = (33 + dy) + 'px';
+  if (dy > leverRange) dy = leverRange;
+  if (dy < -leverRange) dy = -leverRange;
+  leverY = dy / leverRange;
+  leverKnob.style.top = (48 + dy) + 'px';
+}
 }
 
 // --- CAMERA ORBIT STATE ---
@@ -645,7 +641,6 @@ renderer.domElement.addEventListener('mousedown', (e) => {
   dragStartAngle = cameraAngle;
   dragStartY = e.clientY;
   dragStartHeight = cameraHeight;
-  cameraManual = true;
 });
 window.addEventListener('mousemove', (e) => {
   if (!isDragging) return;
@@ -667,14 +662,13 @@ let orbitStartHeight = 0;
 renderer.domElement.addEventListener('touchstart', (e) => {
   if (e.touches.length === 1) {
     const touch = e.touches[0];
-    const joyRect = document.getElementById('joystick-zone').getBoundingClientRect();
+    const joyRect = document.getElementById('lever-zone').getBoundingClientRect();
     if (touch.clientX > joyRect.right || touch.clientY < joyRect.top) {
       orbitTouchId = touch.identifier;
       orbitStartX = touch.clientX;
       orbitStartY = touch.clientY;
       orbitStartAngle = cameraAngle;
       orbitStartHeight = cameraHeight;
-      cameraManual = true;
     }
   }
   if (e.touches.length === 2) {
@@ -869,23 +863,18 @@ function animate() {
   requestAnimationFrame(animate);
   const delta = clock.getDelta();
 
-  let moveInput = 0, turnInput = 0;
+  let moveInput = 0;
   if (keys['w'] || keys['arrowup']) moveInput = 1;
   if (keys['s'] || keys['arrowdown']) moveInput = -1;
-  if (keys['a'] || keys['arrowleft']) turnInput = 1;
-  if (keys['d'] || keys['arrowright']) turnInput = -1;
-  if (joystickActive) {
-    moveInput = joystickY;
-    turnInput = -joystickX;
+  if (leverActive) {
+    moveInput = -leverY;
   }
 
-  const isWalking = Math.abs(moveInput) > 0.1 || Math.abs(turnInput) > 0.15;
+  // Player always faces where camera is looking
+  playerFacing = cameraAngle + Math.PI;
+
+  const isWalking = Math.abs(moveInput) > 0.1;
   const moveSpeed = 0.2 * delta;
-  const turnSpeed = 1.8 * delta;
-
-  if (Math.abs(turnInput) > 0.1) {
-    playerFacing += turnSpeed * turnInput;
-  }
 
   if (Math.abs(moveInput) > 0.1) {
     const step = moveSpeed * moveInput;
@@ -907,19 +896,6 @@ function animate() {
 
   globePivot.quaternion.copy(globeRotation);
   player.rotation.y = playerFacing;
-
-  // Camera gently drifts behind player when walking forward/back
-  const isMoving = Math.abs(moveInput) > 0.1;
-  if (isMoving) {
-    cameraManual = false;
-  }
-  if (!cameraManual) {
-    cameraTargetAngle = playerFacing + Math.PI;
-    let angleDiff = cameraTargetAngle - cameraAngle;
-    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-    cameraAngle += angleDiff * 1.5 * delta;
-  }
 
   const camX = Math.sin(cameraAngle) * cameraDistance;
   const camZ = Math.cos(cameraAngle) * cameraDistance;
