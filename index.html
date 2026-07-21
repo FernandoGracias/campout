@@ -38,7 +38,7 @@ canvas { display: block; }
   border: 2px solid rgba(255,255,255,0.4);
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1200px) {
   #lever-zone { display: none; }
   #action-btns { display: none; }
 }
@@ -51,9 +51,9 @@ canvas { display: block; }
 </style>
 </head>
 <body>
-<div id="lever-zone" style="position:fixed;bottom:30px;left:30px;width:60px;height:140px;z-index:100;-webkit-tap-highlight-color:transparent;">
-  <div id="lever-track" style="position:absolute;width:8px;height:120px;left:26px;top:10px;border-radius:4px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);"></div>
-  <div id="lever-knob" style="position:absolute;width:44px;height:44px;left:8px;top:48px;border-radius:50%;background:rgba(255,255,255,0.25);border:2px solid rgba(255,255,255,0.4);"></div>
+<div id="lever-zone" style="position:fixed;bottom:30px;left:30px;width:60px;height:80px;z-index:100;-webkit-tap-highlight-color:transparent;">
+  <div id="lever-track" style="position:absolute;width:8px;height:60px;left:26px;top:10px;border-radius:4px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);"></div>
+  <div id="lever-knob" style="position:absolute;width:44px;height:44px;left:8px;top:18px;border-radius:50%;background:rgba(255,255,255,0.25);border:2px solid rgba(255,255,255,0.4);"></div>
 </div>
 
 <div id="action-btns" style="position:fixed;bottom:30px;left:110px;display:flex;gap:12px;z-index:100;">
@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v26</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v27</div>
 
 <script type="importmap">
 {
@@ -581,7 +581,7 @@ document.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; }
 let leverY = 0, leverActive = false, leverTouchId = null;
 const leverZone = document.getElementById('lever-zone');
 const leverKnob = document.getElementById('lever-knob');
-const leverRange = 38;
+const leverRange = 18;
 
 leverZone.addEventListener('touchstart', (e) => {
   e.preventDefault();
@@ -601,7 +601,7 @@ leverZone.addEventListener('touchend', (e) => {
       leverActive = false;
       leverTouchId = null;
       leverY = 0;
-      leverKnob.style.top = '48px';
+      leverKnob.style.top = '18px';
     }
   }
 });
@@ -613,7 +613,7 @@ function updateLever(touch) {
   if (dy > leverRange) dy = leverRange;
   if (dy < -leverRange) dy = -leverRange;
   leverY = dy / leverRange;
-  leverKnob.style.top = (48 + dy) + 'px';
+  leverKnob.style.top = (18 + dy) + 'px';
 }
 
 // --- CAMERA ORBIT STATE ---
@@ -771,6 +771,23 @@ document.getElementById('btn-flashlight').addEventListener('touchstart', (e) => 
 let campPitched = false;
 let campGroup = null;
 
+let tentColor = 0xcc5522;
+let tentStyle = 'aframe';
+
+const tentColorsDiv = document.getElementById('tent-colors');
+tentColorsDiv.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-color]');
+  if (!btn) return;
+  tentColor = parseInt(btn.dataset.color, 16);
+  tentColorsDiv.querySelectorAll('button').forEach(b => b.style.borderColor = 'transparent');
+  btn.style.borderColor = '#fff';
+  if (campPitched) { pitchCamp(); pitchCamp(); }
+});
+document.getElementById('tent-style').addEventListener('change', (e) => {
+  tentStyle = e.target.value;
+  if (campPitched) { pitchCamp(); pitchCamp(); }
+});
+
 function pitchCamp() {
   if (campPitched && campGroup) {
     globePivot.remove(campGroup);
@@ -779,25 +796,77 @@ function pitchCamp() {
     return;
   }
   campGroup = new THREE.Group();
-  const tentMat = new THREE.MeshStandardMaterial({ color: 0xcc5522, roughness: 0.7 });
-  const tentShape = new THREE.Shape();
-  tentShape.moveTo(-0.6, 0);
-  tentShape.lineTo(0, 0.9);
-  tentShape.lineTo(0.6, 0);
-  tentShape.closePath();
-  const tentGeo = new THREE.ExtrudeGeometry(tentShape, { depth: 1.2, bevelEnabled: false });
-  const tent = new THREE.Mesh(tentGeo, tentMat);
-  tent.position.set(-0.6, 0, -0.6);
-  tent.castShadow = true;
-  campGroup.add(tent);
 
+  const tentMat = new THREE.MeshStandardMaterial({ color: tentColor, roughness: 0.7 });
+  if (tentStyle === 'aframe') {
+    const shape = new THREE.Shape();
+    shape.moveTo(-0.6, 0);
+    shape.lineTo(0, 0.9);
+    shape.lineTo(0.6, 0);
+    shape.closePath();
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: 1.2, bevelEnabled: false });
+    const tent = new THREE.Mesh(geo, tentMat);
+    tent.position.set(-0.8, 0, -0.6);
+    tent.castShadow = true;
+    campGroup.add(tent);
+  } else if (tentStyle === 'dome') {
+    const geo = new THREE.SphereGeometry(0.8, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+    const tent = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: tentColor, roughness: 0.7, side: THREE.DoubleSide }));
+    tent.position.set(-0.8, 0, 0);
+    tent.castShadow = true;
+    campGroup.add(tent);
+  } else if (tentStyle === 'cabin') {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.9, 1.2), tentMat);
+    body.position.set(-0.8, 0.45, 0);
+    body.castShadow = true;
+    campGroup.add(body);
+    const roofShape = new THREE.Shape();
+    roofShape.moveTo(-0.8, 0);
+    roofShape.lineTo(0, 0.4);
+    roofShape.lineTo(0.8, 0);
+    roofShape.closePath();
+    const roof = new THREE.Mesh(
+      new THREE.ExtrudeGeometry(roofShape, { depth: 1.2, bevelEnabled: false }),
+      new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8 })
+    );
+    roof.position.set(-0.8, 0.9, -0.6);
+    roof.castShadow = true;
+    campGroup.add(roof);
+  } else if (tentStyle === 'tunnel') {
+    const geo = new THREE.CylinderGeometry(0.6, 0.6, 1.4, 10, 1, true, 0, Math.PI);
+    const tent = new THREE.Mesh(geo, tentMat);
+    tent.position.set(-0.8, 0, 0);
+    tent.rotation.z = Math.PI / 2;
+    tent.rotation.y = Math.PI / 2;
+    tent.castShadow = true;
+    campGroup.add(tent);
+  }
+
+  // Fireplace
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const rockGeo = new THREE.DodecahedronGeometry(0.08, 0);
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.9 });
+    const rock = new THREE.Mesh(rockGeo, rockMat);
+    rock.position.set(Math.cos(angle) * 0.35, 0.05, Math.sin(angle) * 0.35);
+    rock.scale.y = 0.5;
+    campGroup.add(rock);
+  }
+  const fireMat = new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: 0xff4400, emissiveIntensity: 0.8 });
+  const fire = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.4, 5), fireMat);
+  fire.position.set(0, 0.2, 0);
+  campGroup.add(fire);
+
+  const fireLight = new THREE.PointLight(0xff6622, 2, 5);
+  fireLight.position.set(0, 0.5, 0);
+  campGroup.add(fireLight);
+
+  // Place on globe surface aligned to terrain
   const inverseRot = globeRotation.clone().invert();
-  const playerWorldUp = new THREE.Vector3(0, 1, 0);
-  const surfaceNormal = playerWorldUp.clone().applyQuaternion(inverseRot);
-  const pos = surfaceNormal.multiplyScalar(GLOBE_RADIUS);
+  const surfaceNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(inverseRot);
+  const pos = surfaceNormal.clone().multiplyScalar(GLOBE_RADIUS);
   campGroup.position.copy(pos);
-  const up = new THREE.Vector3(0, 1, 0);
-  const quat = new THREE.Quaternion().setFromUnitVectors(up, pos.clone().normalize());
+  const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), surfaceNormal);
   campGroup.quaternion.copy(quat);
 
   globePivot.add(campGroup);
