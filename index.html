@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v41</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v42</div>
 
 <script type="importmap">
 {
@@ -1038,6 +1038,21 @@ function pitchCamp() {
   // Raycast each fire element to sit on terrain
   campGroup.updateMatrixWorld(true);
   fireAnchor.updateMatrixWorld(true);
+
+  // Raycast the fire anchor center first
+  const fireWorldPos = new THREE.Vector3();
+  fireAnchor.getWorldPosition(fireWorldPos);
+  const fireNorm = fireWorldPos.clone().normalize();
+  const fireRayOrig = fireWorldPos.clone().addScaledVector(fireNorm, 3);
+  const fireRayD = fireNorm.clone().negate();
+  const fireRay = new THREE.Raycaster(fireRayOrig, fireRayD, 0, 10);
+  const fireHits = fireRay.intersectObject(globe, false);
+  if (fireHits.length > 0) {
+    const localHit = campGroup.worldToLocal(fireHits[0].point.clone());
+    fireAnchor.position.y = localHit.y;
+    fireAnchor.updateMatrixWorld(true);
+  }
+
   for (const child of fireAnchor.children) {
     if (!child.userData.needsRaycast) continue;
     const worldPos = new THREE.Vector3();
@@ -1095,8 +1110,8 @@ function makeZSprite(size) {
   const canvas = document.createElement('canvas');
   canvas.width = 64; canvas.height = 64;
   const ctx = canvas.getContext('2d');
-  ctx.font = `bold ${40 + size * 10}px "Courier New", monospace`;
-  ctx.fillStyle = '#1a4488';
+  ctx.font = `bold ${40 + size * 10}px sans-serif`;
+  ctx.fillStyle = '#0000ff';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('Z', 32, 32);
