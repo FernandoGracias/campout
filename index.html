@@ -49,7 +49,7 @@ canvas { display: block; }
     <div id="joystick-knob"></div>
   </div>
 </div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v17</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v18</div>
 
 <script type="importmap">
 {
@@ -258,17 +258,23 @@ function buildRiver(startLat, startLon, endLat, endLon, segments) {
 }
 
 const lakePosArray = [];
-for (let i = 0; i < 5; i++) {
+// One big proper lake
+const bigLakeLat = 0.5;
+const bigLakeLon = 1.2;
+buildLake(bigLakeLat, bigLakeLon, 5.5);
+lakePosArray.push({ lat: bigLakeLat, lon: bigLakeLon });
+
+// A few smaller ponds
+for (let i = 0; i < 3; i++) {
   const { lat, lon } = randomPointOnSphere();
-  const radius = 2.0 + rng() * 2.5;
+  const radius = 1.5 + rng() * 1.5;
   buildLake(lat, lon, radius);
   lakePosArray.push({ lat, lon });
 }
 
-for (let i = 0; i < lakePosArray.length - 1; i += 2) {
-  const a = lakePosArray[i];
-  const b = lakePosArray[i + 1];
-  buildRiver(a.lat, a.lon, b.lat, b.lon, 80);
+// Rivers flow OUT of the big lake to smaller ones
+for (let i = 1; i < lakePosArray.length; i++) {
+  buildRiver(bigLakeLat, bigLakeLon, lakePosArray[i].lat, lakePosArray[i].lon, 80);
 }
 
 // --- DEFORM GLOBE (hills, lake basins, river channels) ---
@@ -282,7 +288,7 @@ const globePos = globeGeo.attributes.position;
 const vertCount = globePos.count;
 const colors = new Float32Array(vertCount * 3);
 const baseGreen = new THREE.Color(0x4a8c3f);
-const sandColor = new THREE.Color(0xd4b068);
+const sandColor = new THREE.Color(0xe8c870);
 const waterLevel = [];
 
 for (let v = 0; v < vertCount; v++) {
@@ -296,6 +302,15 @@ for (let v = 0; v < vertCount; v++) {
   const hillAmount = noise2D(vx * 0.3, vz * 0.3) * 0.8 + noise2D(vx * 0.7, vy * 0.5) * 0.4;
   let displacement = Math.max(0, hillAmount) * 0.7;
 
+  // One big foothill
+  const foothillPos = latLonToWorld(-0.3, 2.5);
+  const foothillDist = vertPos.distanceTo(foothillPos);
+  const foothillRadius = 4.0;
+  if (foothillDist < foothillRadius) {
+    const t = 1 - foothillDist / foothillRadius;
+    displacement += t * t * 3.0;
+  }
+
   // Lake depressions: irregular shapes using noise-modulated radius
   let isWater = false;
   for (const lake of lakeData) {
@@ -305,7 +320,8 @@ for (let v = 0; v < vertCount; v++) {
     const irregularRadius = lake.radius * (0.7 + 0.3 * Math.sin(angle * 3) + 0.15 * Math.sin(angle * 7 + 1));
     if (dist < irregularRadius) {
       const t = 1 - dist / irregularRadius;
-      displacement = -1.2 * t * t;
+      const depthScale = lake.radius > 4 ? 2.0 : 1.2;
+      displacement = -depthScale * t * t;
       isWater = true;
     } else if (dist < irregularRadius + 0.6) {
       const t = 1 - (dist - irregularRadius) / 0.6;
