@@ -49,7 +49,7 @@ canvas { display: block; }
     <div id="joystick-knob"></div>
   </div>
 </div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v6</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v7</div>
 
 <script type="importmap">
 {
@@ -149,20 +149,19 @@ function randomPointOnSphere() {
 function makeTree(height, trunkColor, foliageColor) {
   const group = new THREE.Group();
 
-  const trunkGeo = new THREE.CylinderGeometry(height * 0.04, height * 0.06, height * 0.4, 5);
+  const trunkGeo = new THREE.CylinderGeometry(height * 0.025, height * 0.04, height * 0.5, 6);
   const trunkMat = new THREE.MeshStandardMaterial({ color: trunkColor, roughness: 0.9 });
   const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-  trunk.position.y = height * 0.2;
+  trunk.position.y = height * 0.25;
   trunk.castShadow = true;
   group.add(trunk);
 
-  const layers = 3 + Math.floor(rng() * 2);
+  const layers = 4 + Math.floor(rng() * 3);
   for (let i = 0; i < layers; i++) {
-    const t = i / layers;
-    const radius = height * 0.25 * (1 - t * 0.4);
-    const layerH = height * 0.2;
-    const y = height * 0.35 + i * layerH * 0.6;
-    const coneGeo = new THREE.ConeGeometry(radius, layerH, 6);
+    const layerHeight = height * 0.15;
+    const radius = (height * 0.18) * (1 - i * 0.1);
+    const y = height * 0.45 + i * layerHeight * 0.65;
+    const coneGeo = new THREE.ConeGeometry(radius, layerHeight, 7);
     const shade = new THREE.Color(foliageColor).offsetHSL(0, 0, (rng() - 0.5) * 0.05);
     const coneMat = new THREE.MeshStandardMaterial({ color: shade, roughness: 0.8, flatShading: true });
     const cone = new THREE.Mesh(coneGeo, coneMat);
@@ -179,7 +178,7 @@ const collidables = [];
 const trees = [];
 for (let i = 0; i < 120; i++) {
   const { lat, lon } = randomPointOnSphere();
-  const height = 1.5 + rng() * 2.5;
+  const height = 3 + rng() * 3;
   const trunkColor = new THREE.Color().setHSL(0.07, 0.5 + rng() * 0.2, 0.2 + rng() * 0.1);
   const foliageColor = new THREE.Color().setHSL(0.28 + rng() * 0.08, 0.5 + rng() * 0.2, 0.3 + rng() * 0.15);
   const tree = makeTree(height, trunkColor, foliageColor);
@@ -278,6 +277,7 @@ function buildRiver(startLat, startLon, segments) {
 
     const pos = latLonToWorld(lat, lon);
     const normal = pos.clone().normalize();
+    const surfacePos = pos.clone().add(normal.clone().multiplyScalar(0.05));
 
     const segGeo = new THREE.PlaneGeometry(0.5, 1.0);
     const segMat = new THREE.MeshStandardMaterial({
@@ -289,12 +289,10 @@ function buildRiver(startLat, startLon, segments) {
       side: THREE.DoubleSide,
     });
     const seg = new THREE.Mesh(segGeo, segMat);
-    seg.position.copy(pos).add(normal.clone().multiplyScalar(0.06));
-    const fwd = new THREE.Vector3(0, 0, 1);
-    const quat = new THREE.Quaternion().setFromUnitVectors(fwd, normal);
-    seg.quaternion.copy(quat);
+    seg.position.copy(surfacePos);
+    seg.lookAt(0, 0, 0);
     const angle = dir + Math.sin(i * 0.5) * 0.8;
-    seg.rotateOnAxis(normal, angle);
+    seg.rotateZ(angle);
     group.add(seg);
   }
   return group;
@@ -330,11 +328,13 @@ function buildPlayer() {
   const hatMat = new THREE.MeshStandardMaterial({ color: 0x5c3d1e, roughness: 0.8 });
   const hat = new THREE.Mesh(hatGeo, hatMat);
   hat.position.y = 1.2;
+  hat.castShadow = true;
   group.add(hat);
 
   const brimGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.03, 8);
   const brim = new THREE.Mesh(brimGeo, hatMat);
   brim.position.y = 1.14;
+  brim.castShadow = true;
   group.add(brim);
 
   const legMat = new THREE.MeshStandardMaterial({ color: 0x3d5a80, roughness: 0.8 });
