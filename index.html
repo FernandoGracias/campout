@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v45</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v46</div>
 
 <script type="importmap">
 {
@@ -135,13 +135,13 @@ const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerH
 // --- LIGHTING ---
 const sun = new THREE.DirectionalLight(0xfff4e0, 1.2);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.left = -15;
-sun.shadow.camera.right = 15;
-sun.shadow.camera.top = 15;
-sun.shadow.camera.bottom = -15;
-sun.shadow.camera.near = 5;
-sun.shadow.camera.far = 80;
+sun.shadow.mapSize.set(4096, 4096);
+sun.shadow.camera.left = -40;
+sun.shadow.camera.right = 40;
+sun.shadow.camera.top = 40;
+sun.shadow.camera.bottom = -40;
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 100;
 sun.shadow.bias = -0.0005;
 sun.shadow.normalBias = 0.02;
 scene.add(sun);
@@ -273,12 +273,12 @@ for (let i = 0; i < 120; i++) {
   collidables.push({ lat, lon, radius: 0.08 });
 }
 
-// Dense forest cluster
+// Dense forest area
 const forestCenterLat = -0.6;
 const forestCenterLon = 3.5;
 for (let i = 0; i < 60; i++) {
-  const lat = forestCenterLat + (rng() - 0.5) * 0.5;
-  const lon = forestCenterLon + (rng() - 0.5) * 0.5;
+  const lat = forestCenterLat + (rng() - 0.5) * 1.0;
+  const lon = forestCenterLon + (rng() - 0.5) * 1.0;
   const height = 3.5 + rng() * 3.5;
   const trunkColor = new THREE.Color().setHSL(0.07, 0.5 + rng() * 0.2, 0.15 + rng() * 0.1);
   const foliageColor = new THREE.Color().setHSL(0.35 + rng() * 0.04, 0.65 + rng() * 0.15, 0.14 + rng() * 0.06);
@@ -900,17 +900,20 @@ function pitchCamp() {
     const tent = new THREE.Mesh(geo, tentMat);
     tent.position.set(-0.8, 0, -0.6);
     tent.castShadow = true;
+    tent.userData.needsRaycast = true;
     campGroup.add(tent);
   } else if (tentStyle === 'dome') {
     const geo = new THREE.SphereGeometry(0.8, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
     const tent = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: tentColor, roughness: 0.7, side: THREE.DoubleSide }));
     tent.position.set(-0.8, 0, 0);
     tent.castShadow = true;
+    tent.userData.needsRaycast = true;
     campGroup.add(tent);
   } else if (tentStyle === 'cabin') {
     const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.9, 1.2), tentMat);
     body.position.set(-0.8, 0.45, 0);
     body.castShadow = true;
+    body.userData.needsRaycast = true;
     campGroup.add(body);
     const roofShape = new THREE.Shape();
     roofShape.moveTo(-0.8, 0);
@@ -923,6 +926,7 @@ function pitchCamp() {
     );
     roof.position.set(-0.8, 0.9, -0.6);
     roof.castShadow = true;
+    roof.userData.needsRaycast = true;
     campGroup.add(roof);
   } else if (tentStyle === 'tunnel') {
     const geo = new THREE.CylinderGeometry(0.6, 0.6, 1.4, 10, 1, true, 0, Math.PI);
@@ -931,6 +935,7 @@ function pitchCamp() {
     tent.rotation.z = Math.PI / 2;
     tent.rotation.y = Math.PI / 2;
     tent.castShadow = true;
+    tent.userData.needsRaycast = true;
     campGroup.add(tent);
   }
 
@@ -1078,6 +1083,22 @@ function pitchCamp() {
     const localHit = campGroup.worldToLocal(fireHits[0].point.clone());
     fireAnchor.position.y = localHit.y;
     fireAnchor.updateMatrixWorld(true);
+  }
+
+  // Raycast tent elements to terrain
+  for (const child of campGroup.children) {
+    if (!child.userData.needsRaycast) continue;
+    const worldPos = new THREE.Vector3();
+    child.getWorldPosition(worldPos);
+    const normal = worldPos.clone().normalize();
+    const rayOrigin = worldPos.clone().addScaledVector(normal, 3);
+    const rayDir = normal.clone().negate();
+    const ray = new THREE.Raycaster(rayOrigin, rayDir, 0, 10);
+    const hits = ray.intersectObject(globe, false);
+    if (hits.length > 0) {
+      const localHit = campGroup.worldToLocal(hits[0].point.clone());
+      child.position.y = localHit.y;
+    }
   }
 
   for (const child of fireAnchor.children) {
