@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v40</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v41</div>
 
 <script type="importmap">
 {
@@ -929,6 +929,7 @@ function pitchCamp() {
     rock.scale.set(0.8 + rng() * 0.5, 0.4 + rng() * 0.4, 0.8 + rng() * 0.5);
     rock.rotation.set(rng() * 0.4, rng() * Math.PI, rng() * 0.4);
     rock.castShadow = true;
+    rock.userData.needsRaycast = true;
     fireAnchor.add(rock);
   }
 
@@ -940,6 +941,7 @@ function pitchCamp() {
     log.position.set(Math.cos(angle) * 0.25, 0.08, Math.sin(angle) * 0.25);
     log.rotation.z = Math.PI / 2 - 0.2;
     log.rotation.y = angle;
+    log.userData.needsRaycast = true;
     fireAnchor.add(log);
   }
 
@@ -1033,18 +1035,22 @@ function pitchCamp() {
 
   globePivot.add(campGroup);
 
-  // Raycast fire position to sit on terrain
+  // Raycast each fire element to sit on terrain
   campGroup.updateMatrixWorld(true);
-  const fireWorldPos = new THREE.Vector3();
-  fireAnchor.getWorldPosition(fireWorldPos);
-  const fireNormal = fireWorldPos.clone().normalize();
-  const fireRayOrigin = fireWorldPos.clone().addScaledVector(fireNormal, 5);
-  const fireRayDir = fireNormal.clone().negate();
-  const fireRay = new THREE.Raycaster(fireRayOrigin, fireRayDir, 0, 15);
-  const fireHits = fireRay.intersectObject(globe, false);
-  if (fireHits.length > 0) {
-    const localHit = campGroup.worldToLocal(fireHits[0].point.clone());
-    fireAnchor.position.y = localHit.y;
+  fireAnchor.updateMatrixWorld(true);
+  for (const child of fireAnchor.children) {
+    if (!child.userData.needsRaycast) continue;
+    const worldPos = new THREE.Vector3();
+    child.getWorldPosition(worldPos);
+    const normal = worldPos.clone().normalize();
+    const rayOrigin = worldPos.clone().addScaledVector(normal, 3);
+    const rayDir = normal.clone().negate();
+    const ray = new THREE.Raycaster(rayOrigin, rayDir, 0, 10);
+    const hits = ray.intersectObject(globe, false);
+    if (hits.length > 0) {
+      const localHit = fireAnchor.worldToLocal(hits[0].point.clone());
+      child.position.y = localHit.y;
+    }
   }
 
   campPitched = true;
