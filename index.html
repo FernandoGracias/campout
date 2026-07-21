@@ -113,7 +113,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v55</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v56</div>
 
 <script type="importmap">
 {
@@ -355,7 +355,7 @@ for (let i = 0; i < 40; i++) {
   rock.castShadow = true;
   placeOnGlobe(rock, lat, lon);
   globePivot.add(rock);
-  rockData.push({ lat, lon, radius: size * 0.8 });
+  rockData.push({ obj: rock, lat, lon, radius: size * 0.8 });
   collidables.push({ lat, lon, radius: size * 0.8 });
 }
 
@@ -449,6 +449,22 @@ for (let i = trees.length - 1; i >= 0; i--) {
       placeOnGlobe(trees[i].obj, pushLat, pushLon, -0.15);
       break;
     }
+  }
+}
+// Remove rocks in water
+for (let i = rockData.length - 1; i >= 0; i--) {
+  const rockPos = latLonToWorld(rockData[i].lat, rockData[i].lon);
+  let inWater = false;
+  for (const lake of lakeData) {
+    const lakePos = latLonToWorld(lake.lat, lake.lon);
+    const dist = rockPos.distanceTo(lakePos);
+    const angle = Math.atan2(rockPos.z - lakePos.z, rockPos.x - lakePos.x);
+    const irregularRadius = lake.radius * (0.7 + 0.3 * Math.sin(angle * 3) + 0.15 * Math.sin(angle * 7 + 1));
+    if (dist < irregularRadius) { inWater = true; break; }
+  }
+  if (inWater) {
+    globePivot.remove(rockData[i].obj);
+    rockData.splice(i, 1);
   }
 }
 // Rebuild collidables from current tree and rock positions
@@ -1416,12 +1432,12 @@ function updateDayNight() {
     const handHeight = 0.55;
     flashlight.position.set(
       Math.sin(playerFacing) * 0.3 + Math.sin(playerFacing - Math.PI/2) * handOffsetRight,
-      GLOBE_RADIUS + handHeight,
+      player.position.y + handHeight,
       Math.cos(playerFacing) * 0.3 + Math.cos(playerFacing - Math.PI/2) * handOffsetRight
     );
     flashlight.target.position.set(
       Math.sin(playerFacing) * 5,
-      GLOBE_RADIUS - 0.5,
+      player.position.y - 0.5,
       Math.cos(playerFacing) * 5
     );
   }
