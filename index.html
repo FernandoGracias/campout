@@ -49,7 +49,16 @@ canvas { display: block; }
     <div id="joystick-knob"></div>
   </div>
 </div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v21</div>
+
+<div id="options-btn" style="position:fixed;top:12px;right:12px;width:40px;height:40px;background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.3);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:200;font-size:18px;-webkit-tap-highlight-color:transparent;">&#9881;</div>
+
+<div id="options-menu" style="display:none;position:fixed;top:60px;right:12px;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.2);border-radius:10px;padding:16px;z-index:200;color:#ddd;font-family:system-ui,sans-serif;min-width:180px;">
+  <div style="font-size:12px;color:#aaa;margin-bottom:8px;">Time of Day</div>
+  <input type="range" id="time-slider" min="0" max="24" step="0.1" value="12" style="width:100%;margin-bottom:4px;">
+  <div id="time-label" style="font-size:11px;color:#f0c040;text-align:center;">12:00</div>
+</div>
+
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v22</div>
 
 <script type="importmap">
 {
@@ -185,7 +194,7 @@ for (let i = 0; i < 120; i++) {
   const { lat, lon } = randomPointOnSphere();
   const height = 3 + rng() * 3;
   const trunkColor = new THREE.Color().setHSL(0.07, 0.5 + rng() * 0.2, 0.2 + rng() * 0.1);
-  const foliageColor = new THREE.Color().setHSL(0.28 + rng() * 0.08, 0.5 + rng() * 0.2, 0.3 + rng() * 0.15);
+  const foliageColor = new THREE.Color().setHSL(0.35 + rng() * 0.05, 0.6 + rng() * 0.15, 0.18 + rng() * 0.08);
   const tree = makeTree(height, trunkColor, foliageColor);
   placeOnGlobe(tree, lat, lon, -0.15);
   globePivot.add(tree);
@@ -665,6 +674,70 @@ document.addEventListener('keydown', (e) => {
   if (e.key === '-') cameraDistance = Math.min(60, cameraDistance + 0.5);
 });
 
+// --- OPTIONS MENU ---
+const optionsBtn = document.getElementById('options-btn');
+const optionsMenu = document.getElementById('options-menu');
+const timeSlider = document.getElementById('time-slider');
+const timeLabel = document.getElementById('time-label');
+let timeOfDay = 12;
+
+optionsBtn.addEventListener('click', () => {
+  optionsMenu.style.display = optionsMenu.style.display === 'none' ? 'block' : 'none';
+});
+timeSlider.addEventListener('input', (e) => {
+  timeOfDay = parseFloat(e.target.value);
+  const h = Math.floor(timeOfDay);
+  const m = Math.floor((timeOfDay - h) * 60);
+  timeLabel.textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+});
+
+// --- FLASHLIGHT ---
+const flashlight = new THREE.SpotLight(0xfff5dd, 0, 15, Math.PI * 0.25, 0.5, 1);
+flashlight.position.set(0, GLOBE_RADIUS + 1, 0.3);
+flashlight.target.position.set(0, GLOBE_RADIUS, 3);
+scene.add(flashlight);
+scene.add(flashlight.target);
+
+function updateDayNight() {
+  const hour = timeOfDay;
+  let sunIntensity, skyColor, ambientIntensity;
+
+  if (hour < 5 || hour > 21) {
+    sunIntensity = 0;
+    skyColor = new THREE.Color(0x0a0a1e);
+    ambientIntensity = 0.1;
+  } else if (hour < 7) {
+    const t = (hour - 5) / 2;
+    sunIntensity = t * 1.2;
+    skyColor = new THREE.Color(0x0a0a1e).lerp(new THREE.Color(0x87ceeb), t);
+    ambientIntensity = 0.1 + t * 0.2;
+  } else if (hour > 19) {
+    const t = (21 - hour) / 2;
+    sunIntensity = t * 1.2;
+    skyColor = new THREE.Color(0x0a0a1e).lerp(new THREE.Color(0x87ceeb), t);
+    ambientIntensity = 0.1 + t * 0.2;
+  } else {
+    sunIntensity = 1.2;
+    skyColor = new THREE.Color(0x87ceeb);
+    ambientIntensity = 0.3;
+  }
+
+  sun.intensity = sunIntensity;
+  scene.background = skyColor;
+  ambient.intensity = ambientIntensity;
+  hemi.intensity = sunIntensity > 0 ? 0.6 : 0.1;
+
+  const isNight = hour < 6 || hour > 20;
+  flashlight.intensity = isNight ? 3 : 0;
+  if (isNight) {
+    flashlight.target.position.set(
+      Math.sin(playerFacing) * 3,
+      GLOBE_RADIUS - 0.5,
+      Math.cos(playerFacing) * 3
+    );
+  }
+}
+
 // --- ANIMATION ---
 const clock = new THREE.Clock();
 const globeRotation = new THREE.Quaternion();
@@ -755,6 +828,7 @@ function animate() {
     player.position.y = hits[0].point.y;
   }
 
+  updateDayNight();
   renderer.render(scene, camera);
 }
 animate();
