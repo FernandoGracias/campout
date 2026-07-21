@@ -113,7 +113,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v52</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v53</div>
 
 <script type="importmap">
 {
@@ -711,6 +711,7 @@ document.getElementById('control-mode').addEventListener('change', (e) => {
   controlMode = e.target.value;
   document.getElementById('joystick-base').style.display = controlMode === 'joystick' ? 'block' : 'none';
   document.getElementById('lever-track').style.display = controlMode === 'pan' ? 'block' : 'none';
+  saveSettings();
 });
 
 leverZone.addEventListener('touchstart', (e) => {
@@ -754,8 +755,15 @@ function updateLever(touch) {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const maxDist = joystickRange;
     if (dist > maxDist) { dx = dx / dist * maxDist; dy = dy / dist * maxDist; }
-    leverX = dx / maxDist;
-    leverY = dy / maxDist;
+    const rawX = dx / maxDist;
+    const rawY = dy / maxDist;
+    // Dead zone: only accept left/right if X is more than 40% of the total displacement
+    if (Math.abs(dx) > Math.abs(dy) * 0.6) {
+      leverX = rawX;
+    } else {
+      leverX = 0;
+    }
+    leverY = rawY;
     leverZone.style.transform = `translate(${dx}px, ${dy}px)`;
   }
 }
@@ -899,19 +907,44 @@ let timeOfDay = 12;
 let moonlightStrength = 0.5;
 let fogDensity = 0;
 
+// Load saved settings from localStorage
+(function loadSettings() {
+  const saved = localStorage.getItem('campout-settings');
+  if (!saved) return;
+  const s = JSON.parse(saved);
+  if (s.timeOfDay !== undefined) { timeOfDay = s.timeOfDay; document.getElementById('time-slider').value = s.timeOfDay; }
+  if (s.moonlight !== undefined) { moonlightStrength = s.moonlight; document.getElementById('moonlight-slider').value = s.moonlight * 100; }
+  if (s.fog !== undefined) { fogDensity = s.fog; document.getElementById('fog-slider').value = s.fog * 100; }
+  if (s.controlMode) { controlMode = s.controlMode; document.getElementById('control-mode').value = s.controlMode; document.getElementById('joystick-base').style.display = s.controlMode === 'joystick' ? 'block' : 'none'; document.getElementById('lever-track').style.display = s.controlMode === 'pan' ? 'block' : 'none'; }
+  if (s.tentColor) { tentColor = parseInt(s.tentColor, 16); }
+  if (s.tentStyle) { tentStyle = s.tentStyle; document.getElementById('tent-style').value = s.tentStyle; }
+  const h = Math.floor(timeOfDay); const m = Math.floor((timeOfDay - h) * 60);
+  document.getElementById('time-display').textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+})();
+
+function saveSettings() {
+  localStorage.setItem('campout-settings', JSON.stringify({
+    timeOfDay, moonlight: moonlightStrength, fog: fogDensity,
+    controlMode, tentColor: tentColor.toString(16), tentStyle
+  }));
+}
+
 timeSlider.addEventListener('input', (e) => {
   timeOfDay = parseFloat(e.target.value);
   const h = Math.floor(timeOfDay);
   const m = Math.floor((timeOfDay - h) * 60);
   timeDisplay.textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  saveSettings();
 });
 
 document.getElementById('moonlight-slider').addEventListener('input', (e) => {
   moonlightStrength = parseInt(e.target.value) / 100;
+  saveSettings();
 });
 
 document.getElementById('fog-slider').addEventListener('input', (e) => {
   fogDensity = parseInt(e.target.value) / 100;
+  saveSettings();
 });
 
 // --- FLASHLIGHT ---
@@ -979,10 +1012,12 @@ tentColorsDiv.addEventListener('click', (e) => {
   tentColorsDiv.querySelectorAll('button').forEach(b => b.style.borderColor = 'transparent');
   btn.style.borderColor = '#fff';
   if (campPitched) { pitchCamp(); pitchCamp(); }
+  saveSettings();
 });
 document.getElementById('tent-style').addEventListener('change', (e) => {
   tentStyle = e.target.value;
   if (campPitched) { pitchCamp(); pitchCamp(); }
+  saveSettings();
 });
 
 function pitchCamp() {
@@ -1440,7 +1475,7 @@ function animate() {
     playerFacing = cameraAngle + Math.PI;
   } else {
     if (leverActive && Math.abs(leverX) > 0.1) {
-      playerFacing += leverX * 2.5 * delta;
+      playerFacing -= leverX * 2.5 * delta;
     }
     // Camera follows behind player in joystick mode
     const targetCamAngle = playerFacing - Math.PI;
