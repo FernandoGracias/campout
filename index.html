@@ -49,7 +49,7 @@ canvas { display: block; }
     <div id="joystick-knob"></div>
   </div>
 </div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v18</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v19</div>
 
 <script type="importmap">
 {
@@ -261,7 +261,7 @@ const lakePosArray = [];
 // One big proper lake
 const bigLakeLat = 0.5;
 const bigLakeLon = 1.2;
-buildLake(bigLakeLat, bigLakeLon, 5.5);
+buildLake(bigLakeLat, bigLakeLon, 8.0);
 lakePosArray.push({ lat: bigLakeLat, lon: bigLakeLon });
 
 // A few smaller ponds
@@ -305,10 +305,10 @@ for (let v = 0; v < vertCount; v++) {
   // One big foothill
   const foothillPos = latLonToWorld(-0.3, 2.5);
   const foothillDist = vertPos.distanceTo(foothillPos);
-  const foothillRadius = 4.0;
+  const foothillRadius = 6.0;
   if (foothillDist < foothillRadius) {
     const t = 1 - foothillDist / foothillRadius;
-    displacement += t * t * 3.0;
+    displacement += t * t * 5.0;
   }
 
   // Lake depressions: irregular shapes using noise-modulated radius
@@ -320,7 +320,7 @@ for (let v = 0; v < vertCount; v++) {
     const irregularRadius = lake.radius * (0.7 + 0.3 * Math.sin(angle * 3) + 0.15 * Math.sin(angle * 7 + 1));
     if (dist < irregularRadius) {
       const t = 1 - dist / irregularRadius;
-      const depthScale = lake.radius > 4 ? 2.0 : 1.2;
+      const depthScale = lake.radius > 4 ? 3.0 : 1.2;
       displacement = -depthScale * t * t;
       isWater = true;
     } else if (dist < irregularRadius + 0.6) {
@@ -692,7 +692,6 @@ function animate() {
   }
 
   if (Math.abs(moveInput) > 0.1) {
-    cameraManual = false;
     const step = moveSpeed * moveInput;
     const rotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), step * Math.cos(playerFacing));
     const rotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -step * Math.sin(playerFacing));
@@ -713,14 +712,17 @@ function animate() {
   globePivot.quaternion.copy(globeRotation);
   player.rotation.y = playerFacing;
 
-  // Camera follows behind player ONLY when actively walking
+  // Camera gently drifts behind player when walking forward/back
   const isMoving = Math.abs(moveInput) > 0.1;
-  if (isMoving && !cameraManual) {
+  if (isMoving) {
+    cameraManual = false;
+  }
+  if (!cameraManual) {
     cameraTargetAngle = playerFacing + Math.PI;
     let angleDiff = cameraTargetAngle - cameraAngle;
     while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
     while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-    cameraAngle += angleDiff * 2.5 * delta;
+    cameraAngle += angleDiff * 1.5 * delta;
   }
 
   const camX = Math.sin(cameraAngle) * cameraDistance;
