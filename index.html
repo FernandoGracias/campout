@@ -41,6 +41,12 @@ canvas { display: block; }
 @media (min-width: 769px) {
   #joystick-zone { display: none; }
 }
+.control-row { margin-bottom: 10px; }
+.control-row label { display: block; font-size: 11px; margin-bottom: 4px; color: #aaa; }
+.control-row input[type="range"] { width: 100%; }
+.control-row button { background: #333; color: #ddd; border: 1px solid #555; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; margin-right: 4px; }
+.control-row button:hover { background: #444; }
+#controls.open { transform: translateX(0) !important; }
 </style>
 </head>
 <body>
@@ -50,15 +56,54 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="options-btn" style="position:fixed;top:12px;right:12px;width:40px;height:40px;background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.3);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:200;font-size:18px;-webkit-tap-highlight-color:transparent;">&#9881;</div>
+<div id="sidebar-toggle" style="position:fixed;top:12px;right:12px;width:44px;height:44px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.3);border-radius:8px;font-size:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:200;-webkit-tap-highlight-color:transparent;">&#x1F3D5;&#xFE0F;</div>
 
-<div id="options-menu" style="display:none;position:fixed;top:60px;right:12px;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.2);border-radius:10px;padding:16px;z-index:200;color:#ddd;font-family:system-ui,sans-serif;min-width:180px;">
-  <div style="font-size:12px;color:#aaa;margin-bottom:8px;">Time of Day</div>
-  <input type="range" id="time-slider" min="0" max="24" step="0.1" value="12" style="width:100%;margin-bottom:4px;">
-  <div id="time-label" style="font-size:11px;color:#f0c040;text-align:center;">12:00</div>
+<div id="controls" style="position:fixed;top:0;right:0;bottom:0;width:260px;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#ddd;padding:60px 16px 16px;z-index:150;overflow-y:auto;transform:translateX(100%);transition:transform 0.3s ease;font-family:monospace;">
+  <h3 style="margin-bottom:12px;color:#f0c040;font-size:14px;">CAMP CONTROLS</h3>
+  <div class="control-row">
+    <label>Time of Day</label>
+    <input type="range" id="time-slider" min="0" max="24" step="0.1" value="12">
+    <div id="time-display" style="font-size:11px;color:#f0c040;text-align:center;margin-top:4px;">12:00</div>
+  </div>
+  <div class="control-row">
+    <label>Moonlight</label>
+    <input type="range" id="moonlight-slider" min="0" max="100" step="1" value="50">
+  </div>
+  <div class="control-row">
+    <label>Fog</label>
+    <input type="range" id="fog-slider" min="0" max="100" step="1" value="0">
+  </div>
+  <hr style="border:none;border-top:1px solid #444;margin:12px 0;">
+  <h3 style="margin-bottom:12px;color:#f0c040;font-size:14px;">PITCH CAMP</h3>
+  <div class="control-row">
+    <button id="btn-pitch" style="width:100%;padding:8px;font-size:12px;">Pitch Camp Here</button>
+  </div>
+  <div class="control-row">
+    <label>Tent Color</label>
+    <div id="tent-colors" style="display:flex;gap:4px;flex-wrap:wrap;">
+      <button data-color="cc5522" style="background:#cc5522;width:24px;height:24px;border:2px solid #fff;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="2266aa" style="background:#2266aa;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="337733" style="background:#337733;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="aa2222" style="background:#aa2222;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="888888" style="background:#888888;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="ddaa22" style="background:#ddaa22;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="553388" style="background:#553388;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="222222" style="background:#222222;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="ee66aa" style="background:#ee66aa;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+    </div>
+  </div>
+  <div class="control-row">
+    <label>Tent Style</label>
+    <select id="tent-style" style="width:100%;background:#333;color:#ddd;border:1px solid #555;padding:4px;border-radius:4px;font-size:11px;">
+      <option value="aframe">A-Frame (2P)</option>
+      <option value="dome">Dome (4P)</option>
+      <option value="cabin">Cabin (6P)</option>
+      <option value="tunnel">Tunnel (4P)</option>
+    </select>
+  </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v22</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v23</div>
 
 <script type="importmap">
 {
@@ -675,20 +720,29 @@ document.addEventListener('keydown', (e) => {
 });
 
 // --- OPTIONS MENU ---
-const optionsBtn = document.getElementById('options-btn');
-const optionsMenu = document.getElementById('options-menu');
-const timeSlider = document.getElementById('time-slider');
-const timeLabel = document.getElementById('time-label');
-let timeOfDay = 12;
-
-optionsBtn.addEventListener('click', () => {
-  optionsMenu.style.display = optionsMenu.style.display === 'none' ? 'block' : 'none';
+document.getElementById('sidebar-toggle').addEventListener('click', () => {
+  document.getElementById('controls').classList.toggle('open');
 });
+
+const timeSlider = document.getElementById('time-slider');
+const timeDisplay = document.getElementById('time-display');
+let timeOfDay = 12;
+let moonlightStrength = 0.5;
+let fogDensity = 0;
+
 timeSlider.addEventListener('input', (e) => {
   timeOfDay = parseFloat(e.target.value);
   const h = Math.floor(timeOfDay);
   const m = Math.floor((timeOfDay - h) * 60);
-  timeLabel.textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  timeDisplay.textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+});
+
+document.getElementById('moonlight-slider').addEventListener('input', (e) => {
+  moonlightStrength = parseInt(e.target.value) / 100;
+});
+
+document.getElementById('fog-slider').addEventListener('input', (e) => {
+  fogDensity = parseInt(e.target.value) / 100;
 });
 
 // --- FLASHLIGHT ---
@@ -705,7 +759,7 @@ function updateDayNight() {
   if (hour < 5 || hour > 21) {
     sunIntensity = 0;
     skyColor = new THREE.Color(0x0a0a1e);
-    ambientIntensity = 0.1;
+    ambientIntensity = 0.05 + moonlightStrength * 0.15;
   } else if (hour < 7) {
     const t = (hour - 5) / 2;
     sunIntensity = t * 1.2;
@@ -725,7 +779,13 @@ function updateDayNight() {
   sun.intensity = sunIntensity;
   scene.background = skyColor;
   ambient.intensity = ambientIntensity;
-  hemi.intensity = sunIntensity > 0 ? 0.6 : 0.1;
+  hemi.intensity = sunIntensity > 0 ? 0.6 : 0.05 + moonlightStrength * 0.1;
+
+  if (fogDensity > 0) {
+    scene.fog = new THREE.FogExp2(skyColor, fogDensity * 0.015);
+  } else {
+    scene.fog = null;
+  }
 
   const isNight = hour < 6 || hour > 20;
   flashlight.intensity = isNight ? 3 : 0;
