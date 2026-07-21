@@ -49,7 +49,7 @@ canvas { display: block; }
     <div id="joystick-knob"></div>
   </div>
 </div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v5</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v6</div>
 
 <script type="importmap">
 {
@@ -175,6 +175,7 @@ function makeTree(height, trunkColor, foliageColor) {
   return group;
 }
 
+const collidables = [];
 const trees = [];
 for (let i = 0; i < 120; i++) {
   const { lat, lon } = randomPointOnSphere();
@@ -185,8 +186,10 @@ for (let i = 0; i < 120; i++) {
   placeOnGlobe(tree, lat, lon);
   globePivot.add(tree);
   trees.push({ obj: tree, lat, lon });
+  collidables.push({ lat, lon, radius: 0.4 });
 }
 
+// --- ROCKS ---
 // --- ROCKS ---
 for (let i = 0; i < 40; i++) {
   const { lat, lon } = randomPointOnSphere();
@@ -203,6 +206,7 @@ for (let i = 0; i < 40; i++) {
   rock.castShadow = true;
   placeOnGlobe(rock, lat, lon);
   globePivot.add(rock);
+  collidables.push({ lat, lon, radius: size * 0.8 });
 }
 
 // --- FLOWERS ---
@@ -275,7 +279,7 @@ function buildRiver(startLat, startLon, segments) {
     const pos = latLonToWorld(lat, lon);
     const normal = pos.clone().normalize();
 
-    const segGeo = new THREE.PlaneGeometry(0.4, 0.9);
+    const segGeo = new THREE.PlaneGeometry(0.5, 1.0);
     const segMat = new THREE.MeshStandardMaterial({
       color: 0x3399bb,
       roughness: 0.1,
@@ -285,11 +289,12 @@ function buildRiver(startLat, startLon, segments) {
       side: THREE.DoubleSide,
     });
     const seg = new THREE.Mesh(segGeo, segMat);
-    seg.position.copy(pos.add(normal.clone().multiplyScalar(0.06)));
-    const up = new THREE.Vector3(0, 1, 0);
-    const quat = new THREE.Quaternion().setFromUnitVectors(up, normal);
+    seg.position.copy(pos).add(normal.clone().multiplyScalar(0.06));
+    const fwd = new THREE.Vector3(0, 0, 1);
+    const quat = new THREE.Quaternion().setFromUnitVectors(fwd, normal);
     seg.quaternion.copy(quat);
-    seg.rotateOnAxis(new THREE.Vector3(0, 0, 1), dir + Math.sin(i * 0.5) * 0.8);
+    const angle = dir + Math.sin(i * 0.5) * 0.8;
+    seg.rotateOnAxis(normal, angle);
     group.add(seg);
   }
   return group;
@@ -362,7 +367,7 @@ function buildPlayer() {
 }
 
 const player = buildPlayer();
-player.position.set(0, GLOBE_RADIUS, 0);
+player.position.set(0, GLOBE_RADIUS - 0.05, 0);
 scene.add(player);
 
 // --- CAMERA SETUP ---
@@ -536,7 +541,18 @@ function animate() {
     const step = moveSpeed * moveInput;
     const rotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), step * Math.cos(playerFacing));
     const rotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -step * Math.sin(playerFacing));
-    globeRotation.premultiply(rotX).premultiply(rotZ);
+    const newRotation = globeRotation.clone().premultiply(rotX).premultiply(rotZ);
+
+    const playerWorldPos = new THREE.Vector3(0, GLOBE_RADIUS, 0);
+    let blocked = false;
+    for (const c of collidables) {
+      const objPos = latLonToWorld(c.lat, c.lon).applyQuaternion(newRotation);
+      const dist = playerWorldPos.distanceTo(objPos);
+      if (dist < c.radius + 0.3) { blocked = true; break; }
+    }
+    if (!blocked) {
+      globeRotation.copy(newRotation);
+    }
   }
 
   globePivot.quaternion.copy(globeRotation);
