@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v25</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v26</div>
 
 <script type="importmap">
 {
@@ -625,6 +625,8 @@ let cameraManual = false;
 let lastTouchAngle = null;
 let pinchStartDist = null;
 let pinchStartZoom = null;
+let pinchStartAvgY = null;
+let pinchStartHeight = null;
 
 // Mouse/touch drag to orbit camera
 let isDragging = false;
@@ -647,7 +649,9 @@ window.addEventListener('mousemove', (e) => {
   const dy = e.clientY - dragStartY;
   cameraAngle = dragStartAngle + dx * 0.01;
   cameraTargetAngle = cameraAngle;
-  cameraHeight = Math.max(1, Math.min(12, dragStartHeight - dy * 0.02));
+  if (e.shiftKey) {
+    cameraHeight = Math.max(1, Math.min(12, dragStartHeight - dy * 0.02));
+  }
 });
 window.addEventListener('mouseup', () => { isDragging = false; });
 
@@ -675,6 +679,8 @@ renderer.domElement.addEventListener('touchstart', (e) => {
     const dy = e.touches[0].clientY - e.touches[1].clientY;
     pinchStartDist = Math.sqrt(dx * dx + dy * dy);
     pinchStartZoom = cameraDistance;
+    pinchStartAvgY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    pinchStartHeight = cameraHeight;
   }
 });
 renderer.domElement.addEventListener('touchmove', (e) => {
@@ -685,6 +691,10 @@ renderer.domElement.addEventListener('touchmove', (e) => {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const scale = pinchStartDist / dist;
     cameraDistance = Math.max(4, Math.min(60, pinchStartZoom * scale));
+    const avgY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    if (!pinchStartAvgY) pinchStartAvgY = avgY;
+    const tiltDelta = avgY - pinchStartAvgY;
+    cameraHeight = Math.max(1, Math.min(12, pinchStartHeight + tiltDelta * 0.02));
     return;
   }
   for (const touch of e.changedTouches) {
@@ -699,7 +709,7 @@ renderer.domElement.addEventListener('touchend', (e) => {
   for (const touch of e.changedTouches) {
     if (touch.identifier === orbitTouchId) orbitTouchId = null;
   }
-  if (e.touches.length < 2) pinchStartDist = null;
+  if (e.touches.length < 2) { pinchStartDist = null; pinchStartAvgY = null; }
 });
 
 // Scroll/keyboard zoom
@@ -902,13 +912,13 @@ function animate() {
   const isTurning = isDragging || orbitTouchId !== null;
 
   if (isWalking || isTurning) {
-    walkCycle += delta * (isWalking ? 8 : 5);
-    const swing = Math.sin(walkCycle) * (isWalking ? 0.5 : 0.3);
+    walkCycle += delta * (isWalking ? 8 : 12);
+    const swing = Math.sin(walkCycle) * (isWalking ? 0.5 : 0.35);
     player.userData.leftLeg.rotation.x = swing;
     player.userData.rightLeg.rotation.x = -swing;
     player.userData.leftArm.rotation.x = -swing * 0.4;
     player.userData.rightArm.rotation.x = swing * 0.4;
-    player.rotation.z = Math.sin(walkCycle) * (isWalking ? 0.04 : 0.02);
+    player.rotation.z = Math.sin(walkCycle) * (isWalking ? 0.04 : 0.03);
   } else {
     walkCycle = 0;
     player.userData.leftLeg.rotation.x *= 0.85;
