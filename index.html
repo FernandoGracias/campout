@@ -49,7 +49,7 @@ canvas { display: block; }
     <div id="joystick-knob"></div>
   </div>
 </div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v13</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v14</div>
 
 <script type="importmap">
 {
@@ -240,31 +240,13 @@ const lakeData = [];
 
 function buildLake(lat, lon, radius) {
   lakeData.push({ lat, lon, radius });
-  const group = new THREE.Group();
-  const waterGeo = new THREE.CircleGeometry(radius, 24);
-  const waterMat = new THREE.MeshStandardMaterial({
-    color: 0x2277aa,
-    roughness: 0.05,
-    metalness: 0.3,
-    transparent: true,
-    opacity: 0.85,
-  });
-  const water = new THREE.Mesh(waterGeo, waterMat);
-  water.rotation.x = -Math.PI / 2;
-  water.position.y = -0.08;
-  group.add(water);
-
-  placeOnGlobe(group, lat, lon);
-  return group;
 }
 
 // --- RIVER ---
 const riverPaths = [];
 
 function buildRiver(startLat, startLon, endLat, endLon, segments) {
-  const group = new THREE.Group();
   const waterWidth = 0.3;
-
   const pathPoints = [];
   for (let i = 0; i <= segments; i++) {
     const t = i / segments;
@@ -273,95 +255,197 @@ function buildRiver(startLat, startLon, endLat, endLon, segments) {
     pathPoints.push({ lat, lon });
   }
   riverPaths.push({ points: pathPoints, width: waterWidth });
-
-  const verts = [];
-  for (let i = 0; i < pathPoints.length; i++) {
-    const pos = latLonToWorld(pathPoints[i].lat, pathPoints[i].lon);
-    const normal = pos.clone().normalize();
-    let tangent;
-    if (i < pathPoints.length - 1) {
-      tangent = latLonToWorld(pathPoints[i+1].lat, pathPoints[i+1].lon).sub(pos.clone()).normalize();
-    } else {
-      tangent = pos.clone().sub(latLonToWorld(pathPoints[i-1].lat, pathPoints[i-1].lon)).normalize();
-    }
-    const binormal = new THREE.Vector3().crossVectors(normal, tangent).normalize();
-    const surfacePos = pos.clone().add(normal.clone().multiplyScalar(-0.05));
-    const left = surfacePos.clone().add(binormal.clone().multiplyScalar(-waterWidth));
-    const right = surfacePos.clone().add(binormal.clone().multiplyScalar(waterWidth));
-    verts.push(left.x, left.y, left.z, right.x, right.y, right.z);
-  }
-
-  const indices = [];
-  for (let i = 0; i < pathPoints.length - 1; i++) {
-    const a = i * 2, b = i * 2 + 1, c = (i + 1) * 2, d = (i + 1) * 2 + 1;
-    indices.push(a, c, b, b, c, d);
-  }
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
-  geo.setIndex(indices);
-  geo.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0x2277aa, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
-  });
-  group.add(new THREE.Mesh(geo, mat));
-  return group;
 }
 
 const lakePosArray = [];
 for (let i = 0; i < 5; i++) {
   const { lat, lon } = randomPointOnSphere();
   const radius = 1.2 + rng() * 1.8;
-  globePivot.add(buildLake(lat, lon, radius));
+  buildLake(lat, lon, radius);
   lakePosArray.push({ lat, lon });
 }
 
 for (let i = 0; i < lakePosArray.length - 1; i += 2) {
   const a = lakePosArray[i];
   const b = lakePosArray[i + 1];
-  globePivot.add(buildRiver(a.lat, a.lon, b.lat, b.lon, 80));
+  buildRiver(a.lat, a.lon, b.lat, b.lon, 80);
 }
 
-// --- DEFORM GLOBE (carve water bodies) ---
+// --- DEFORM GLOBE (hills, lake basins, river channels) ---
+// Simple noise function for hills
+function noise2D(x, y) {
+  const n = Math.sin(x * 1.3 + y * 0.7) * 0.5 + Math.sin(x * 0.5 - y * 1.1) * 0.3 + Math.sin(x * 2.1 + y * 1.9) * 0.2;
+  return n;
+}
+
 const globePos = globeGeo.attributes.position;
-for (let v = 0; v < globePos.count; v++) {
+const vertCount = globePos.count;
+const colors = new Float32Array(vertCount * 3);
+const baseGreen = new THREE.Color(0x4a8c3f);
+const sandColor = new THREE.Color(0xc4a55a);
+const waterLevel = [];
+
+for (let v = 0; v < vertCount; v++) {
   const vx = globePos.getX(v);
   const vy = globePos.getY(v);
   const vz = globePos.getZ(v);
   const vertPos = new THREE.Vector3(vx, vy, vz);
   const vertNorm = vertPos.clone().normalize();
-  const vertLat = Math.asin(vy / GLOBE_RADIUS);
-  const vertLon = Math.atan2(vz, vx);
 
-  let depression = 0;
+  // Hills: displace outward based on noise
+  const hillAmount = noise2D(vx * 0.3, vz * 0.3) * 0.8 + noise2D(vx * 0.7, vy * 0.5) * 0.4;
+  let displacement = Math.max(0, hillAmount) * 0.7;
 
+  // Lake depressions: irregular shapes using noise-modulated radius
+  let isWater = false;
   for (const lake of lakeData) {
     const lakePos = latLonToWorld(lake.lat, lake.lon);
     const dist = vertPos.distanceTo(lakePos);
-    if (dist < lake.radius + 0.3) {
-      const t = Math.max(0, 1 - dist / (lake.radius + 0.3));
-      depression = Math.max(depression, t * 0.6);
+    const angle = Math.atan2(vertPos.z - lakePos.z, vertPos.x - lakePos.x);
+    const irregularRadius = lake.radius * (0.7 + 0.3 * Math.sin(angle * 3) + 0.15 * Math.sin(angle * 7 + 1));
+    if (dist < irregularRadius) {
+      const t = 1 - dist / irregularRadius;
+      displacement = -0.5 * t * t;
+      isWater = true;
+    } else if (dist < irregularRadius + 0.4) {
+      const t = 1 - (dist - irregularRadius) / 0.4;
+      displacement = Math.min(displacement, -0.1 * t);
+      isWater = false;
+      colors[v * 3] = sandColor.r;
+      colors[v * 3 + 1] = sandColor.g;
+      colors[v * 3 + 2] = sandColor.b;
+      continue;
     }
   }
 
+  // River channels
   for (const river of riverPaths) {
-    for (let i = 0; i < river.points.length - 1; i++) {
+    for (let i = 0; i < river.points.length; i += 2) {
       const rp = latLonToWorld(river.points[i].lat, river.points[i].lon);
       const dist = vertPos.distanceTo(rp);
-      if (dist < river.width + 0.4) {
-        const t = Math.max(0, 1 - dist / (river.width + 0.4));
-        depression = Math.max(depression, t * 0.4);
+      if (dist < river.width + 0.2) {
+        const t = Math.max(0, 1 - dist / (river.width + 0.2));
+        displacement = Math.min(displacement, -0.3 * t);
+        if (dist < river.width) isWater = true;
+      }
+      if (dist < river.width + 0.5 && dist >= river.width + 0.2) {
+        const t = 1 - (dist - river.width - 0.2) / 0.3;
+        if (t > 0) {
+          colors[v * 3] = baseGreen.r + (sandColor.r - baseGreen.r) * t;
+          colors[v * 3 + 1] = baseGreen.g + (sandColor.g - baseGreen.g) * t;
+          colors[v * 3 + 2] = baseGreen.b + (sandColor.b - baseGreen.b) * t;
+          continue;
+        }
       }
     }
   }
 
-  if (depression > 0) {
-    const newPos = vertPos.clone().addScaledVector(vertNorm, -depression);
-    globePos.setXYZ(v, newPos.x, newPos.y, newPos.z);
+  const newPos = vertPos.clone().addScaledVector(vertNorm, displacement);
+  globePos.setXYZ(v, newPos.x, newPos.y, newPos.z);
+
+  if (isWater) {
+    colors[v * 3] = sandColor.r * 0.7;
+    colors[v * 3 + 1] = sandColor.g * 0.7;
+    colors[v * 3 + 2] = sandColor.b * 0.6;
+  } else if (colors[v * 3] === 0) {
+    const hillTint = Math.max(0, hillAmount) * 0.15;
+    colors[v * 3] = baseGreen.r + hillTint * 0.3;
+    colors[v * 3 + 1] = baseGreen.g + hillTint;
+    colors[v * 3 + 2] = baseGreen.b + hillTint * 0.2;
   }
+
+  waterLevel.push(isWater);
 }
+
+globeGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+globeMat.vertexColors = true;
+globeMat.needsUpdate = true;
 globePos.needsUpdate = true;
 globeGeo.computeVertexNormals();
+
+// Create water surfaces from depressed lake areas
+for (const lake of lakeData) {
+  const lakePos = latLonToWorld(lake.lat, lake.lon);
+  const normal = lakePos.clone().normalize();
+
+  const waterVerts = [];
+  const waterIndices = [];
+  const rings = 16;
+  const segs = 24;
+  waterVerts.push(lakePos.x + normal.x * (-0.12), lakePos.y + normal.y * (-0.12), lakePos.z + normal.z * (-0.12));
+  for (let r = 1; r <= rings; r++) {
+    for (let s = 0; s < segs; s++) {
+      const angle = (s / segs) * Math.PI * 2;
+      const dist = (r / rings) * lake.radius * (0.7 + 0.3 * Math.sin(angle * 3) + 0.15 * Math.sin(angle * 7 + 1));
+      const tangent = new THREE.Vector3(-normal.y, normal.x, 0).normalize();
+      const binormal = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+      const pt = lakePos.clone()
+        .addScaledVector(tangent, Math.cos(angle) * dist)
+        .addScaledVector(binormal, Math.sin(angle) * dist);
+      pt.addScaledVector(normal, -0.12);
+      waterVerts.push(pt.x, pt.y, pt.z);
+    }
+  }
+  for (let s = 0; s < segs; s++) {
+    waterIndices.push(0, 1 + s, 1 + (s + 1) % segs);
+  }
+  for (let r = 1; r < rings; r++) {
+    for (let s = 0; s < segs; s++) {
+      const curr = 1 + (r - 1) * segs + s;
+      const next = 1 + (r - 1) * segs + (s + 1) % segs;
+      const currOuter = 1 + r * segs + s;
+      const nextOuter = 1 + r * segs + (s + 1) % segs;
+      waterIndices.push(curr, currOuter, next);
+      waterIndices.push(next, currOuter, nextOuter);
+    }
+  }
+
+  const waterGeo = new THREE.BufferGeometry();
+  waterGeo.setAttribute('position', new THREE.Float32BufferAttribute(waterVerts, 3));
+  waterGeo.setIndex(waterIndices);
+  waterGeo.computeVertexNormals();
+  const waterMat = new THREE.MeshStandardMaterial({
+    color: 0x2277aa, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.8, side: THREE.DoubleSide,
+  });
+  const waterMesh = new THREE.Mesh(waterGeo, waterMat);
+  globePivot.add(waterMesh);
+}
+
+// Create river water meshes
+for (const river of riverPaths) {
+  const verts = [];
+  for (let i = 0; i < river.points.length; i++) {
+    const pos = latLonToWorld(river.points[i].lat, river.points[i].lon);
+    const normal = pos.clone().normalize();
+    let tangent;
+    if (i < river.points.length - 1) {
+      tangent = latLonToWorld(river.points[i+1].lat, river.points[i+1].lon).sub(pos.clone()).normalize();
+    } else {
+      tangent = pos.clone().sub(latLonToWorld(river.points[i-1].lat, river.points[i-1].lon)).normalize();
+    }
+    const binormal = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+    const surfacePos = pos.clone().addScaledVector(normal, -0.15);
+    const left = surfacePos.clone().addScaledVector(binormal, -river.width);
+    const right = surfacePos.clone().addScaledVector(binormal, river.width);
+    verts.push(left.x, left.y, left.z, right.x, right.y, right.z);
+  }
+  const indices = [];
+  for (let i = 0; i < river.points.length - 1; i++) {
+    const a = i * 2, b = i * 2 + 1, c = (i + 1) * 2, d = (i + 1) * 2 + 1;
+    indices.push(a, c, b, b, c, d);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x2277aa, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.8, side: THREE.DoubleSide,
+  });
+  globePivot.add(new THREE.Mesh(geo, mat));
+}
+
+// --- PLAYER TERRAIN FOLLOWING ---
+const raycaster = new THREE.Raycaster();
 
 // --- PLAYER ---
 let playerFacing = 0;
@@ -703,7 +787,6 @@ function animate() {
     player.userData.leftArm.rotation.x = -swing * 0.4;
     player.userData.rightArm.rotation.x = swing * 0.4;
     player.rotation.z = Math.sin(walkCycle) * 0.03;
-    player.position.y = GLOBE_RADIUS - 0.05 + Math.abs(Math.sin(walkCycle * 2)) * 0.02;
   } else {
     walkCycle = 0;
     player.userData.leftLeg.rotation.x *= 0.85;
@@ -711,7 +794,17 @@ function animate() {
     player.userData.leftArm.rotation.x *= 0.85;
     player.userData.rightArm.rotation.x *= 0.85;
     player.rotation.z *= 0.9;
-    player.position.y += (GLOBE_RADIUS - 0.05 - player.position.y) * 0.1;
+  }
+
+  // Terrain following: raycast downward from above player to find globe surface
+  raycaster.set(new THREE.Vector3(0, GLOBE_RADIUS + 5, 0), new THREE.Vector3(0, -1, 0));
+  const hits = raycaster.intersectObject(globe);
+  if (hits.length > 0) {
+    const targetY = hits[0].point.y - 0.02;
+    player.position.y += (targetY - player.position.y) * 0.15;
+  }
+  if (isWalking) {
+    player.position.y += Math.abs(Math.sin(walkCycle * 2)) * 0.02;
   }
 
   renderer.render(scene, camera);
