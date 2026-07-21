@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v46</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v47</div>
 
 <script type="importmap">
 {
@@ -178,6 +178,41 @@ scene.add(hemi);
 
 const ambient = new THREE.AmbientLight(0x404050, 0.3);
 scene.add(ambient);
+
+// Stars
+const starCount = 500;
+const starGeo = new THREE.BufferGeometry();
+const starPositions = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount; i++) {
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  const r = 150;
+  starPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+  starPositions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+  starPositions[i * 3 + 2] = r * Math.cos(phi);
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5, transparent: true, opacity: 0 });
+const stars = new THREE.Points(starGeo, starMat);
+scene.add(stars);
+
+// Fireflies
+const fireflyCount = 20;
+const fireflyGeo = new THREE.BufferGeometry();
+const fireflyPositions = new Float32Array(fireflyCount * 3);
+const fireflyData = [];
+for (let i = 0; i < fireflyCount; i++) {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 3 + Math.random() * 8;
+  fireflyPositions[i * 3] = Math.cos(angle) * dist;
+  fireflyPositions[i * 3 + 1] = GLOBE_RADIUS + 0.5 + Math.random() * 2;
+  fireflyPositions[i * 3 + 2] = Math.sin(angle) * dist;
+  fireflyData.push({ phase: Math.random() * Math.PI * 2, speed: 0.5 + Math.random() * 1.5, drift: Math.random() * 0.3 });
+}
+fireflyGeo.setAttribute('position', new THREE.BufferAttribute(fireflyPositions, 3));
+const fireflyMat = new THREE.PointsMaterial({ color: 0xccff44, size: 0.15, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+const fireflies = new THREE.Points(fireflyGeo, fireflyMat);
+scene.add(fireflies);
 
 // --- GLOBE PIVOT (everything on the globe goes in here) ---
 const globePivot = new THREE.Group();
@@ -287,6 +322,44 @@ for (let i = 0; i < 60; i++) {
   globePivot.add(tree);
   trees.push({ obj: tree, lat, lon });
   collidables.push({ lat, lon, radius: 0.08 });
+}
+
+// Remove trees in water (below grade) and spread out trees too close together
+for (let i = trees.length - 1; i >= 0; i--) {
+  const treePos = latLonToWorld(trees[i].lat, trees[i].lon);
+  const origLen = treePos.length();
+  // Check if this position is below the water sphere level (deformed below GLOBE_RADIUS - 0.25)
+  // Use the globe vertex positions to check if the terrain is depressed here
+  let inWater = false;
+  for (const lake of lakeData) {
+    const lakePos = latLonToWorld(lake.lat, lake.lon);
+    const dist = treePos.distanceTo(lakePos);
+    const angle = Math.atan2(treePos.z - lakePos.z, treePos.x - lakePos.x);
+    const irregularRadius = lake.radius * (0.7 + 0.3 * Math.sin(angle * 3) + 0.15 * Math.sin(angle * 7 + 1));
+    if (dist < irregularRadius) { inWater = true; break; }
+  }
+  if (inWater) {
+    globePivot.remove(trees[i].obj);
+    collidables.splice(collidables.findIndex(c => c.lat === trees[i].lat && c.lon === trees[i].lon), 1);
+    trees.splice(i, 1);
+    continue;
+  }
+  // Spread out trees that are too close (< 0.8 units apart)
+  for (let j = i - 1; j >= 0; j--) {
+    const otherPos = latLonToWorld(trees[j].lat, trees[j].lon);
+    if (treePos.distanceTo(otherPos) < 0.8) {
+      // Push this tree away
+      const midLat = (trees[i].lat + trees[j].lat) / 2;
+      const midLon = (trees[i].lon + trees[j].lon) / 2;
+      const pushLat = trees[i].lat + (trees[i].lat - midLat) * 1.5;
+      const pushLon = trees[i].lon + (trees[i].lon - midLon) * 1.5;
+      trees[i].lat = pushLat;
+      trees[i].lon = pushLon;
+      placeOnGlobe(trees[i].obj, pushLat, pushLon, -0.15);
+      collidables[collidables.findIndex(c => c.lat === trees[i].lat)] = { lat: pushLat, lon: pushLon, radius: 0.08 };
+      break;
+    }
+  }
 }
 
 // --- ROCKS ---
@@ -898,22 +971,28 @@ function pitchCamp() {
     shape.closePath();
     const geo = new THREE.ExtrudeGeometry(shape, { depth: 1.2, bevelEnabled: false });
     const tent = new THREE.Mesh(geo, tentMat);
-    tent.position.set(-0.8, 0, -0.6);
+    tent.position.set(-0.8, -0.1, -0.6);
+    tent.scale.setScalar(1.25);
     tent.castShadow = true;
     tent.userData.needsRaycast = true;
+    tent.userData.groundSink = 0.1;
     campGroup.add(tent);
   } else if (tentStyle === 'dome') {
     const geo = new THREE.SphereGeometry(0.8, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
     const tent = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: tentColor, roughness: 0.7, side: THREE.DoubleSide }));
-    tent.position.set(-0.8, 0, 0);
+    tent.position.set(-0.8, -0.1, 0);
+    tent.scale.setScalar(1.25);
     tent.castShadow = true;
     tent.userData.needsRaycast = true;
+    tent.userData.groundSink = 0.1;
     campGroup.add(tent);
   } else if (tentStyle === 'cabin') {
     const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.9, 1.2), tentMat);
     body.position.set(-0.8, 0.45, 0);
+    body.scale.setScalar(1.25);
     body.castShadow = true;
     body.userData.needsRaycast = true;
+    body.userData.groundSink = 0.1;
     campGroup.add(body);
     const roofShape = new THREE.Shape();
     roofShape.moveTo(-0.8, 0);
@@ -925,17 +1004,21 @@ function pitchCamp() {
       new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8 })
     );
     roof.position.set(-0.8, 0.9, -0.6);
+    roof.scale.setScalar(1.25);
     roof.castShadow = true;
     roof.userData.needsRaycast = true;
+    roof.userData.isRoof = true;
     campGroup.add(roof);
   } else if (tentStyle === 'tunnel') {
     const geo = new THREE.CylinderGeometry(0.6, 0.6, 1.4, 10, 1, true, 0, Math.PI);
     const tent = new THREE.Mesh(geo, tentMat);
-    tent.position.set(-0.8, 0, 0);
+    tent.position.set(-0.8, -0.1, 0);
+    tent.scale.setScalar(1.25);
     tent.rotation.z = Math.PI / 2;
     tent.rotation.y = Math.PI / 2;
     tent.castShadow = true;
     tent.userData.needsRaycast = true;
+    tent.userData.groundSink = 0.1;
     campGroup.add(tent);
   }
 
@@ -1097,7 +1180,12 @@ function pitchCamp() {
     const hits = ray.intersectObject(globe, false);
     if (hits.length > 0) {
       const localHit = campGroup.worldToLocal(hits[0].point.clone());
-      child.position.y = localHit.y;
+      if (child.userData.isRoof) {
+        child.position.y = localHit.y + 0.9 * 1.25;
+      } else {
+        const sink = child.userData.groundSink || 0;
+        child.position.y = localHit.y - sink;
+      }
     }
   }
 
@@ -1270,6 +1358,13 @@ function updateDayNight() {
       Math.cos(playerFacing) * 5
     );
   }
+
+  // Stars visible at night
+  starMat.opacity = sunAltitude < 0 ? Math.min(1, -sunAltitude * 5) : 0;
+
+  // Fireflies visible at dusk/night
+  const fireflyVisibility = sunAltitude < 0.1 ? Math.min(1, (0.1 - sunAltitude) * 5) : 0;
+  fireflyMat.opacity = fireflyVisibility;
 }
 
 // --- ANIMATION ---
@@ -1393,6 +1488,18 @@ function animate() {
   }
 
   updateDayNight();
+
+  // Animate fireflies
+  if (fireflyMat.opacity > 0) {
+    const fp = fireflyGeo.attributes.position.array;
+    for (let i = 0; i < fireflyCount; i++) {
+      const d = fireflyData[i];
+      fp[i * 3] += Math.sin(clock.elapsedTime * d.speed + d.phase) * d.drift * delta;
+      fp[i * 3 + 1] += Math.sin(clock.elapsedTime * d.speed * 0.7 + d.phase * 2) * 0.2 * delta;
+      fp[i * 3 + 2] += Math.cos(clock.elapsedTime * d.speed * 0.5 + d.phase) * d.drift * delta;
+    }
+    fireflyGeo.attributes.position.needsUpdate = true;
+  }
 
   // Animate sleep Zs
   if (isSleeping && campGroup) {
