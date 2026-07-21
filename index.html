@@ -49,7 +49,7 @@ canvas { display: block; }
     <div id="joystick-knob"></div>
   </div>
 </div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v14</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v15</div>
 
 <script type="importmap">
 {
@@ -477,8 +477,9 @@ function buildPlayer() {
   const beardGeo = new THREE.SphereGeometry(0.18, 7, 5);
   const beardMat = new THREE.MeshStandardMaterial({ color: 0xaa2200, roughness: 0.85 });
   const beard = new THREE.Mesh(beardGeo, beardMat);
-  beard.position.set(0, 0.82, 0.1);
+  beard.position.set(0, 0.82, 0.15);
   beard.scale.set(1.1, 1.5, 0.7);
+  beard.rotation.x = -0.2;
   beard.castShadow = true;
   group.add(beard);
 
@@ -511,25 +512,25 @@ function buildPlayer() {
   const armMat = new THREE.MeshStandardMaterial({ color: 0xd35f3e, roughness: 0.7 });
 
   const leftShoulder = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 4), armMat);
-  leftShoulder.position.set(-0.24, 0.75, 0);
+  leftShoulder.position.set(-0.2, 0.75, 0);
   leftShoulder.castShadow = true;
   group.add(leftShoulder);
 
   const rightShoulder = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 4), armMat);
-  rightShoulder.position.set(0.24, 0.75, 0);
+  rightShoulder.position.set(0.2, 0.75, 0);
   rightShoulder.castShadow = true;
   group.add(rightShoulder);
 
   const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.2, 3, 6), armMat);
-  leftArm.position.set(-0.24, 0.55, 0);
-  leftArm.rotation.z = -0.15;
+  leftArm.position.set(-0.2, 0.55, 0);
+  leftArm.rotation.z = -0.12;
   leftArm.castShadow = true;
   group.add(leftArm);
   group.userData.leftArm = leftArm;
 
   const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.2, 3, 6), armMat);
-  rightArm.position.set(0.24, 0.55, 0);
-  rightArm.rotation.z = 0.15;
+  rightArm.position.set(0.2, 0.55, 0);
+  rightArm.rotation.z = 0.12;
   rightArm.castShadow = true;
   group.add(rightArm);
   group.userData.rightArm = rightArm;
