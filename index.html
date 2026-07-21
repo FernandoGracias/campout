@@ -49,7 +49,7 @@ canvas { display: block; }
     <div id="joystick-knob"></div>
   </div>
 </div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v15</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v16</div>
 
 <script type="importmap">
 {
@@ -522,15 +522,15 @@ function buildPlayer() {
   group.add(rightShoulder);
 
   const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.2, 3, 6), armMat);
-  leftArm.position.set(-0.2, 0.55, 0);
-  leftArm.rotation.z = -0.12;
+  leftArm.position.set(-0.24, 0.55, 0);
+  leftArm.rotation.z = -0.15;
   leftArm.castShadow = true;
   group.add(leftArm);
   group.userData.leftArm = leftArm;
 
   const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.2, 3, 6), armMat);
-  rightArm.position.set(0.2, 0.55, 0);
-  rightArm.rotation.z = 0.12;
+  rightArm.position.set(0.24, 0.55, 0);
+  rightArm.rotation.z = 0.15;
   rightArm.castShadow = true;
   group.add(rightArm);
   group.userData.rightArm = rightArm;
@@ -787,7 +787,7 @@ function animate() {
     player.userData.rightLeg.rotation.x = -swing;
     player.userData.leftArm.rotation.x = -swing * 0.4;
     player.userData.rightArm.rotation.x = swing * 0.4;
-    player.rotation.z = Math.sin(walkCycle) * 0.03;
+    player.rotation.z = Math.sin(walkCycle) * 0.04;
   } else {
     walkCycle = 0;
     player.userData.leftLeg.rotation.x *= 0.85;
@@ -797,15 +797,12 @@ function animate() {
     player.rotation.z *= 0.9;
   }
 
-  // Terrain following: raycast downward from above player to find globe surface
+  // Terrain following: raycast downward to find globe surface
+  globe.updateMatrixWorld();
   raycaster.set(new THREE.Vector3(0, GLOBE_RADIUS + 5, 0), new THREE.Vector3(0, -1, 0));
-  const hits = raycaster.intersectObject(globe);
+  const hits = raycaster.intersectObject(globe, false);
   if (hits.length > 0) {
-    const targetY = hits[0].point.y - 0.02;
-    player.position.y += (targetY - player.position.y) * 0.15;
-  }
-  if (isWalking) {
-    player.position.y += Math.abs(Math.sin(walkCycle * 2)) * 0.02;
+    player.position.y = hits[0].point.y;
   }
 
   renderer.render(scene, camera);
