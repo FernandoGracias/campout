@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v29</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v30</div>
 
 <script type="importmap">
 {
@@ -687,7 +687,7 @@ let orbitStartAngle = 0;
 let orbitStartHeight = 0;
 
 renderer.domElement.addEventListener('touchstart', (e) => {
-  if (e.touches.length === 1) {
+  if (e.touches.length === 1 && !leverActive) {
     const touch = e.touches[0];
     const joyRect = document.getElementById('lever-zone').getBoundingClientRect();
     if (touch.clientX > joyRect.right || touch.clientY < joyRect.top) {
@@ -696,6 +696,19 @@ renderer.domElement.addEventListener('touchstart', (e) => {
       orbitStartY = touch.clientY;
       orbitStartAngle = cameraAngle;
       orbitStartHeight = cameraHeight;
+    }
+  }
+  // When lever is active and a NEW touch lands on the canvas, use it for orbit
+  if (leverActive && e.changedTouches.length > 0 && orbitTouchId === null) {
+    for (const touch of e.changedTouches) {
+      if (touch.identifier !== leverTouchId) {
+        orbitTouchId = touch.identifier;
+        orbitStartX = touch.clientX;
+        orbitStartY = touch.clientY;
+        orbitStartAngle = cameraAngle;
+        orbitStartHeight = cameraHeight;
+        break;
+      }
     }
   }
   if (e.touches.length === 2 && !leverActive) {
