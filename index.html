@@ -6,7 +6,7 @@
 <title>Campout</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { overflow: hidden; background: #1a1a2e; font-family: system-ui, sans-serif; touch-action: none; }
+body { overflow: hidden; background: #1a1a2e; font-family: system-ui, sans-serif; touch-action: none; -webkit-user-select: none; user-select: none; }
 canvas { display: block; }
 
 #joystick-zone {
@@ -105,7 +105,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v36</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v37</div>
 
 <script type="importmap">
 {
@@ -1033,7 +1033,46 @@ function pitchCamp() {
 
   globePivot.add(campGroup);
   campPitched = true;
+  campGlobeRotation = globeRotation.clone();
   document.getElementById('btn-pitch').style.borderColor = '#f0c040';
+}
+
+// Sleep state
+let isSleeping = false;
+let walkingToTent = false;
+let campGlobeRotation = null;
+const tapRaycaster = new THREE.Raycaster();
+const tapMouse = new THREE.Vector2();
+
+renderer.domElement.addEventListener('click', (e) => {
+  if (!campPitched || isSleeping || !campGroup) return;
+  tapMouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  tapMouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  tapRaycaster.setFromCamera(tapMouse, camera);
+  const hits = tapRaycaster.intersectObjects(campGroup.children, true);
+  if (hits.length > 0) {
+    walkingToTent = true;
+  }
+});
+
+function enterTent() {
+  isSleeping = true;
+  walkingToTent = false;
+  player.visible = false;
+  const overlay = document.createElement('div');
+  overlay.id = 'sleep-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:300;flex-direction:column;gap:16px;cursor:pointer;';
+  overlay.innerHTML = '<div style="color:#f0c040;font-size:24px;font-family:monospace;">💤 Sleeping...</div><div style="color:#aaa;font-size:14px;font-family:monospace;">Tap to wake up</div>';
+  overlay.addEventListener('click', wakeUp);
+  overlay.addEventListener('touchstart', (e) => { e.preventDefault(); wakeUp(); });
+  document.body.appendChild(overlay);
+}
+
+function wakeUp() {
+  isSleeping = false;
+  player.visible = true;
+  const overlay = document.getElementById('sleep-overlay');
+  if (overlay) overlay.remove();
 }
 
 document.getElementById('btn-pitch').addEventListener('click', pitchCamp);
@@ -1131,12 +1170,28 @@ function animate() {
   if (keys['s'] || keys['arrowdown']) moveInput = -1;
   if (leverActive) {
     moveInput = leverY;
+    walkingToTent = false;
   }
+
+  // Auto-walk to tent
+  if (walkingToTent && campGlobeRotation) {
+    const target = campGlobeRotation.clone().invert();
+    const current = globeRotation.clone().invert();
+    const angle = current.angleTo(target);
+    if (angle < 0.02) {
+      enterTent();
+    } else {
+      globeRotation.slerp(campGlobeRotation, Math.min(1, 2.0 * delta / angle));
+      moveInput = 0;
+    }
+  }
+
+  if (isSleeping) { moveInput = 0; }
 
   // Player always faces where camera is looking
   playerFacing = cameraAngle + Math.PI;
 
-  const isWalking = Math.abs(moveInput) > 0.1;
+  const isWalking = Math.abs(moveInput) > 0.1 || walkingToTent;
   const moveSpeed = 0.2 * delta;
 
   if (Math.abs(moveInput) > 0.1) {
