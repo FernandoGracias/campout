@@ -113,7 +113,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v56</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v58</div>
 
 <script type="importmap">
 {
@@ -407,7 +407,7 @@ const lakePosArray = [];
 // One big proper lake
 const bigLakeLat = 0.5;
 const bigLakeLon = 1.2;
-buildLake(bigLakeLat, bigLakeLon, 8.0);
+buildLake(bigLakeLat, bigLakeLon, 18.0);
 lakePosArray.push({ lat: bigLakeLat, lon: bigLakeLon });
 
 // A few smaller ponds
@@ -531,16 +531,16 @@ for (let v = 0; v < vertCount; v++) {
 
   // River channels
   for (const river of riverPaths) {
-    for (let i = 0; i < river.points.length; i += 2) {
+    for (let i = 0; i < river.points.length; i++) {
       const rp = latLonToWorld(river.points[i].lat, river.points[i].lon);
       const dist = vertPos.distanceTo(rp);
-      if (dist < river.width + 0.2) {
-        const t = Math.max(0, 1 - dist / (river.width + 0.2));
-        displacement = Math.min(displacement, -0.8 * t);
+      if (dist < river.width + 0.3) {
+        const t = Math.max(0, 1 - dist / (river.width + 0.3));
+        displacement = Math.min(displacement, -1.2 * t);
         if (dist < river.width) isWater = true;
       }
-      if (dist < river.width + 0.5 && dist >= river.width + 0.2) {
-        const t = 1 - (dist - river.width - 0.2) / 0.3;
+      if (dist < river.width + 0.6 && dist >= river.width + 0.3) {
+        const t = 1 - (dist - river.width - 0.3) / 0.3;
         if (t > 0) {
           colors[v * 3] = baseGreen.r + (sandColor.r - baseGreen.r) * t;
           colors[v * 3 + 1] = baseGreen.g + (sandColor.g - baseGreen.g) * t;
@@ -818,7 +818,7 @@ window.addEventListener('mousemove', (e) => {
   cameraAngle = dragStartAngle + dx * 0.01;
   cameraTargetAngle = cameraAngle;
   if (e.shiftKey) {
-    cameraHeight = Math.max(1, Math.min(12, dragStartHeight - dy * 0.02));
+    cameraHeight = Math.max(1, Math.min(12, dragStartHeight + dy * 0.02));
   }
 });
 window.addEventListener('mouseup', () => { isDragging = false; });
@@ -1459,11 +1459,14 @@ function animate() {
   const delta = clock.getDelta();
 
   let moveInput = 0;
-  if (keys['w'] || keys['arrowup']) moveInput = 1;
-  if (keys['s'] || keys['arrowdown']) moveInput = -1;
+  if (keys['w'] || keys['arrowup']) moveInput = -1;
+  if (keys['s'] || keys['arrowdown']) moveInput = 1;
   if (controlMode === 'joystick') {
     if (keys['a'] || keys['arrowleft']) playerFacing -= 2.5 * delta;
     if (keys['d'] || keys['arrowright']) playerFacing += 2.5 * delta;
+  } else {
+    if (keys['a'] || keys['arrowleft']) cameraAngle -= 2.5 * delta;
+    if (keys['d'] || keys['arrowright']) cameraAngle += 2.5 * delta;
   }
   if (leverActive) {
     moveInput = leverY;
@@ -1556,9 +1559,13 @@ function animate() {
   globePivot.quaternion.copy(globeRotation);
   player.rotation.y = playerFacing;
 
-  const camX = Math.sin(cameraAngle) * cameraDistance;
-  const camZ = Math.cos(cameraAngle) * cameraDistance;
-  camera.position.set(camX, GLOBE_RADIUS + cameraHeight, camZ);
+  // Camera: cameraHeight is tilt (1=ground level, 12=overhead), cameraDistance is total distance
+  const tiltFraction = cameraHeight / 12;
+  const camY = GLOBE_RADIUS + tiltFraction * cameraDistance;
+  const camHorizDist = cameraDistance * (1 - tiltFraction * 0.85);
+  const camX = Math.sin(cameraAngle) * camHorizDist;
+  const camZ = Math.cos(cameraAngle) * camHorizDist;
+  camera.position.set(camX, camY, camZ);
   camera.lookAt(0, GLOBE_RADIUS + 1, 0);
 
   const isTurning = isDragging || orbitTouchId !== null;
