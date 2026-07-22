@@ -113,7 +113,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v59</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v60</div>
 
 <script type="importmap">
 {
@@ -392,7 +392,7 @@ function buildLake(lat, lon, radius) {
 const riverPaths = [];
 
 function buildRiver(startLat, startLon, endLat, endLon, segments) {
-  const waterWidth = 0.3;
+  const waterWidth = 0.6;
   const pathPoints = [];
   for (let i = 0; i <= segments; i++) {
     const t = i / segments;
@@ -804,11 +804,9 @@ let dragStartAngle = 0;
 let dragStartHeight = 0;
 
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
-let dragButton = 0;
 renderer.domElement.addEventListener('mousedown', (e) => {
   if (e.target !== renderer.domElement) return;
   isDragging = true;
-  dragButton = e.button;
   dragStartX = e.clientX;
   dragStartAngle = cameraAngle;
   dragStartY = e.clientY;
@@ -818,15 +816,9 @@ window.addEventListener('mousemove', (e) => {
   if (!isDragging) return;
   const dx = e.clientX - dragStartX;
   const dy = e.clientY - dragStartY;
-  if (dragButton === 0) {
-    cameraAngle = dragStartAngle + dx * 0.01;
-    cameraTargetAngle = cameraAngle;
-    if (e.shiftKey) {
-      cameraHeight = Math.max(1, Math.min(12, dragStartHeight + dy * 0.02));
-    }
-  } else if (dragButton === 2) {
-    cameraHeight = Math.max(1, Math.min(12, dragStartHeight + dy * 0.02));
-  }
+  cameraAngle = dragStartAngle + dx * 0.01;
+  cameraTargetAngle = cameraAngle;
+  cameraHeight = Math.max(1, Math.min(12, dragStartHeight + dy * 0.02));
 });
 window.addEventListener('mouseup', () => { isDragging = false; });
 
