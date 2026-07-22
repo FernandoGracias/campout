@@ -114,7 +114,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v61</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v62</div>
 
 <script type="importmap">
 {
@@ -652,17 +652,23 @@ function buildPlayer() {
   group.add(brim);
 
   const legMat = new THREE.MeshStandardMaterial({ color: 0x3d5a80, roughness: 0.8 });
+  const leftLegPivot = new THREE.Group();
+  leftLegPivot.position.set(-0.1, 0.38, 0);
   const leftLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.2, 3, 6), legMat);
-  leftLeg.position.set(-0.1, 0.2, 0);
+  leftLeg.position.set(0, -0.18, 0);
   leftLeg.castShadow = true;
-  group.add(leftLeg);
-  group.userData.leftLeg = leftLeg;
+  leftLegPivot.add(leftLeg);
+  group.add(leftLegPivot);
+  group.userData.leftLeg = leftLegPivot;
 
+  const rightLegPivot = new THREE.Group();
+  rightLegPivot.position.set(0.1, 0.38, 0);
   const rightLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.2, 3, 6), legMat);
-  rightLeg.position.set(0.1, 0.2, 0);
+  rightLeg.position.set(0, -0.18, 0);
   rightLeg.castShadow = true;
-  group.add(rightLeg);
-  group.userData.rightLeg = rightLeg;
+  rightLegPivot.add(rightLeg);
+  group.add(rightLegPivot);
+  group.userData.rightLeg = rightLegPivot;
 
   const armMat = new THREE.MeshStandardMaterial({ color: 0xd35f3e, roughness: 0.7 });
 
@@ -676,17 +682,23 @@ function buildPlayer() {
   rightShoulder.castShadow = true;
   group.add(rightShoulder);
 
+  const leftArmPivot = new THREE.Group();
+  leftArmPivot.position.set(-0.24, 0.72, 0);
   const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.2, 3, 6), armMat);
-  leftArm.position.set(-0.24, 0.55, 0);
-  leftArm.rotation.z = -0.15;
+  leftArm.position.set(0, -0.17, 0);
   leftArm.castShadow = true;
-  group.add(leftArm);
-  group.userData.leftArm = leftArm;
+  leftArmPivot.add(leftArm);
+  group.add(leftArmPivot);
+  group.userData.leftArm = leftArmPivot;
 
+  const rightArmPivot = new THREE.Group();
+  rightArmPivot.position.set(0.24, 0.72, 0);
   const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.2, 3, 6), armMat);
-  rightArm.position.set(0.24, 0.55, 0);
-  rightArm.rotation.z = 0.15;
+  rightArm.position.set(0, -0.17, 0);
   rightArm.castShadow = true;
+  rightArmPivot.add(rightArm);
+  group.add(rightArmPivot);
+  group.userData.rightArm = rightArmPivot;
   group.add(rightArm);
   group.userData.rightArm = rightArm;
 
