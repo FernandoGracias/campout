@@ -70,6 +70,7 @@ canvas { display: block; }
     <label>Time of Day</label>
     <input type="range" id="time-slider" min="0" max="24" step="0.1" value="12">
     <div id="time-display" style="font-size:11px;color:#f0c040;text-align:center;margin-top:4px;">12:00</div>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:#aaa;"><input type="checkbox" id="time-pause"> Pause time cycle</label>
   </div>
   <div class="control-row">
     <label>Moonlight</label>
@@ -113,7 +114,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v60</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v61</div>
 
 <script type="importmap">
 {
@@ -242,6 +243,17 @@ const globeMat = new THREE.MeshStandardMaterial({
 const globe = new THREE.Mesh(globeGeo, globeMat);
 globe.receiveShadow = true;
 globePivot.add(globe);
+
+// Atmosphere haze
+const atmosGeo = new THREE.SphereGeometry(GLOBE_RADIUS + 0.8, 32, 32);
+const atmosMat = new THREE.MeshBasicMaterial({
+  color: 0x88bbff,
+  transparent: true,
+  opacity: 0.15,
+  side: THREE.BackSide,
+});
+const atmosphere = new THREE.Mesh(atmosGeo, atmosMat);
+scene.add(atmosphere);
 
 // --- SEEDED RANDOM ---
 function mulberry32(a) {
@@ -923,6 +935,7 @@ let moonlightStrength = 0.5;
 let fogDensity = 0;
 let tentColor = 0xcc5522;
 let tentStyle = 'aframe';
+let timePaused = false;
 
 // Load saved settings from localStorage
 (function loadSettings() {
@@ -935,6 +948,7 @@ let tentStyle = 'aframe';
   if (s.controlMode) { controlMode = s.controlMode; document.getElementById('control-mode').value = s.controlMode; document.getElementById('joystick-base').style.display = s.controlMode === 'joystick' ? 'block' : 'none'; document.getElementById('lever-track').style.display = s.controlMode === 'pan' ? 'block' : 'none'; }
   if (s.tentColor) { tentColor = parseInt(s.tentColor, 16); }
   if (s.tentStyle) { tentStyle = s.tentStyle; document.getElementById('tent-style').value = s.tentStyle; }
+  if (s.timePaused) { timePaused = s.timePaused; document.getElementById('time-pause').checked = s.timePaused; }
   const h = Math.floor(timeOfDay); const m = Math.floor((timeOfDay - h) * 60);
   document.getElementById('time-display').textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 })();
@@ -942,7 +956,7 @@ let tentStyle = 'aframe';
 function saveSettings() {
   localStorage.setItem('campout-settings', JSON.stringify({
     timeOfDay, moonlight: moonlightStrength, fog: fogDensity,
-    controlMode, tentColor: tentColor.toString(16), tentStyle
+    controlMode, tentColor: tentColor.toString(16), tentStyle, timePaused
   }));
 }
 
@@ -961,6 +975,11 @@ document.getElementById('moonlight-slider').addEventListener('input', (e) => {
 
 document.getElementById('fog-slider').addEventListener('input', (e) => {
   fogDensity = parseInt(e.target.value) / 100;
+  saveSettings();
+});
+
+document.getElementById('time-pause').addEventListener('change', (e) => {
+  timePaused = e.target.checked;
   saveSettings();
 });
 
@@ -1560,12 +1579,13 @@ function animate() {
 
   // Camera: cameraHeight is tilt (1=ground level, 12=overhead), cameraDistance is total distance
   const tiltFraction = cameraHeight / 12;
-  const camY = GLOBE_RADIUS + tiltFraction * cameraDistance;
+  const playerY = player.position.y;
+  const camY = playerY + tiltFraction * cameraDistance;
   const camHorizDist = cameraDistance * (1 - tiltFraction * 0.85);
   const camX = Math.sin(cameraAngle) * camHorizDist;
   const camZ = Math.cos(cameraAngle) * camHorizDist;
   camera.position.set(camX, camY, camZ);
-  camera.lookAt(0, GLOBE_RADIUS + 1, 0);
+  camera.lookAt(0, playerY + 1, 0);
 
   const isKeyTurning = keys['a'] || keys['d'] || keys['arrowleft'] || keys['arrowright'];
   const isTurning = isDragging || orbitTouchId !== null || isKeyTurning;
@@ -1595,6 +1615,16 @@ function animate() {
     player.position.y = hits[0].point.y;
   }
 
+  // Day/night cycle: 10 minutes = full 24h, sleeping = 1h per 10s
+  if (!timePaused) {
+    const timeSpeed = isSleeping ? (3600 / 10) / 3600 : (24 / 600);
+    timeOfDay += timeSpeed * delta;
+    if (timeOfDay >= 24) timeOfDay -= 24;
+    document.getElementById('time-slider').value = timeOfDay;
+    const h = Math.floor(timeOfDay);
+    const m = Math.floor((timeOfDay - h) * 60);
+    document.getElementById('time-display').textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  }
   updateDayNight();
 
   // Animate fireflies
