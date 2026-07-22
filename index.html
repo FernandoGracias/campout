@@ -114,7 +114,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v63</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v64</div>
 
 <script type="importmap">
 {
@@ -243,17 +243,6 @@ const globeMat = new THREE.MeshStandardMaterial({
 const globe = new THREE.Mesh(globeGeo, globeMat);
 globe.receiveShadow = true;
 globePivot.add(globe);
-
-// Atmosphere haze
-const atmosGeo = new THREE.SphereGeometry(GLOBE_RADIUS + 0.8, 32, 32);
-const atmosMat = new THREE.MeshBasicMaterial({
-  color: 0x88bbff,
-  transparent: true,
-  opacity: 0.15,
-  side: THREE.BackSide,
-});
-const atmosphere = new THREE.Mesh(atmosGeo, atmosMat);
-scene.add(atmosphere);
 
 // --- SEEDED RANDOM ---
 function mulberry32(a) {
