@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v72</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v73</div>
 
 <script type="importmap">
 {
@@ -1116,17 +1116,20 @@ function pitchCamp() {
     roof.position.set(-0.8, 0.9, -0.6);
     roof.scale.setScalar(1.25);
     roof.castShadow = true;
-    roof.userData.needsRaycast = true;
+    roof.userData.needsRaycast = false;
     roof.userData.isRoof = true;
+    roof.userData.roofOffset = 0.9 * 1.25;
     campGroup.add(roof);
   } else if (tentStyle === 'tunnel') {
-    const geo = new THREE.CylinderGeometry(0.6, 0.6, 1.4, 10, 1, true, 0, Math.PI);
+    const geo = new THREE.CylinderGeometry(0.6, 0.6, 1.4, 10, 1, false);
     const tent = new THREE.Mesh(geo, tentMat);
-    tent.position.set(-0.8, -0.1, 0);
+    tent.position.set(-0.8, 0, 0);
     tent.scale.setScalar(1.25);
-    tent.rotation.z = Math.PI / 2;
-    tent.rotation.y = Math.PI / 2;
+    tent.rotation.x = Math.PI / 2;
     tent.castShadow = true;
+    tent.userData.needsRaycast = true;
+    tent.userData.groundSink = 0.6 * 1.25 * 0.5;
+    campGroup.add(tent);
     tent.userData.needsRaycast = true;
     tent.userData.groundSink = 0.1;
     campGroup.add(tent);
@@ -1191,10 +1194,10 @@ function pitchCamp() {
 
   // Fire particles
   campFireGeo = new THREE.BufferGeometry();
-  const firePositions = new Float32Array(80 * 3);
-  campFireAlphas = new Float32Array(80);
-  campFireLifespan = new Float32Array(80);
-  for (let i = 0; i < 80; i++) {
+  const firePositions = new Float32Array(56 * 3);
+  campFireAlphas = new Float32Array(56);
+  campFireLifespan = new Float32Array(56);
+  for (let i = 0; i < 56; i++) {
     respawnCampFireParticle(firePositions, i, true);
   }
   campFireGeo.setAttribute('position', new THREE.BufferAttribute(firePositions, 3));
@@ -1282,6 +1285,7 @@ function pitchCamp() {
   for (const child of campGroup.children) {
     if (!child.userData.needsRaycast) continue;
     if (child === fireAnchor) continue;
+    child.userData.baseQuaternion = child.quaternion.clone();
     const worldPos = new THREE.Vector3();
     child.getWorldPosition(worldPos);
     const normal = worldPos.clone().normalize();
@@ -1291,18 +1295,25 @@ function pitchCamp() {
     const hits = ray.intersectObject(globe, false);
     if (hits.length > 0) {
       const localHit = campGroup.worldToLocal(hits[0].point.clone());
-      if (child.userData.isRoof) {
-        child.position.y = localHit.y + 0.9 * 1.25;
-      } else {
-        const sink = child.userData.groundSink || 0;
-        child.position.y = localHit.y - sink;
-      }
-      // Orient tent to match terrain slope: transform world hit normal into campGroup local space
+      const sink = child.userData.groundSink || 0;
+      child.position.y = localHit.y - sink;
+      // Orient tent to match terrain slope: compose slope with original rotation
       const hitNormal = hits[0].face.normal.clone().transformDirection(globe.matrixWorld).normalize();
       const invGroupQuat = campGroup.getWorldQuaternion(new THREE.Quaternion()).invert();
       const localNormal = hitNormal.clone().applyQuaternion(invGroupQuat);
       const slopeQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), localNormal);
-      child.quaternion.copy(slopeQuat);
+      child.quaternion.copy(slopeQuat).multiply(child.userData.baseQuaternion);
+    }
+  }
+
+  // Position cabin roof on top of body
+  for (const child of campGroup.children) {
+    if (child.userData.isRoof) {
+      const body = campGroup.children.find(c => c.userData.needsRaycast && !c.userData.isRoof && c !== fireAnchor);
+      if (body) {
+        child.position.y = body.position.y + child.userData.roofOffset;
+        child.quaternion.copy(body.quaternion);
+      }
     }
   }
 
@@ -1722,25 +1733,25 @@ function animate() {
 
     // Fire particle physics
     const fp = campFireGeo.attributes.position.array;
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 56; i++) {
       const x = fp[i * 3];
       const y = fp[i * 3 + 1];
       const z = fp[i * 3 + 2];
       const distFromCenter = Math.sqrt(x * x + z * z);
 
       if (campFireAlphas[i] === 1) {
-        fp[i * 3] += (Math.random() - 0.5) * 0.003;
-        fp[i * 3 + 1] += 0.03 + Math.random() * 0.02;
-        fp[i * 3 + 2] += (Math.random() - 0.5) * 0.003;
+        fp[i * 3] += (Math.random() - 0.5) * 0.004;
+        fp[i * 3 + 1] += 0.039 + Math.random() * 0.026;
+        fp[i * 3 + 2] += (Math.random() - 0.5) * 0.004;
       } else if (distFromCenter > 0.06) {
-        const pullStrength = 0.006 + distFromCenter * 0.012;
+        const pullStrength = 0.008 + distFromCenter * 0.016;
         fp[i * 3] -= (x / distFromCenter) * pullStrength;
         fp[i * 3 + 2] -= (z / distFromCenter) * pullStrength;
-        fp[i * 3 + 1] += 0.006 + (1 - distFromCenter) * 0.008;
+        fp[i * 3 + 1] += 0.008 + (1 - distFromCenter) * 0.01;
       } else {
-        fp[i * 3] += (Math.random() - 0.5) * 0.003;
-        fp[i * 3 + 1] += 0.012 + Math.random() * 0.008;
-        fp[i * 3 + 2] += (Math.random() - 0.5) * 0.003;
+        fp[i * 3] += (Math.random() - 0.5) * 0.004;
+        fp[i * 3 + 1] += 0.016 + Math.random() * 0.01;
+        fp[i * 3 + 2] += (Math.random() - 0.5) * 0.004;
       }
 
       if (fp[i * 3 + 1] > campFireLifespan[i]) {
