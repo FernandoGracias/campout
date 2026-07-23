@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v88</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v89</div>
 
 <script type="importmap">
 {
@@ -1729,7 +1729,7 @@ function animate() {
       npcWanderDir += (Math.random() - 0.5) * 2.0;
       if (Math.random() < 0.2) npcWanderPause = 1 + Math.random() * 2;
     }
-    const npcStep = 0.12 * delta;
+    const npcStep = 0.04 * delta;
     const npcRotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), npcStep * Math.cos(npcWanderDir));
     const npcRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -npcStep * Math.sin(npcWanderDir));
     npcGlobeRotation.premultiply(npcRotX).premultiply(npcRotZ);
