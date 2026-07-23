@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v84</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v85</div>
 
 <script type="importmap">
 {
@@ -411,8 +411,8 @@ function buildRiver(startLat, startLon, endLat, endLon, segments) {
   const pathPoints = [];
   for (let i = 0; i <= segments; i++) {
     const t = i / segments;
-    const lat = startLat + (endLat - startLat) * t + Math.sin(t * Math.PI * 4) * 0.06;
-    const lon = startLon + (endLon - startLon) * t + Math.cos(t * Math.PI * 3) * 0.05;
+    const lat = startLat + (endLat - startLat) * t + Math.sin(t * Math.PI * 6) * 0.1 + Math.sin(t * Math.PI * 13) * 0.04;
+    const lon = startLon + (endLon - startLon) * t + Math.cos(t * Math.PI * 5) * 0.08 + Math.cos(t * Math.PI * 11) * 0.03;
     pathPoints.push({ lat, lon });
   }
   const maxGap = 0.15;
@@ -455,6 +455,16 @@ for (let i = 1; i < lakePosArray.length; i++) {
   const segments = Math.max(200, Math.floor(dist * 100));
   buildRiver(bigLakeLat, bigLakeLon, lakePosArray[i].lat, lakePosArray[i].lon, segments);
 }
+// Extend rivers past ponds to wrap around and reconnect
+for (let i = 1; i < lakePosArray.length; i++) {
+  const startLat = lakePosArray[i].lat;
+  const startLon = lakePosArray[i].lon;
+  const endLat = bigLakeLat + Math.PI * (i % 2 === 0 ? 1 : -1);
+  const endLon = bigLakeLon + Math.PI * 0.8 * (i === 1 ? 1 : -1);
+  const dist = Math.sqrt((endLat - startLat) ** 2 + (endLon - startLon) ** 2);
+  const segments = Math.max(300, Math.floor(dist * 100));
+  buildRiver(startLat, startLon, endLat, endLon, segments);
+}
 
 // Remove trees in water and spread out trees too close together
 for (let i = trees.length - 1; i >= 0; i--) {
@@ -466,6 +476,14 @@ for (let i = trees.length - 1; i >= 0; i--) {
     const angle = Math.atan2(treePos.z - lakePos.z, treePos.x - lakePos.x);
     const irregularRadius = lake.radius * (0.7 + 0.3 * Math.sin(angle * 3) + 0.15 * Math.sin(angle * 7 + 1));
     if (dist < irregularRadius) { inWater = true; break; }
+  }
+  if (!inWater) {
+    for (const river of riverPaths) {
+      for (let rIdx = 0; rIdx < river.points.length; rIdx += 10) {
+        if (treePos.distanceTo(latLonToWorld(river.points[rIdx].lat, river.points[rIdx].lon)) < river.width + 0.3) { inWater = true; break; }
+      }
+      if (inWater) break;
+    }
   }
   if (inWater) {
     globePivot.remove(trees[i].obj);
