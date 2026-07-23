@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v69</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v70</div>
 
 <script type="importmap">
 {
@@ -798,6 +798,8 @@ let pinchStartDist = null;
 let pinchStartZoom = null;
 let pinchStartAvgY = null;
 let pinchStartHeight = null;
+let pinchStartAvgX = null;
+let pinchStartAngle = null;
 
 // Mouse/touch drag to orbit camera
 let isDragging = false;
@@ -864,6 +866,8 @@ renderer.domElement.addEventListener('touchstart', (e) => {
     pinchStartZoom = cameraDistance;
     pinchStartAvgY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
     pinchStartHeight = cameraHeight;
+    pinchStartAvgX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    pinchStartAngle = cameraAngle;
   }
 });
 renderer.domElement.addEventListener('touchmove', (e) => {
@@ -874,6 +878,10 @@ renderer.domElement.addEventListener('touchmove', (e) => {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const scale = pinchStartDist / dist;
     cameraDistance = Math.max(4, Math.min(60, pinchStartZoom * scale));
+    // Pan via midpoint horizontal movement
+    const avgX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    cameraAngle = pinchStartAngle + (avgX - pinchStartAvgX) * 0.01;
+    cameraTargetAngle = cameraAngle;
     // Tilt only with deliberate two-finger vertical drag (avgY moved > 30px)
     const avgY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
     const tiltDelta = avgY - pinchStartAvgY;
@@ -894,7 +902,17 @@ renderer.domElement.addEventListener('touchend', (e) => {
   for (const touch of e.changedTouches) {
     if (touch.identifier === orbitTouchId) orbitTouchId = null;
   }
-  if (e.touches.length < 2) { pinchStartDist = null; pinchStartAvgY = null; }
+  if (e.touches.length < 2) {
+    pinchStartDist = null; pinchStartAvgY = null; pinchStartAvgX = null;
+    // Reset orbit tracking to remaining finger to prevent snap
+    if (e.touches.length === 1 && !leverActive) {
+      const remaining = e.touches[0];
+      orbitTouchId = remaining.identifier;
+      orbitStartX = remaining.clientX;
+      orbitStartAngle = cameraAngle;
+      orbitStartHeight = cameraHeight;
+    }
+  }
 });
 
 // Scroll/keyboard zoom
