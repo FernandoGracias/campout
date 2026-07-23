@@ -106,13 +106,13 @@ canvas { display: block; }
     <select id="tent-style" style="width:100%;background:#333;color:#ddd;border:1px solid #555;padding:4px;border-radius:4px;font-size:11px;">
       <option value="aframe">A-Frame (2P)</option>
       <option value="dome">Dome (4P)</option>
-      <option value="cabin">Cabin (6P)</option>
+      <option value="cabin">Tipi</option>
       <option value="tunnel">Tunnel (4P)</option>
     </select>
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v73</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v74</div>
 
 <script type="importmap">
 {
@@ -1097,29 +1097,15 @@ function pitchCamp() {
     tent.userData.groundSink = 0.1;
     campGroup.add(tent);
   } else if (tentStyle === 'cabin') {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.9, 1.2), tentMat);
-    body.position.set(-0.8, 0.45, 0);
-    body.scale.setScalar(1.25);
-    body.castShadow = true;
-    body.userData.needsRaycast = true;
-    body.userData.groundSink = 0.1;
-    campGroup.add(body);
-    const roofShape = new THREE.Shape();
-    roofShape.moveTo(-0.8, 0);
-    roofShape.lineTo(0, 0.4);
-    roofShape.lineTo(0.8, 0);
-    roofShape.closePath();
-    const roof = new THREE.Mesh(
-      new THREE.ExtrudeGeometry(roofShape, { depth: 1.2, bevelEnabled: false }),
-      new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8 })
-    );
-    roof.position.set(-0.8, 0.9, -0.6);
-    roof.scale.setScalar(1.25);
-    roof.castShadow = true;
-    roof.userData.needsRaycast = false;
-    roof.userData.isRoof = true;
-    roof.userData.roofOffset = 0.9 * 1.25;
-    campGroup.add(roof);
+    const geo = new THREE.ConeGeometry(0.7, 1.4, 8);
+    geo.translate(0, 0.7, 0);
+    const tent = new THREE.Mesh(geo, tentMat);
+    tent.position.set(-0.8, -0.1, 0);
+    tent.scale.setScalar(1.25);
+    tent.castShadow = true;
+    tent.userData.needsRaycast = true;
+    tent.userData.groundSink = 0.1;
+    campGroup.add(tent);
   } else if (tentStyle === 'tunnel') {
     const geo = new THREE.CylinderGeometry(0.6, 0.6, 1.4, 10, 1, false);
     const tent = new THREE.Mesh(geo, tentMat);
@@ -1303,17 +1289,6 @@ function pitchCamp() {
       const localNormal = hitNormal.clone().applyQuaternion(invGroupQuat);
       const slopeQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), localNormal);
       child.quaternion.copy(slopeQuat).multiply(child.userData.baseQuaternion);
-    }
-  }
-
-  // Position cabin roof on top of body
-  for (const child of campGroup.children) {
-    if (child.userData.isRoof) {
-      const body = campGroup.children.find(c => c.userData.needsRaycast && !c.userData.isRoof && c !== fireAnchor);
-      if (body) {
-        child.position.y = body.position.y + child.userData.roofOffset;
-        child.quaternion.copy(body.quaternion);
-      }
     }
   }
 
