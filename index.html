@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v85</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v86</div>
 
 <script type="importmap">
 {
@@ -447,24 +447,8 @@ for (let i = 0; i < 3; i++) {
   lakePosArray.push({ lat, lon });
 }
 
-// Rivers flow OUT of the big lake to smaller ones
-for (let i = 1; i < lakePosArray.length; i++) {
-  const dLat = lakePosArray[i].lat - bigLakeLat;
-  const dLon = lakePosArray[i].lon - bigLakeLon;
-  const dist = Math.sqrt(dLat * dLat + dLon * dLon);
-  const segments = Math.max(200, Math.floor(dist * 100));
-  buildRiver(bigLakeLat, bigLakeLon, lakePosArray[i].lat, lakePosArray[i].lon, segments);
-}
-// Extend rivers past ponds to wrap around and reconnect
-for (let i = 1; i < lakePosArray.length; i++) {
-  const startLat = lakePosArray[i].lat;
-  const startLon = lakePosArray[i].lon;
-  const endLat = bigLakeLat + Math.PI * (i % 2 === 0 ? 1 : -1);
-  const endLon = bigLakeLon + Math.PI * 0.8 * (i === 1 ? 1 : -1);
-  const dist = Math.sqrt((endLat - startLat) ** 2 + (endLon - startLon) ** 2);
-  const segments = Math.max(300, Math.floor(dist * 100));
-  buildRiver(startLat, startLon, endLat, endLon, segments);
-}
+// One river: leaves one end of the lake, wraps around the globe, reconnects to the other end
+buildRiver(bigLakeLat + 0.3, bigLakeLon, bigLakeLat - 0.3, bigLakeLon + Math.PI * 2, 500);
 
 // Remove trees in water and spread out trees too close together
 for (let i = trees.length - 1; i >= 0; i--) {
