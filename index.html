@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v87</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v88</div>
 
 <script type="importmap">
 {
@@ -784,6 +784,20 @@ function buildPlayer() {
 const player = buildPlayer();
 player.position.set(0, GLOBE_RADIUS - 0.05, 0);
 scene.add(player);
+
+// --- NPC (second character for multiplayer test) ---
+const npc = buildPlayer();
+npc.traverse(c => { if (c.isMesh && c.material) { c.material = c.material.clone(); } });
+npc.traverse(c => { if (c.isMesh && c.material && c.material.color && c.material.color.r > 0.7 && c.material.color.g < 0.5) c.material.color.set(0x2266aa); });
+let npcFacing = 0;
+let npcWalkCycle = 0;
+let npcPrevPosition = new THREE.Vector3();
+const npcGlobeRotation = new THREE.Quaternion();
+npcGlobeRotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.6 + 0.3);
+let npcWanderTimer = 0;
+let npcWanderDir = Math.random() * Math.PI * 2;
+let npcWanderPause = 0;
+scene.add(npc);
 
 // --- CAMERA SETUP ---
 camera.position.set(0, GLOBE_RADIUS + 6, 6);
@@ -1704,6 +1718,59 @@ function animate() {
     player.userData.rightArm.rotation.x *= 0.85;
     player.rotation.z *= 0.9;
   }
+
+  // NPC: wander behavior
+  npcWanderTimer += delta;
+  if (npcWanderPause > 0) {
+    npcWanderPause -= delta;
+  } else {
+    if (npcWanderTimer > 3 + Math.random() * 4) {
+      npcWanderTimer = 0;
+      npcWanderDir += (Math.random() - 0.5) * 2.0;
+      if (Math.random() < 0.2) npcWanderPause = 1 + Math.random() * 2;
+    }
+    const npcStep = 0.12 * delta;
+    const npcRotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), npcStep * Math.cos(npcWanderDir));
+    const npcRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -npcStep * Math.sin(npcWanderDir));
+    npcGlobeRotation.premultiply(npcRotX).premultiply(npcRotZ);
+    npcFacing = npcWanderDir + Math.PI;
+  }
+
+  // NPC: position on globe surface with terrain following
+  globe.updateMatrixWorld();
+  const npcRelative = globeRotation.clone().invert().premultiply(npcGlobeRotation);
+  const npcSurfaceDir = new THREE.Vector3(0, 1, 0).applyQuaternion(npcRelative);
+  const npcRayOrigin = npcSurfaceDir.clone().multiplyScalar(GLOBE_RADIUS + 5);
+  const npcRayDir = npcSurfaceDir.clone().negate();
+  const npcRaycaster = new THREE.Raycaster(npcRayOrigin, npcRayDir, 0, 15);
+  const npcHits = npcRaycaster.intersectObject(globe, false);
+  if (npcHits.length > 0) {
+    npc.position.copy(npcHits[0].point);
+    const npcUpDir = npcHits[0].point.clone().normalize();
+    npc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), npcUpDir);
+    npc.rotateY(npcFacing);
+  } else {
+    npc.position.copy(npcSurfaceDir.clone().multiplyScalar(GLOBE_RADIUS));
+    npc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), npcSurfaceDir);
+    npc.rotateY(npcFacing);
+  }
+
+  const npcMoved = npc.position.distanceTo(npcPrevPosition) > 0.001;
+  if (npcMoved) {
+    npcWalkCycle += delta * 8;
+    const swing = Math.sin(npcWalkCycle) * 0.5;
+    npc.userData.leftLeg.rotation.x = swing;
+    npc.userData.rightLeg.rotation.x = -swing;
+    npc.userData.leftArm.rotation.x = -swing * 0.4;
+    npc.userData.rightArm.rotation.x = swing * 0.4;
+  } else {
+    npcWalkCycle = 0;
+    npc.userData.leftLeg.rotation.x *= 0.85;
+    npc.userData.rightLeg.rotation.x *= 0.85;
+    npc.userData.leftArm.rotation.x *= 0.85;
+    npc.userData.rightArm.rotation.x *= 0.85;
+  }
+  npcPrevPosition.copy(npc.position);
 
   // Terrain following: raycast downward to find globe surface
   globe.updateMatrixWorld();
