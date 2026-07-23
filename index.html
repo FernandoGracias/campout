@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v80</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v81</div>
 
 <script type="importmap">
 {
@@ -437,7 +437,21 @@ function buildRiver(startLat, startLon, endLat, endLon, segments) {
     const lon = startLon + (endLon - startLon) * t + Math.cos(t * Math.PI * 3) * 0.05;
     pathPoints.push({ lat, lon });
   }
-  riverPaths.push({ points: pathPoints, width: waterWidth });
+  const maxGap = 0.3;
+  const dense = [pathPoints[0]];
+  for (let i = 1; i < pathPoints.length; i++) {
+    const prev = pathPoints[i - 1];
+    const cur = pathPoints[i];
+    const a = latLonToWorld(prev.lat, prev.lon);
+    const b = latLonToWorld(cur.lat, cur.lon);
+    const dist = a.distanceTo(b);
+    const subdivs = Math.max(1, Math.ceil(dist / maxGap));
+    for (let s = 1; s <= subdivs; s++) {
+      const t = s / subdivs;
+      dense.push({ lat: prev.lat + (cur.lat - prev.lat) * t, lon: prev.lon + (cur.lon - prev.lon) * t });
+    }
+  }
+  riverPaths.push({ points: dense, width: waterWidth });
 }
 
 const lakePosArray = [];
@@ -1477,7 +1491,7 @@ function updateDayNight() {
     moonSphere.material.color.copy(new THREE.Color(0xddeeff).lerp(new THREE.Color(0x68b8e8), Math.min(t * 2, 1.0)));
     sunSphere.visible = true;
     sunSphere.material.transparent = true;
-    sunSphere.material.opacity = Math.min(1, t * 2);
+    sunSphere.material.opacity = Math.min(1, t * 1.2);
   } else {
     sunIntensity = 1.2;
     skyColor = new THREE.Color(0x68b8e8);
