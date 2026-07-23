@@ -641,45 +641,47 @@ function buildPlayer() {
   group.add(brim);
 
   const legMat = new THREE.MeshStandardMaterial({ color: 0x3d5a80, roughness: 0.8 });
-  const leftLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.2, 3, 6), legMat);
-  leftLeg.position.set(-0.1, 0.2, 0);
-  leftLeg.castShadow = true;
-  group.add(leftLeg);
-  group.userData.leftLeg = leftLeg;
-
   const rightLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.2, 3, 6), legMat);
-  rightLeg.position.set(0.1, 0.2, 0);
+  rightLeg.geometry.translate(0, -0.18, 0);
+  rightLeg.position.set(-0.1, 0.38, 0);
   rightLeg.castShadow = true;
   group.add(rightLeg);
   group.userData.rightLeg = rightLeg;
 
+  const leftLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.2, 3, 6), legMat);
+  leftLeg.geometry.translate(0, -0.18, 0);
+  leftLeg.position.set(0.1, 0.38, 0);
+  leftLeg.castShadow = true;
+  group.add(leftLeg);
+  group.userData.leftLeg = leftLeg;
+
   const armMat = new THREE.MeshStandardMaterial({ color: 0xd35f3e, roughness: 0.7 });
 
-  const leftShoulder = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 4), armMat);
-  leftShoulder.position.set(-0.2, 0.75, 0);
-  leftShoulder.castShadow = true;
-  group.add(leftShoulder);
-
   const rightShoulder = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 4), armMat);
-  rightShoulder.position.set(0.2, 0.75, 0);
+  rightShoulder.position.set(-0.2, 0.75, 0);
   rightShoulder.castShadow = true;
   group.add(rightShoulder);
 
-  const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.2, 3, 6), armMat);
-  leftArm.position.set(-0.24, 0.55, 0);
-  leftArm.rotation.z = -0.15;
-  leftArm.castShadow = true;
-  group.add(leftArm);
-  group.userData.leftArm = leftArm;
+  const leftShoulder = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 4), armMat);
+  leftShoulder.position.set(0.2, 0.75, 0);
+  leftShoulder.castShadow = true;
+  group.add(leftShoulder);
 
   const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.2, 3, 6), armMat);
-  rightArm.position.set(0.24, 0.55, 0);
-  rightArm.rotation.z = 0.15;
+  rightArm.geometry.translate(0, -0.16, 0);
+  rightArm.position.set(-0.24, 0.72, 0);
+  rightArm.rotation.z = -0.15;
   rightArm.castShadow = true;
   group.add(rightArm);
   group.userData.rightArm = rightArm;
-  group.add(rightArm);
-  group.userData.rightArm = rightArm;
+
+  const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.2, 3, 6), armMat);
+  leftArm.geometry.translate(0, -0.16, 0);
+  leftArm.position.set(0.24, 0.72, 0);
+  leftArm.rotation.z = 0.15;
+  leftArm.castShadow = true;
+  group.add(leftArm);
+  group.userData.leftArm = leftArm;
 
   const packGeo = new THREE.BoxGeometry(0.28, 0.32, 0.18);
   const packMat = new THREE.MeshStandardMaterial({ color: 0x3d6b35, roughness: 0.8 });
