@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v75</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v76</div>
 
 <script type="importmap">
 {
@@ -243,25 +243,26 @@ globe.receiveShadow = true;
 globePivot.add(globe);
 
 // Atmosphere glow
-const atmosGeo = new THREE.SphereGeometry(GLOBE_RADIUS * 1.2, 64, 64);
+const atmosGeo = new THREE.SphereGeometry(GLOBE_RADIUS * 2.0, 64, 64);
 const atmosMat = new THREE.ShaderMaterial({
+  uniforms: {
+    globeRadius: { value: GLOBE_RADIUS },
+  },
   vertexShader: `
-    varying vec3 vNormal;
-    varying vec3 vPosition;
+    varying vec3 vWorldPos;
     void main() {
-      vNormal = normalize(normalMatrix * normal);
-      vPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
+      vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `,
   fragmentShader: `
-    varying vec3 vNormal;
-    varying vec3 vPosition;
+    uniform float globeRadius;
+    varying vec3 vWorldPos;
     void main() {
-      vec3 viewDir = normalize(-vPosition);
-      float rim = 1.0 - max(dot(viewDir, vNormal), 0.0);
-      float intensity = pow(rim, 2.0) * 1.2;
-      gl_FragColor = vec4(0.3, 0.6, 1.0, intensity);
+      float dist = length(vWorldPos);
+      float t = (dist - globeRadius) / (globeRadius * 0.3);
+      float glow = exp(-t * t * 3.0);
+      gl_FragColor = vec4(0.3, 0.6, 1.0, glow * 0.35);
     }
   `,
   transparent: true,
