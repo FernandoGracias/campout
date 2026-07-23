@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v81</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v82</div>
 
 <script type="importmap">
 {
@@ -437,7 +437,7 @@ function buildRiver(startLat, startLon, endLat, endLon, segments) {
     const lon = startLon + (endLon - startLon) * t + Math.cos(t * Math.PI * 3) * 0.05;
     pathPoints.push({ lat, lon });
   }
-  const maxGap = 0.3;
+  const maxGap = 0.15;
   const dense = [pathPoints[0]];
   for (let i = 1; i < pathPoints.length; i++) {
     const prev = pathPoints[i - 1];
@@ -1463,52 +1463,38 @@ function updateDayNight() {
   moon.target.position.set(0, GLOBE_RADIUS, 0);
   moonSphere.position.copy(moon.position);
 
-  // Intensity based on altitude
+  // Intensity based on altitude - both always visible, smooth crossfade
   const sunAltitude = Math.sin(sunAngle);
-  let sunIntensity, skyColor, ambientIntensity;
+  const moonAltitude = Math.sin(sunAngle + Math.PI);
+  let skyColor, ambientIntensity;
 
-  if (sunAltitude < -0.15) {
-    sunIntensity = 0;
+  const sunStrength = Math.max(0, sunAltitude);
+  const moonStrength = Math.max(0, moonAltitude);
+
+  sun.intensity = sunStrength * 1.2;
+  moon.intensity = moonStrength * (0.2 + moonlightStrength * 0.3);
+
+  sunSphere.visible = true;
+  sunSphere.material.transparent = true;
+  sunSphere.material.opacity = Math.min(1, sunStrength * 3);
+
+  moonSphere.visible = true;
+  moonSphere.material.transparent = true;
+  moonSphere.material.opacity = Math.min(1, moonStrength * 3);
+  moonSphere.material.color.set(0xddeeff);
+
+  if (sunStrength > 0.1) {
+    const t = Math.min(1, (sunStrength - 0.1) / 0.3);
+    skyColor = new THREE.Color(0x0a0a1e).lerp(new THREE.Color(0xffaa55), t).lerp(new THREE.Color(0x68b8e8), Math.max(0, t - 0.3) * 1.43);
+    ambientIntensity = 0.1 + t * 0.2;
+  } else {
     skyColor = new THREE.Color(0x0a0a1e);
     ambientIntensity = 0.05 + moonlightStrength * 0.15;
-    moon.intensity = 0.2 + moonlightStrength * 0.3;
-    moonSphere.visible = true;
-    moonSphere.material.opacity = 1;
-    moonSphere.material.transparent = false;
-    moonSphere.material.color.set(0xddeeff);
-    sunSphere.visible = true;
-    sunSphere.material.opacity = 0;
-    sunSphere.material.transparent = true;
-  } else if (sunAltitude < 0.15) {
-    const t = (sunAltitude + 0.15) / 0.3;
-    sunIntensity = t * 1.2;
-    skyColor = new THREE.Color(0x0a0a1e).lerp(new THREE.Color(0xffaa55), t).lerp(new THREE.Color(0x68b8e8), Math.max(0, t - 0.5) * 2);
-    ambientIntensity = 0.1 + t * 0.2;
-    moon.intensity = (1 - t) * (0.2 + moonlightStrength * 0.3);
-    moonSphere.visible = true;
-    moonSphere.material.transparent = true;
-    moonSphere.material.opacity = Math.max(0, 1 - t * 1.5);
-    moonSphere.material.color.copy(new THREE.Color(0xddeeff).lerp(new THREE.Color(0x68b8e8), Math.min(t * 2, 1.0)));
-    sunSphere.visible = true;
-    sunSphere.material.transparent = true;
-    sunSphere.material.opacity = Math.min(1, t * 1.2);
-  } else {
-    sunIntensity = 1.2;
-    skyColor = new THREE.Color(0x68b8e8);
-    ambientIntensity = 0.3;
-    moon.intensity = 0;
-    moonSphere.visible = true;
-    moonSphere.material.opacity = 0;
-    moonSphere.material.transparent = true;
-    sunSphere.visible = true;
-    sunSphere.material.opacity = 1;
-    sunSphere.material.transparent = false;
   }
 
-  sun.intensity = sunIntensity;
   scene.background = skyColor;
   ambient.intensity = ambientIntensity;
-  hemi.intensity = sunIntensity > 0 ? 0.6 : 0.05 + moonlightStrength * 0.1;
+  hemi.intensity = sun.intensity > 0 ? 0.6 : 0.05 + moonlightStrength * 0.1;
 
   if (fogDensity > 0) {
     scene.fog = new THREE.FogExp2(skyColor, fogDensity * 0.15);
