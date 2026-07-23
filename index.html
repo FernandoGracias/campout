@@ -38,10 +38,8 @@ canvas { display: block; }
   border: 2px solid rgba(255,255,255,0.4);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  #lever-wrapper { display: none; }
-}
 .control-row { margin-bottom: 10px; }
+
 .control-row label { display: block; font-size: 11px; margin-bottom: 4px; color: #aaa; }
 .control-row input[type="range"] { width: 100%; }
 .control-row button { background: #333; color: #ddd; border: 1px solid #555; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; margin-right: 4px; }
@@ -114,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v68</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v69</div>
 
 <script type="importmap">
 {
@@ -1743,6 +1741,7 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+if (navigator.maxTouchPoints === 0) document.getElementById('lever-wrapper').style.display = 'none';
 </script>
 </body>
 </html>
