@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v70</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v71</div>
 
 <script type="importmap">
 {
@@ -667,7 +667,7 @@ function buildPlayer() {
 
   const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.2, 3, 6), armMat);
   rightArm.geometry.translate(0, -0.16, 0);
-  rightArm.position.set(-0.24, 0.72, 0);
+  rightArm.position.set(-0.24, 0.78, 0);
   rightArm.rotation.z = -0.15;
   rightArm.castShadow = true;
   group.add(rightArm);
@@ -675,7 +675,7 @@ function buildPlayer() {
 
   const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.2, 3, 6), armMat);
   leftArm.geometry.translate(0, -0.16, 0);
-  leftArm.position.set(0.24, 0.72, 0);
+  leftArm.position.set(0.24, 0.78, 0);
   leftArm.rotation.z = 0.15;
   leftArm.castShadow = true;
   group.add(leftArm);
@@ -1424,6 +1424,9 @@ function updateDayNight() {
     ambientIntensity = 0.05 + moonlightStrength * 0.15;
     moon.intensity = 0.2 + moonlightStrength * 0.3;
     moonSphere.visible = true;
+    moonSphere.material.color.set(0xddeeff);
+    moonSphere.material.opacity = 1;
+    moonSphere.material.transparent = false;
     sunSphere.visible = false;
   } else if (sunAltitude < 0.1) {
     const t = (sunAltitude + 0.1) / 0.2;
@@ -1432,6 +1435,9 @@ function updateDayNight() {
     ambientIntensity = 0.1 + t * 0.2;
     moon.intensity = (1 - t) * (0.2 + moonlightStrength * 0.3);
     moonSphere.visible = t < 0.5;
+    moonSphere.material.color.copy(new THREE.Color(0xddeeff).lerp(new THREE.Color(0x68b8e8), t * 2));
+    moonSphere.material.opacity = Math.max(0, 1 - t * 2);
+    moonSphere.material.transparent = true;
     sunSphere.visible = t > 0.3;
   } else {
     sunIntensity = 1.2;
@@ -1480,6 +1486,7 @@ function updateDayNight() {
 // --- ANIMATION ---
 const clock = new THREE.Clock();
 const globeRotation = new THREE.Quaternion();
+globeRotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.6);
 
 function animate() {
   requestAnimationFrame(animate);
