@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v89</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v90</div>
 
 <script type="importmap">
 {
@@ -791,9 +791,10 @@ npc.traverse(c => { if (c.isMesh && c.material) { c.material = c.material.clone(
 npc.traverse(c => { if (c.isMesh && c.material && c.material.color && c.material.color.r > 0.7 && c.material.color.g < 0.5) c.material.color.set(0x2266aa); });
 let npcFacing = 0;
 let npcWalkCycle = 0;
-let npcPrevPosition = new THREE.Vector3();
 const npcGlobeRotation = new THREE.Quaternion();
-npcGlobeRotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.6 + 0.3);
+npcGlobeRotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.6);
+const npcStartOffset = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.15);
+npcGlobeRotation.premultiply(npcStartOffset);
 let npcWanderTimer = 0;
 let npcWanderDir = Math.random() * Math.PI * 2;
 let npcWanderPause = 0;
@@ -1729,34 +1730,34 @@ function animate() {
       npcWanderDir += (Math.random() - 0.5) * 2.0;
       if (Math.random() < 0.2) npcWanderPause = 1 + Math.random() * 2;
     }
-    const npcStep = 0.04 * delta;
+
+    const npcStep = 0.008 * delta;
     const npcRotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), npcStep * Math.cos(npcWanderDir));
     const npcRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -npcStep * Math.sin(npcWanderDir));
     npcGlobeRotation.premultiply(npcRotX).premultiply(npcRotZ);
     npcFacing = npcWanderDir + Math.PI;
   }
 
-  // NPC: position on globe surface with terrain following
-  globe.updateMatrixWorld();
+  // NPC: position on globe surface (scene space)
+  // Compute NPC's position relative to current globe rotation
   const npcRelative = globeRotation.clone().invert().premultiply(npcGlobeRotation);
   const npcSurfaceDir = new THREE.Vector3(0, 1, 0).applyQuaternion(npcRelative);
-  const npcRayOrigin = npcSurfaceDir.clone().multiplyScalar(GLOBE_RADIUS + 5);
-  const npcRayDir = npcSurfaceDir.clone().negate();
-  const npcRaycaster = new THREE.Raycaster(npcRayOrigin, npcRayDir, 0, 15);
-  const npcHits = npcRaycaster.intersectObject(globe, false);
+  globe.updateMatrixWorld();
+  const npcRayOrigin = npcSurfaceDir.clone().multiplyScalar(GLOBE_RADIUS + 10);
+  const npcRayD = npcSurfaceDir.clone().negate();
+  const npcRay = new THREE.Raycaster(npcRayOrigin, npcRayD, 0, GLOBE_RADIUS * 3);
+  const npcHits = npcRay.intersectObject(globe, false);
   if (npcHits.length > 0) {
     npc.position.copy(npcHits[0].point);
-    const npcUpDir = npcHits[0].point.clone().normalize();
-    npc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), npcUpDir);
-    npc.rotateY(npcFacing);
   } else {
     npc.position.copy(npcSurfaceDir.clone().multiplyScalar(GLOBE_RADIUS));
-    npc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), npcSurfaceDir);
-    npc.rotateY(npcFacing);
   }
+  const npcUpDir = npc.position.clone().normalize();
+  npc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), npcUpDir);
+  npc.rotateY(npcFacing);
 
-  const npcMoved = npc.position.distanceTo(npcPrevPosition) > 0.001;
-  if (npcMoved) {
+  const npcIsWalking = npcWanderPause <= 0;
+  if (npcIsWalking) {
     npcWalkCycle += delta * 8;
     const swing = Math.sin(npcWalkCycle) * 0.5;
     npc.userData.leftLeg.rotation.x = swing;
@@ -1770,7 +1771,6 @@ function animate() {
     npc.userData.leftArm.rotation.x *= 0.85;
     npc.userData.rightArm.rotation.x *= 0.85;
   }
-  npcPrevPosition.copy(npc.position);
 
   // Terrain following: raycast downward to find globe surface
   globe.updateMatrixWorld();
