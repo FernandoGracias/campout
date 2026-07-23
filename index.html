@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v79</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v80</div>
 
 <script type="importmap">
 {
@@ -460,7 +460,7 @@ for (let i = 1; i < lakePosArray.length; i++) {
   const dLat = lakePosArray[i].lat - bigLakeLat;
   const dLon = lakePosArray[i].lon - bigLakeLon;
   const dist = Math.sqrt(dLat * dLat + dLon * dLon);
-  const segments = Math.max(120, Math.floor(dist * 60));
+  const segments = Math.max(200, Math.floor(dist * 100));
   buildRiver(bigLakeLat, bigLakeLon, lakePosArray[i].lat, lakePosArray[i].lon, segments);
 }
 
@@ -1438,14 +1438,14 @@ function updateDayNight() {
   const orbitRadius = 40;
   const sunX = Math.cos(sunAngle) * orbitRadius;
   const sunY = GLOBE_RADIUS + Math.sin(sunAngle) * orbitRadius;
-  const sunZ = Math.cos(sunAngle * 0.3) * 8;
+  const sunZ = 0;
 
   sun.position.set(sunX, sunY, sunZ);
   sun.target.position.set(0, GLOBE_RADIUS, 0);
   sunSphere.position.copy(sun.position);
 
   // Moon is opposite the sun
-  moon.position.set(-sunX, GLOBE_RADIUS + Math.sin(sunAngle + Math.PI) * orbitRadius, -sunZ);
+  moon.position.set(-sunX, GLOBE_RADIUS + Math.sin(sunAngle + Math.PI) * orbitRadius, 0);
   moon.target.position.set(0, GLOBE_RADIUS, 0);
   moonSphere.position.copy(moon.position);
 
