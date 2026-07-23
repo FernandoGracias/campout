@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v71</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v72</div>
 
 <script type="importmap">
 {
@@ -1281,6 +1281,7 @@ function pitchCamp() {
   // Raycast tent elements to terrain
   for (const child of campGroup.children) {
     if (!child.userData.needsRaycast) continue;
+    if (child === fireAnchor) continue;
     const worldPos = new THREE.Vector3();
     child.getWorldPosition(worldPos);
     const normal = worldPos.clone().normalize();
@@ -1296,6 +1297,12 @@ function pitchCamp() {
         const sink = child.userData.groundSink || 0;
         child.position.y = localHit.y - sink;
       }
+      // Orient tent to match terrain slope: transform world hit normal into campGroup local space
+      const hitNormal = hits[0].face.normal.clone().transformDirection(globe.matrixWorld).normalize();
+      const invGroupQuat = campGroup.getWorldQuaternion(new THREE.Quaternion()).invert();
+      const localNormal = hitNormal.clone().applyQuaternion(invGroupQuat);
+      const slopeQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), localNormal);
+      child.quaternion.copy(slopeQuat);
     }
   }
 
