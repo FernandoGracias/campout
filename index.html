@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v76</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v77</div>
 
 <script type="importmap">
 {
@@ -243,30 +243,37 @@ globe.receiveShadow = true;
 globePivot.add(globe);
 
 // Atmosphere glow
-const atmosGeo = new THREE.SphereGeometry(GLOBE_RADIUS * 2.0, 64, 64);
+const atmosGeo = new THREE.SphereGeometry(GLOBE_RADIUS * 1.2, 64, 64);
 const atmosMat = new THREE.ShaderMaterial({
   uniforms: {
-    globeRadius: { value: GLOBE_RADIUS },
+    c: { value: 0.4 },
+    p: { value: 4.0 },
+    glowColor: { value: new THREE.Color(0x4488ff) },
+    viewVector: { value: new THREE.Vector3() }
   },
   vertexShader: `
-    varying vec3 vWorldPos;
+    uniform vec3 viewVector;
+    uniform float c;
+    uniform float p;
+    varying float intensity;
     void main() {
-      vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+      vec3 vNormal = normalize(normalMatrix * normal);
+      vec3 vNormel = normalize(normalMatrix * viewVector);
+      intensity = pow(c - dot(vNormal, vNormel), p);
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `,
   fragmentShader: `
-    uniform float globeRadius;
-    varying vec3 vWorldPos;
+    uniform vec3 glowColor;
+    varying float intensity;
     void main() {
-      float dist = length(vWorldPos);
-      float t = (dist - globeRadius) / (globeRadius * 0.3);
-      float glow = exp(-t * t * 3.0);
-      gl_FragColor = vec4(0.3, 0.6, 1.0, glow * 0.35);
+      vec3 glow = glowColor * intensity;
+      gl_FragColor = vec4(glow, intensity);
     }
   `,
-  transparent: true,
   side: THREE.BackSide,
+  blending: THREE.AdditiveBlending,
+  transparent: true,
   depthWrite: false,
 });
 const atmosphere = new THREE.Mesh(atmosGeo, atmosMat);
@@ -1637,6 +1644,7 @@ function animate() {
   const camZ = Math.cos(cameraAngle) * camHorizDist;
   camera.position.set(camX, camY, camZ);
   camera.lookAt(0, playerY + 1, 0);
+  atmosMat.uniforms.viewVector.value.copy(camera.position);
 
   const isKeyTurning = keys['a'] || keys['d'] || keys['arrowleft'] || keys['arrowright'];
   const isCameraPanTurning = (isDragging || orbitTouchId !== null) && controlMode === 'pan';
