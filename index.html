@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v90</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v91</div>
 
 <script type="importmap">
 {
@@ -1739,21 +1739,20 @@ function animate() {
   }
 
   // NPC: position on globe surface (scene space)
-  // Compute NPC's position relative to current globe rotation
-  const npcRelative = globeRotation.clone().invert().premultiply(npcGlobeRotation);
-  const npcSurfaceDir = new THREE.Vector3(0, 1, 0).applyQuaternion(npcRelative);
-  globe.updateMatrixWorld();
-  const npcRayOrigin = npcSurfaceDir.clone().multiplyScalar(GLOBE_RADIUS + 10);
-  const npcRayD = npcSurfaceDir.clone().negate();
+  // NPC's absolute position on the globe, independent of player.
+  const npcGlobeDir = new THREE.Vector3(0, 1, 0).applyQuaternion(npcGlobeRotation.clone().invert());
+  const npcWorldDir = npcGlobeDir.applyQuaternion(globeRotation);
+  globePivot.updateMatrixWorld(true);
+  const npcRayOrigin = npcWorldDir.clone().multiplyScalar(GLOBE_RADIUS + 10);
+  const npcRayD = npcWorldDir.clone().negate();
   const npcRay = new THREE.Raycaster(npcRayOrigin, npcRayD, 0, GLOBE_RADIUS * 3);
   const npcHits = npcRay.intersectObject(globe, false);
   if (npcHits.length > 0) {
     npc.position.copy(npcHits[0].point);
   } else {
-    npc.position.copy(npcSurfaceDir.clone().multiplyScalar(GLOBE_RADIUS));
+    npc.position.copy(npcWorldDir.clone().multiplyScalar(GLOBE_RADIUS));
   }
-  const npcUpDir = npc.position.clone().normalize();
-  npc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), npcUpDir);
+  npc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), npcWorldDir);
   npc.rotateY(npcFacing);
 
   const npcIsWalking = npcWanderPause <= 0;
