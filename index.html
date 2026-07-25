@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v103</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v104</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -171,7 +171,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v103</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v104</div>
 </div><!-- /game-screen -->
 
 <script type="importmap">
@@ -197,6 +197,7 @@ let localPlayerId = Math.random().toString(36).substring(2, 10);
 const peerConnections = {};
 const dataChannels = {};
 const pendingCandidates = {};
+window.__mp = { peerConnections, dataChannels, pendingCandidates, get signalingWs() { return signalingWs; }, localPlayerId };
 
 // Landing screen handlers
 document.getElementById('btn-create-room').addEventListener('click', async () => {
@@ -318,7 +319,7 @@ const rtcConfig = {
   ]
 };
 
-function createPeerConnection(peerId, initiator) {
+async function createPeerConnection(peerId, initiator) {
   const pc = new RTCPeerConnection(rtcConfig);
   peerConnections[peerId] = pc;
   pendingCandidates[peerId] = [];
@@ -340,14 +341,13 @@ function createPeerConnection(peerId, initiator) {
   if (initiator) {
     const dc = pc.createDataChannel('game');
     setupDataChannel(peerId, dc);
-    pc.createOffer().then(offer => {
-      pc.setLocalDescription(offer);
-      signalingWs.send(JSON.stringify({
-        type: 'offer',
-        target: peerId,
-        sdp: offer,
-      }));
-    });
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    signalingWs.send(JSON.stringify({
+      type: 'offer',
+      target: peerId,
+      sdp: offer,
+    }));
   }
 
   return pc;
