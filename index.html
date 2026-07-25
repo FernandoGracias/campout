@@ -170,7 +170,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v100</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v101</div>
 </div><!-- /game-screen -->
 
 <script type="importmap">
@@ -277,7 +277,8 @@ function connectSignaling() {
       case 'peer-joined': {
         updateLobbyPeers(msg);
         if (msg.seed) worldSeed = msg.seed;
-        createPeerConnection(msg.id, true);
+        // Only initiate if our ID is lexically greater (prevents both sides offering)
+        createPeerConnection(msg.id, localPlayerId > msg.id);
         break;
       }
       case 'peer-left': {
@@ -353,12 +354,15 @@ function createPeerConnection(peerId, initiator) {
 
 function setupDataChannel(peerId, channel) {
   dataChannels[peerId] = channel;
+  channel.onopen = () => {
+    if (window.globeRotation) broadcastHello(window.globeRotation);
+  };
   channel.onmessage = (event) => {
     handleGameMessage(peerId, JSON.parse(event.data));
   };
   channel.onclose = () => {
     delete dataChannels[peerId];
-    if (typeof removeOtherPlayer === 'function') removeOtherPlayer(peerId);
+    if (window.removeOtherPlayer) window.removeOtherPlayer(peerId);
   };
 }
 
@@ -1190,6 +1194,7 @@ window.addOtherPlayer = addOtherPlayer;
 window.removeOtherPlayer = removeOtherPlayer;
 window.updateOtherPlayer = updateOtherPlayer;
 window.otherPlayers = otherPlayers;
+window.globeRotation = globeRotation;
 
 // --- NPC (uses OtherPlayers system) ---
 const npcGlobeRotation = new THREE.Quaternion();
@@ -1434,7 +1439,7 @@ document.addEventListener('click', (e) => {
 
 const timeSlider = document.getElementById('time-slider');
 const timeDisplay = document.getElementById('time-display');
-let timeOfDay = 12;
+let timeOfDay = (seed % 24000) / 1000;
 let moonlightStrength = 0.5;
 let fogDensity = 0;
 let tentColor = 0xcc5522;
