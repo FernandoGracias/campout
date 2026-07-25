@@ -48,6 +48,57 @@ canvas { display: block; }
 </style>
 </head>
 <body>
+
+<!-- LANDING SCREEN -->
+<div id="landing-screen" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#1a1a2e;z-index:1000;padding:20px;">
+  <h1 style="color:#f0c040;font-size:36px;margin-bottom:8px;font-family:system-ui,sans-serif;">Campout</h1>
+  <p style="color:#aaa;font-size:14px;margin-bottom:32px;">Multiplayer globe-walking sim</p>
+  <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:280px;">
+    <button id="btn-create-room" style="padding:14px;font-size:16px;background:#337733;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Create World</button>
+    <div style="display:flex;gap:8px;">
+      <input id="input-room-code" type="text" placeholder="Room code" maxlength="6" style="flex:1;padding:12px;font-size:16px;background:#2a2a3e;color:#fff;border:1px solid #555;border-radius:8px;text-align:center;font-family:monospace;text-transform:lowercase;">
+      <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOBBY SCREEN -->
+<div id="lobby-screen" style="position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:#1a1a2e;z-index:1000;padding:20px;">
+  <h2 style="color:#f0c040;font-size:24px;margin-bottom:4px;font-family:system-ui,sans-serif;">Room: <span id="lobby-room-id" style="font-family:monospace;"></span></h2>
+  <p id="lobby-seed-display" style="color:#666;font-size:11px;margin-bottom:24px;font-family:monospace;"></p>
+  <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:280px;">
+    <div>
+      <label style="color:#aaa;font-size:12px;display:block;margin-bottom:4px;">Your Name</label>
+      <input id="input-player-name" type="text" placeholder="Camper" maxlength="16" style="width:100%;padding:10px;font-size:16px;background:#2a2a3e;color:#fff;border:1px solid #555;border-radius:8px;font-family:system-ui,sans-serif;">
+    </div>
+    <div>
+      <label style="color:#aaa;font-size:12px;display:block;margin-bottom:4px;">Tent Color</label>
+      <div id="lobby-tent-colors" style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button data-color="cc5522" style="background:#cc5522;width:32px;height:32px;border:3px solid #fff;border-radius:6px;cursor:pointer;"></button>
+        <button data-color="2266aa" style="background:#2266aa;width:32px;height:32px;border:3px solid transparent;border-radius:6px;cursor:pointer;"></button>
+        <button data-color="337733" style="background:#337733;width:32px;height:32px;border:3px solid transparent;border-radius:6px;cursor:pointer;"></button>
+        <button data-color="aa2222" style="background:#aa2222;width:32px;height:32px;border:3px solid transparent;border-radius:6px;cursor:pointer;"></button>
+        <button data-color="ddaa22" style="background:#ddaa22;width:32px;height:32px;border:3px solid transparent;border-radius:6px;cursor:pointer;"></button>
+        <button data-color="553388" style="background:#553388;width:32px;height:32px;border:3px solid transparent;border-radius:6px;cursor:pointer;"></button>
+        <button data-color="ee66aa" style="background:#ee66aa;width:32px;height:32px;border:3px solid transparent;border-radius:6px;cursor:pointer;"></button>
+      </div>
+    </div>
+    <div>
+      <label style="color:#aaa;font-size:12px;display:block;margin-bottom:4px;">Tent Style</label>
+      <select id="lobby-tent-style" style="width:100%;padding:10px;font-size:14px;background:#2a2a3e;color:#fff;border:1px solid #555;border-radius:8px;">
+        <option value="aframe">A-Frame</option>
+        <option value="dome">Dome</option>
+        <option value="cabin">Tipi</option>
+        <option value="tunnel">Tunnel</option>
+      </select>
+    </div>
+    <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
+    <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
+  </div>
+</div>
+
+<!-- GAME SCREEN -->
+<div id="game-screen" style="display:none;">
 <div id="controls-row" style="position:fixed;bottom:calc(30px + env(safe-area-inset-bottom, 0px));left:30px;z-index:100;">
   <div style="display:flex;gap:12px;align-items:center;">
     <div style="position:relative;width:48px;height:48px;" id="lever-wrapper">
@@ -115,7 +166,8 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v98</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v99</div>
+</div><!-- /game-screen -->
 
 <script type="importmap">
 {
@@ -128,6 +180,265 @@ canvas { display: block; }
 <script type="module">
 import * as THREE from 'three';
 
+// --- SCREEN MANAGEMENT & NETWORKING ---
+const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
+let roomId = null;
+let worldSeed = null;
+let playerName = 'Camper';
+let lobbyTentColor = 'cc5522';
+let lobbyTentStyle = 'aframe';
+let signalingWs = null;
+let localPlayerId = Math.random().toString(36).substring(2, 10);
+const peerConnections = {};
+const dataChannels = {};
+const pendingCandidates = {};
+
+// Landing screen handlers
+document.getElementById('btn-create-room').addEventListener('click', async () => {
+  const resp = await fetch(SIGNAL_SERVER + '/create');
+  const data = await resp.json();
+  roomId = data.roomId;
+  worldSeed = data.seed;
+  showLobby();
+});
+
+document.getElementById('btn-join-room').addEventListener('click', () => {
+  const code = document.getElementById('input-room-code').value.trim().toLowerCase();
+  if (code.length < 4) return;
+  roomId = code;
+  worldSeed = null;
+  showLobby();
+});
+
+document.getElementById('input-room-code').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('btn-join-room').click();
+});
+
+// Lobby screen handlers
+document.getElementById('btn-enter-world').addEventListener('click', () => {
+  playerName = document.getElementById('input-player-name').value.trim() || 'Camper';
+  document.getElementById('landing-screen').style.display = 'none';
+  document.getElementById('lobby-screen').style.display = 'none';
+  document.getElementById('game-screen').style.display = 'block';
+  startGame(worldSeed || 42);
+});
+
+document.querySelectorAll('#lobby-tent-colors button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#lobby-tent-colors button').forEach(b => b.style.borderColor = 'transparent');
+    btn.style.borderColor = '#fff';
+    lobbyTentColor = btn.dataset.color;
+  });
+});
+
+document.getElementById('lobby-tent-style').addEventListener('change', (e) => {
+  lobbyTentStyle = e.target.value;
+});
+
+function showLobby() {
+  document.getElementById('landing-screen').style.display = 'none';
+  document.getElementById('lobby-screen').style.display = 'flex';
+  document.getElementById('lobby-room-id').textContent = roomId;
+  document.getElementById('lobby-seed-display').textContent = worldSeed ? 'seed: ' + worldSeed : 'joining...';
+  connectSignaling();
+}
+
+function connectSignaling() {
+  const wsUrl = SIGNAL_SERVER.replace('https://', 'wss://') + '/room/' + roomId;
+  signalingWs = new WebSocket(wsUrl);
+
+  signalingWs.addEventListener('open', () => {
+    signalingWs.send(JSON.stringify({
+      type: 'join',
+      id: localPlayerId,
+      name: playerName || 'Camper',
+      color: lobbyTentColor,
+      tentStyle: lobbyTentStyle,
+      tentColor: lobbyTentColor,
+      seed: worldSeed,
+    }));
+  });
+
+  signalingWs.addEventListener('message', (event) => {
+    const msg = JSON.parse(event.data);
+
+    switch (msg.type) {
+      case 'room-info': {
+        if (msg.seed) {
+          worldSeed = msg.seed;
+          document.getElementById('lobby-seed-display').textContent = 'seed: ' + worldSeed;
+        }
+        break;
+      }
+      case 'peer-joined': {
+        updateLobbyPeers(msg);
+        if (msg.seed) worldSeed = msg.seed;
+        createPeerConnection(msg.id, true);
+        break;
+      }
+      case 'peer-left': {
+        delete peerConnections[msg.id];
+        delete dataChannels[msg.id];
+        if (window.removeOtherPlayer) window.removeOtherPlayer(msg.id);
+        break;
+      }
+      case 'offer': {
+        handleOffer(msg);
+        break;
+      }
+      case 'answer': {
+        handleAnswer(msg);
+        break;
+      }
+      case 'ice-candidate': {
+        handleIceCandidate(msg);
+        break;
+      }
+    }
+  });
+}
+
+function updateLobbyPeers(msg) {
+  const el = document.getElementById('lobby-peers');
+  const existing = el.textContent;
+  el.textContent = (existing ? existing + '\n' : '') + (msg.name || msg.id) + ' joined';
+}
+
+// --- WebRTC ---
+const rtcConfig = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ]
+};
+
+function createPeerConnection(peerId, initiator) {
+  const pc = new RTCPeerConnection(rtcConfig);
+  peerConnections[peerId] = pc;
+  pendingCandidates[peerId] = [];
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      signalingWs.send(JSON.stringify({
+        type: 'ice-candidate',
+        target: peerId,
+        candidate: event.candidate,
+      }));
+    }
+  };
+
+  pc.ondatachannel = (event) => {
+    setupDataChannel(peerId, event.channel);
+  };
+
+  if (initiator) {
+    const dc = pc.createDataChannel('game');
+    setupDataChannel(peerId, dc);
+    pc.createOffer().then(offer => {
+      pc.setLocalDescription(offer);
+      signalingWs.send(JSON.stringify({
+        type: 'offer',
+        target: peerId,
+        sdp: offer,
+      }));
+    });
+  }
+
+  return pc;
+}
+
+function setupDataChannel(peerId, channel) {
+  dataChannels[peerId] = channel;
+  channel.onmessage = (event) => {
+    handleGameMessage(peerId, JSON.parse(event.data));
+  };
+  channel.onclose = () => {
+    delete dataChannels[peerId];
+    if (typeof removeOtherPlayer === 'function') removeOtherPlayer(peerId);
+  };
+}
+
+async function handleOffer(msg) {
+  const pc = createPeerConnection(msg.from, false);
+  await pc.setRemoteDescription(msg.sdp);
+  for (const c of pendingCandidates[msg.from] || []) {
+    await pc.addIceCandidate(c);
+  }
+  pendingCandidates[msg.from] = [];
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  signalingWs.send(JSON.stringify({
+    type: 'answer',
+    target: msg.from,
+    sdp: answer,
+  }));
+}
+
+async function handleAnswer(msg) {
+  const pc = peerConnections[msg.from];
+  if (pc) {
+    await pc.setRemoteDescription(msg.sdp);
+    for (const c of pendingCandidates[msg.from] || []) {
+      await pc.addIceCandidate(c);
+    }
+    pendingCandidates[msg.from] = [];
+  }
+}
+
+async function handleIceCandidate(msg) {
+  const pc = peerConnections[msg.from];
+  if (pc && pc.remoteDescription) {
+    await pc.addIceCandidate(msg.candidate);
+  } else {
+    if (!pendingCandidates[msg.from]) pendingCandidates[msg.from] = [];
+    pendingCandidates[msg.from].push(msg.candidate);
+  }
+}
+
+function handleGameMessage(peerId, msg) {
+  if (msg.type === 'pos') {
+    const q = new THREE.Quaternion(msg.qx, msg.qy, msg.qz, msg.qw);
+    if (window.updateOtherPlayer) {
+      if (!window.otherPlayers[peerId]) {
+        window.addOtherPlayer(peerId, 0x2266aa, q);
+      }
+      window.updateOtherPlayer(peerId, q, msg.facing);
+    }
+  }
+  if (msg.type === 'hello') {
+    if (window.addOtherPlayer && !window.otherPlayers[peerId]) {
+      window.addOtherPlayer(peerId, parseInt(msg.color, 16) || 0x2266aa, new THREE.Quaternion(msg.qx, msg.qy, msg.qz, msg.qw));
+    }
+  }
+}
+
+function broadcastPosition(globeRot, facing) {
+  const msg = JSON.stringify({
+    type: 'pos',
+    qx: globeRot.x, qy: globeRot.y, qz: globeRot.z, qw: globeRot.w,
+    facing,
+  });
+  for (const id in dataChannels) {
+    const dc = dataChannels[id];
+    if (dc.readyState === 'open') dc.send(msg);
+  }
+}
+
+function broadcastHello(globeRot) {
+  const msg = JSON.stringify({
+    type: 'hello',
+    color: lobbyTentColor,
+    qx: globeRot.x, qy: globeRot.y, qz: globeRot.z, qw: globeRot.w,
+  });
+  for (const id in dataChannels) {
+    const dc = dataChannels[id];
+    if (dc.readyState === 'open') dc.send(msg);
+  }
+}
+
+// --- GAME INITIALIZATION (called after lobby) ---
+function startGame(seed) {
+
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -135,7 +446,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.2;
-document.body.appendChild(renderer.domElement);
+document.getElementById('game-screen').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x68b8e8);
@@ -292,7 +603,7 @@ function mulberry32(a) {
     return ((t ^ t >>> 14) >>> 0) / 4294967296;
   };
 }
-const rng = mulberry32(42);
+const rng = mulberry32(seed);
 
 // --- UTILITY: place on globe surface ---
 function placeOnGlobe(obj, lat, lon, offset = 0) {
@@ -869,6 +1180,12 @@ function animateOtherPlayers(delta) {
     }
   }
 }
+
+// Expose for networking layer
+window.addOtherPlayer = addOtherPlayer;
+window.removeOtherPlayer = removeOtherPlayer;
+window.updateOtherPlayer = updateOtherPlayer;
+window.otherPlayers = otherPlayers;
 
 // --- NPC (uses OtherPlayers system) ---
 const npcGlobeRotation = new THREE.Quaternion();
@@ -1776,6 +2093,13 @@ function animate() {
   globePivot.quaternion.copy(globeRotation);
   player.rotation.y = playerFacing;
 
+  // Broadcast position to peers (5 times/sec)
+  if (!animate._lastBroadcast) animate._lastBroadcast = 0;
+  if (clock.elapsedTime - animate._lastBroadcast > 0.2) {
+    animate._lastBroadcast = clock.elapsedTime;
+    broadcastPosition(globeRotation, playerFacing);
+  }
+
   // Camera: cameraHeight is tilt (1=ground level, 12=overhead), cameraDistance is total distance
   const tiltFraction = cameraHeight / 12;
   const playerY = player.position.y;
@@ -1974,6 +2298,11 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 if (navigator.maxTouchPoints === 0) document.getElementById('lever-wrapper').style.display = 'none';
+
+// Broadcast hello to all connected peers once game starts
+setTimeout(() => broadcastHello(globeRotation), 1000);
+
+} // end startGame
 </script>
 </body>
 </html>
