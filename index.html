@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v106</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v107</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -171,7 +171,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v106</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v107</div>
 <div id="mp-status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:200;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;"></div>
 </div><!-- /game-screen -->
 
@@ -325,6 +325,10 @@ const rtcConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:openrelay.metered.ca:80' },
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
   ]
 };
 
@@ -389,7 +393,9 @@ function setupDataChannel(peerId, channel) {
 async function handleOffer(msg) {
   let pc = peerConnections[msg.from];
   if (!pc) pc = await createPeerConnection(msg.from, false);
+  mpLog('setRemoteDesc (offer) ' + msg.from.substring(0,6));
   await pc.setRemoteDescription(msg.sdp);
+  mpLog('flushing ' + (pendingCandidates[msg.from] || []).length + ' pending ICE');
   for (const c of pendingCandidates[msg.from] || []) {
     await pc.addIceCandidate(c);
   }
