@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v93</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v94</div>
 
 <script type="importmap">
 {
@@ -1758,7 +1758,7 @@ function animate() {
     npc.position.copy(npcWorldDir.clone().multiplyScalar(GLOBE_RADIUS));
   }
   npc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), npcWorldDir);
-  npc.rotateY(npcFacing);
+  npc.rotateY(npcFacing + Math.PI);
 
   const npcIsWalking = npcWanderPause <= 0;
   if (npcIsWalking) {
