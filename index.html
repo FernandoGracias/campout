@@ -112,7 +112,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v95</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v96</div>
 
 <script type="importmap">
 {
@@ -785,21 +785,97 @@ const player = buildPlayer();
 player.position.set(0, GLOBE_RADIUS - 0.05, 0);
 scene.add(player);
 
-// --- NPC (second character for multiplayer test) ---
-const npc = buildPlayer();
-npc.traverse(c => { if (c.isMesh && c.material) { c.material = c.material.clone(); } });
-npc.traverse(c => { if (c.isMesh && c.material && c.material.color && c.material.color.r > 0.7 && c.material.color.g < 0.5) c.material.color.set(0x2266aa); });
-let npcFacing = 0;
-let npcWalkCycle = 0;
+// --- OTHER PLAYERS ---
+const otherPlayers = {};
+
+function addOtherPlayer(id, color, startGlobeRotation) {
+  const mesh = buildPlayer();
+  mesh.traverse(c => { if (c.isMesh && c.material) { c.material = c.material.clone(); } });
+  mesh.traverse(c => { if (c.isMesh && c.material && c.material.color && c.material.color.r > 0.7 && c.material.color.g < 0.5) c.material.color.set(color); });
+  scene.add(mesh);
+  otherPlayers[id] = {
+    mesh,
+    globeRotation: startGlobeRotation.clone(),
+    facing: 0,
+    walkCycle: 0,
+    isWalking: false,
+    prevGlobeRotation: startGlobeRotation.clone(),
+  };
+  return otherPlayers[id];
+}
+
+function removeOtherPlayer(id) {
+  const p = otherPlayers[id];
+  if (!p) return;
+  scene.remove(p.mesh);
+  delete otherPlayers[id];
+}
+
+function updateOtherPlayer(id, globeRotation, facing) {
+  const p = otherPlayers[id];
+  if (!p) return;
+  p.prevGlobeRotation.copy(p.globeRotation);
+  p.globeRotation.copy(globeRotation);
+  p.facing = facing;
+  p.isWalking = p.globeRotation.angleTo(p.prevGlobeRotation) > 0.0001;
+}
+
+function animateOtherPlayers(delta) {
+  globePivot.updateMatrixWorld(true);
+  for (const id in otherPlayers) {
+    const p = otherPlayers[id];
+    const m = p.mesh;
+
+    const gDir = new THREE.Vector3(0, 1, 0).applyQuaternion(p.globeRotation.clone().invert());
+    const wDir = gDir.applyQuaternion(globeRotation);
+
+    const rayOrigin = wDir.clone().multiplyScalar(GLOBE_RADIUS + 10);
+    const rayD = wDir.clone().negate();
+    const ray = new THREE.Raycaster(rayOrigin, rayD, 0, GLOBE_RADIUS * 3);
+    const hits = ray.intersectObject(globe, false);
+    if (hits.length > 0) {
+      m.position.copy(hits[0].point);
+    } else {
+      m.position.copy(wDir.clone().multiplyScalar(GLOBE_RADIUS));
+    }
+
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), wDir);
+    const fwdLocal = new THREE.Vector3(Math.sin(p.facing), 0, Math.cos(p.facing));
+    const fwdGlobe = fwdLocal.applyQuaternion(p.globeRotation.clone().invert());
+    const fwdWorld = fwdGlobe.applyQuaternion(globeRotation);
+    fwdWorld.addScaledVector(wDir, -fwdWorld.dot(wDir));
+    fwdWorld.normalize();
+    const localFwd = fwdWorld.clone().applyQuaternion(m.quaternion.clone().invert());
+    const fAngle = Math.atan2(localFwd.x, localFwd.z);
+    m.rotateY(fAngle + Math.PI);
+
+    if (p.isWalking) {
+      p.walkCycle += delta * 8;
+      const swing = Math.sin(p.walkCycle) * 0.5;
+      m.userData.leftLeg.rotation.x = swing;
+      m.userData.rightLeg.rotation.x = -swing;
+      m.userData.leftArm.rotation.x = -swing * 0.4;
+      m.userData.rightArm.rotation.x = swing * 0.4;
+      m.rotateZ(Math.sin(p.walkCycle) * 0.04);
+    } else {
+      p.walkCycle = 0;
+      m.userData.leftLeg.rotation.x *= 0.85;
+      m.userData.rightLeg.rotation.x *= 0.85;
+      m.userData.leftArm.rotation.x *= 0.85;
+      m.userData.rightArm.rotation.x *= 0.85;
+    }
+  }
+}
+
+// --- NPC (uses OtherPlayers system) ---
 const npcGlobeRotation = new THREE.Quaternion();
 npcGlobeRotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.6);
-const npcStartOffset = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.15);
-npcGlobeRotation.premultiply(npcStartOffset);
+npcGlobeRotation.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.15));
+let npcFacing = Math.random() * Math.PI * 2;
 let npcWanderTimer = 0;
-let npcWanderDir = Math.random() * Math.PI * 2;
+let npcWanderDir = npcFacing;
 let npcWanderPause = 0;
-npcFacing = npcWanderDir;
-scene.add(npc);
+addOtherPlayer('npc', 0x2266aa, npcGlobeRotation);
 
 // --- CAMERA SETUP ---
 camera.position.set(0, GLOBE_RADIUS + 6, 6);
@@ -1721,7 +1797,7 @@ function animate() {
     player.rotation.z *= 0.9;
   }
 
-  // NPC: wander behavior
+  // NPC: wander behavior (feeds into OtherPlayers system)
   npcWanderTimer += delta;
   if (npcWanderPause > 0) {
     npcWanderPause -= delta;
@@ -1742,50 +1818,10 @@ function animate() {
     const npcRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -npcStep * Math.sin(npcFacing));
     npcGlobeRotation.premultiply(npcRotX).premultiply(npcRotZ);
   }
+  updateOtherPlayer('npc', npcGlobeRotation, npcFacing);
 
-  // NPC: position on globe surface (scene space)
-  // NPC's absolute position on the globe, independent of player.
-  const npcGlobeDir = new THREE.Vector3(0, 1, 0).applyQuaternion(npcGlobeRotation.clone().invert());
-  const npcWorldDir = npcGlobeDir.applyQuaternion(globeRotation);
-  globePivot.updateMatrixWorld(true);
-  const npcRayOrigin = npcWorldDir.clone().multiplyScalar(GLOBE_RADIUS + 10);
-  const npcRayD = npcWorldDir.clone().negate();
-  const npcRay = new THREE.Raycaster(npcRayOrigin, npcRayD, 0, GLOBE_RADIUS * 3);
-  const npcHits = npcRay.intersectObject(globe, false);
-  if (npcHits.length > 0) {
-    npc.position.copy(npcHits[0].point);
-  } else {
-    npc.position.copy(npcWorldDir.clone().multiplyScalar(GLOBE_RADIUS));
-  }
-  npc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), npcWorldDir);
-  // Compute forward tangent vector in world space from movement direction
-  const npcForwardLocal = new THREE.Vector3(Math.sin(npcFacing), 0, Math.cos(npcFacing));
-  const npcForwardGlobe = npcForwardLocal.applyQuaternion(npcGlobeRotation.clone().invert());
-  const npcForwardWorld = npcForwardGlobe.applyQuaternion(globeRotation);
-  // Project onto tangent plane (remove component along surface normal)
-  npcForwardWorld.addScaledVector(npcWorldDir, -npcForwardWorld.dot(npcWorldDir));
-  npcForwardWorld.normalize();
-  // Orient model: model faces -Z locally, so "forward" in local space is -Z
-  const npcLocalForward = npcForwardWorld.clone().applyQuaternion(npc.quaternion.clone().invert());
-  const facingAngle = Math.atan2(npcLocalForward.x, npcLocalForward.z);
-  npc.rotateY(facingAngle + Math.PI);
-
-  const npcIsWalking = npcWanderPause <= 0;
-  if (npcIsWalking) {
-    npcWalkCycle += delta * 8;
-    const swing = Math.sin(npcWalkCycle) * 0.5;
-    npc.userData.leftLeg.rotation.x = swing;
-    npc.userData.rightLeg.rotation.x = -swing;
-    npc.userData.leftArm.rotation.x = -swing * 0.4;
-    npc.userData.rightArm.rotation.x = swing * 0.4;
-    npc.rotateZ(Math.sin(npcWalkCycle) * 0.04);
-  } else {
-    npcWalkCycle = 0;
-    npc.userData.leftLeg.rotation.x *= 0.85;
-    npc.userData.rightLeg.rotation.x *= 0.85;
-    npc.userData.leftArm.rotation.x *= 0.85;
-    npc.userData.rightArm.rotation.x *= 0.85;
-  }
+  // Animate all other players (NPC + future multiplayer)
+  animateOtherPlayers(delta);
 
   // Terrain following: raycast downward to find globe surface
   globe.updateMatrixWorld();
