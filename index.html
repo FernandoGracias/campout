@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v104</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v105</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -171,7 +171,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v104</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v105</div>
 </div><!-- /game-screen -->
 
 <script type="importmap">
@@ -320,6 +320,7 @@ const rtcConfig = {
 };
 
 async function createPeerConnection(peerId, initiator) {
+  if (peerConnections[peerId]) return peerConnections[peerId];
   const pc = new RTCPeerConnection(rtcConfig);
   peerConnections[peerId] = pc;
   pendingCandidates[peerId] = [];
@@ -368,7 +369,8 @@ function setupDataChannel(peerId, channel) {
 }
 
 async function handleOffer(msg) {
-  const pc = createPeerConnection(msg.from, false);
+  let pc = peerConnections[msg.from];
+  if (!pc) pc = await createPeerConnection(msg.from, false);
   await pc.setRemoteDescription(msg.sdp);
   for (const c of pendingCandidates[msg.from] || []) {
     await pc.addIceCandidate(c);
