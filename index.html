@@ -85,6 +85,9 @@ canvas { display: block; }
       <option value="joystick">Joystick</option>
     </select>
   </div>
+  <div class="control-row">
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#aaa;"><input type="checkbox" id="invert-x"> Invert pan direction</label>
+  </div>
   <hr style="border:none;border-top:1px solid #444;margin:12px 0;">
   <h3 style="margin-bottom:12px;color:#f0c040;font-size:14px;">TENT OPTIONS</h3>
   <div class="control-row">
@@ -112,7 +115,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v97</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v98</div>
 
 <script type="importmap">
 {
@@ -888,6 +891,7 @@ document.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; }
 
 let leverY = 0, leverX = 0, leverActive = false, leverTouchId = null;
 let controlMode = 'pan';
+let invertX = false;
 const leverZone = document.getElementById('lever-zone');
 const leverRange = 10;
 const joystickRange = 20;
@@ -896,6 +900,10 @@ document.getElementById('control-mode').addEventListener('change', (e) => {
   controlMode = e.target.value;
   document.getElementById('joystick-base').style.display = controlMode === 'joystick' ? 'block' : 'none';
   document.getElementById('lever-track').style.display = controlMode === 'pan' ? 'block' : 'none';
+  saveSettings();
+});
+document.getElementById('invert-x').addEventListener('change', (e) => {
+  invertX = e.target.checked;
   saveSettings();
 });
 
@@ -987,7 +995,7 @@ window.addEventListener('mousemove', (e) => {
   if (!isDragging) return;
   const dx = e.clientX - dragStartX;
   const dy = e.clientY - dragStartY;
-  cameraAngle = dragStartAngle + dx * 0.01;
+  cameraAngle = dragStartAngle + dx * 0.01 * (invertX ? -1 : 1);
   cameraTargetAngle = cameraAngle;
   cameraHeight = Math.max(1, Math.min(12, dragStartHeight + dy * 0.02));
 });
@@ -1046,7 +1054,7 @@ renderer.domElement.addEventListener('touchmove', (e) => {
     cameraDistance = Math.max(4, Math.min(60, pinchStartZoom * scale));
     // Pan via midpoint horizontal movement
     const avgX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-    cameraAngle = pinchStartAngle + (avgX - pinchStartAvgX) * 0.01;
+    cameraAngle = pinchStartAngle + (avgX - pinchStartAvgX) * 0.01 * (invertX ? -1 : 1);
     cameraTargetAngle = cameraAngle;
     // Tilt only with deliberate two-finger vertical drag (avgY moved > 30px)
     const avgY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
@@ -1059,7 +1067,7 @@ renderer.domElement.addEventListener('touchmove', (e) => {
   for (const touch of e.changedTouches) {
     if (touch.identifier === orbitTouchId) {
       const dx = touch.clientX - orbitStartX;
-      cameraAngle = orbitStartAngle + dx * 0.01;
+      cameraAngle = orbitStartAngle + dx * 0.01 * (invertX ? -1 : 1);
       cameraTargetAngle = cameraAngle;
     }
   }
@@ -1124,6 +1132,7 @@ let timePaused = false;
   if (s.tentColor) { tentColor = parseInt(s.tentColor, 16); }
   if (s.tentStyle) { tentStyle = s.tentStyle; document.getElementById('tent-style').value = s.tentStyle; }
   if (s.timePaused) { timePaused = s.timePaused; document.getElementById('time-pause').checked = s.timePaused; }
+  if (s.invertX) { invertX = s.invertX; document.getElementById('invert-x').checked = s.invertX; }
   const h = Math.floor(timeOfDay); const m = Math.floor((timeOfDay - h) * 60);
   document.getElementById('time-display').textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 })();
@@ -1131,7 +1140,7 @@ let timePaused = false;
 function saveSettings() {
   localStorage.setItem('campout-settings', JSON.stringify({
     timeOfDay, moonlight: moonlightStrength, fog: fogDensity,
-    controlMode, tentColor: tentColor.toString(16), tentStyle, timePaused
+    controlMode, tentColor: tentColor.toString(16), tentStyle, timePaused, invertX
   }));
 }
 
