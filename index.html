@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v105</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v106</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -171,7 +171,8 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v105</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v106</div>
+<div id="mp-status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:200;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;"></div>
 </div><!-- /game-screen -->
 
 <script type="importmap">
@@ -187,6 +188,13 @@ import * as THREE from 'three';
 
 // --- SCREEN MANAGEMENT & NETWORKING ---
 const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
+const mpLogs = [];
+function mpLog(msg) {
+  mpLogs.push(msg);
+  if (mpLogs.length > 20) mpLogs.shift();
+  const el = document.getElementById('mp-status');
+  if (el) { el.style.display = 'block'; el.textContent = mpLogs.slice(-5).join('\n'); }
+}
 let roomId = null;
 let worldSeed = null;
 let playerName = 'Camper';
@@ -267,6 +275,7 @@ function connectSignaling() {
 
   signalingWs.addEventListener('message', (event) => {
     const msg = JSON.parse(event.data);
+    mpLog('← ' + msg.type + (msg.from ? ' from:' + msg.from.substring(0,6) : '') + (msg.id ? ' id:' + msg.id.substring(0,6) : '') + (msg.seed ? ' seed:' + msg.seed : ''));
 
     switch (msg.type) {
       case 'room-info': {
@@ -321,9 +330,14 @@ const rtcConfig = {
 
 async function createPeerConnection(peerId, initiator) {
   if (peerConnections[peerId]) return peerConnections[peerId];
+  mpLog('PC create: ' + peerId.substring(0,6) + (initiator ? ' (initiator)' : ''));
   const pc = new RTCPeerConnection(rtcConfig);
   peerConnections[peerId] = pc;
   pendingCandidates[peerId] = [];
+
+  pc.oniceconnectionstatechange = () => {
+    mpLog('ICE: ' + pc.iceConnectionState + ' ' + peerId.substring(0,6));
+  };
 
   pc.onicecandidate = (event) => {
     if (event.candidate) {
@@ -357,12 +371,16 @@ async function createPeerConnection(peerId, initiator) {
 function setupDataChannel(peerId, channel) {
   dataChannels[peerId] = channel;
   channel.onopen = () => {
+    mpLog('DC open: ' + peerId.substring(0,6));
     if (window.globeRotation) broadcastHello(window.globeRotation);
   };
   channel.onmessage = (event) => {
-    handleGameMessage(peerId, JSON.parse(event.data));
+    const data = JSON.parse(event.data);
+    if (data.type === 'hello') mpLog('DC msg: hello from ' + peerId.substring(0,6));
+    handleGameMessage(peerId, data);
   };
   channel.onclose = () => {
+    mpLog('DC closed: ' + peerId.substring(0,6));
     delete dataChannels[peerId];
     if (window.removeOtherPlayer) window.removeOtherPlayer(peerId);
   };
@@ -1453,7 +1471,6 @@ let timePaused = false;
   const saved = localStorage.getItem('campout-settings');
   if (!saved) return;
   const s = JSON.parse(saved);
-  if (s.timeOfDay !== undefined) { timeOfDay = s.timeOfDay; document.getElementById('time-slider').value = s.timeOfDay; }
   if (s.moonlight !== undefined) { moonlightStrength = s.moonlight; document.getElementById('moonlight-slider').value = s.moonlight * 100; }
   if (s.fog !== undefined) { fogDensity = s.fog; document.getElementById('fog-slider').value = s.fog * 100; }
   if (s.controlMode) { controlMode = s.controlMode; document.getElementById('control-mode').value = s.controlMode; document.getElementById('joystick-base').style.display = s.controlMode === 'joystick' ? 'block' : 'none'; document.getElementById('lever-track').style.display = s.controlMode === 'pan' ? 'block' : 'none'; }
@@ -1467,7 +1484,7 @@ let timePaused = false;
 
 function saveSettings() {
   localStorage.setItem('campout-settings', JSON.stringify({
-    timeOfDay, moonlight: moonlightStrength, fog: fogDensity,
+    moonlight: moonlightStrength, fog: fogDensity,
     controlMode, tentColor: tentColor.toString(16), tentStyle, timePaused, invertX
   }));
 }
