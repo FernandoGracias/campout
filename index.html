@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v108</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v109</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -171,7 +171,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v108</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v109</div>
 <div id="mp-status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:200;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;"></div>
 </div><!-- /game-screen -->
 
@@ -1149,11 +1149,16 @@ function addOtherPlayer(id, color, startGlobeRotation) {
   scene.add(mesh);
   otherPlayers[id] = {
     mesh,
-    globeRotation: startGlobeRotation.clone(),
-    facing: 0,
+    currentGlobeRotation: startGlobeRotation.clone(),
+    targetGlobeRotation: startGlobeRotation.clone(),
+    prevGlobeRotation: startGlobeRotation.clone(),
+    currentFacing: 0,
+    targetFacing: 0,
+    prevFacing: 0,
+    interpT: 1,
+    lastUpdateTime: performance.now(),
     walkCycle: 0,
     isWalking: false,
-    prevGlobeRotation: startGlobeRotation.clone(),
   };
   return otherPlayers[id];
 }
@@ -1165,22 +1170,45 @@ function removeOtherPlayer(id) {
   delete otherPlayers[id];
 }
 
-function updateOtherPlayer(id, globeRotation, facing) {
+function updateOtherPlayer(id, globeRotation, facing, immediate) {
   const p = otherPlayers[id];
   if (!p) return;
-  p.prevGlobeRotation.copy(p.globeRotation);
-  p.globeRotation.copy(globeRotation);
-  p.facing = facing;
-  p.isWalking = p.globeRotation.angleTo(p.prevGlobeRotation) > 0.0001;
+  if (immediate) {
+    p.prevGlobeRotation.copy(globeRotation);
+    p.currentGlobeRotation.copy(globeRotation);
+    p.targetGlobeRotation.copy(globeRotation);
+    p.currentFacing = facing;
+    p.targetFacing = facing;
+    p.prevFacing = facing;
+    p.interpT = 1;
+    p.isWalking = true;
+    return;
+  }
+  p.prevGlobeRotation.copy(p.currentGlobeRotation);
+  p.targetGlobeRotation.copy(globeRotation);
+  p.prevFacing = p.currentFacing;
+  p.targetFacing = facing;
+  p.interpT = 0;
+  p.isWalking = p.targetGlobeRotation.angleTo(p.prevGlobeRotation) > 0.0001;
+  p.lastUpdateTime = performance.now();
 }
 
 function animateOtherPlayers(delta) {
+  const INTERP_DURATION = 0.1;
   globePivot.updateMatrixWorld(true);
   for (const id in otherPlayers) {
     const p = otherPlayers[id];
     const m = p.mesh;
 
-    const gDir = new THREE.Vector3(0, 1, 0).applyQuaternion(p.globeRotation.clone().invert());
+    p.interpT = Math.min(p.interpT + delta / INTERP_DURATION, 1);
+    p.currentGlobeRotation.slerpQuaternions(p.prevGlobeRotation, p.targetGlobeRotation, p.interpT);
+
+    let facingDiff = p.targetFacing - p.prevFacing;
+    if (facingDiff > Math.PI) facingDiff -= 2 * Math.PI;
+    if (facingDiff < -Math.PI) facingDiff += 2 * Math.PI;
+    p.currentFacing = p.prevFacing + facingDiff * p.interpT;
+
+    const gDir = new THREE.Vector3(0, 1, 0).applyQuaternion(p.currentGlobeRotation.clone().invert());
     const wDir = gDir.applyQuaternion(globeRotation);
 
     const rayOrigin = wDir.clone().multiplyScalar(GLOBE_RADIUS + 10);
@@ -1194,8 +1222,8 @@ function animateOtherPlayers(delta) {
     }
 
     m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), wDir);
-    const fwdLocal = new THREE.Vector3(Math.sin(p.facing), 0, Math.cos(p.facing));
-    const fwdGlobe = fwdLocal.applyQuaternion(p.globeRotation.clone().invert());
+    const fwdLocal = new THREE.Vector3(Math.sin(p.currentFacing), 0, Math.cos(p.currentFacing));
+    const fwdGlobe = fwdLocal.applyQuaternion(p.currentGlobeRotation.clone().invert());
     const fwdWorld = fwdGlobe.applyQuaternion(globeRotation);
     fwdWorld.addScaledVector(wDir, -fwdWorld.dot(wDir));
     fwdWorld.normalize();
@@ -1203,7 +1231,7 @@ function animateOtherPlayers(delta) {
     const fAngle = Math.atan2(localFwd.x, localFwd.z);
     m.rotateY(fAngle + Math.PI);
 
-    if (p.isWalking) {
+    if (p.isWalking && p.interpT < 1) {
       p.walkCycle += delta * 8;
       const swing = Math.sin(p.walkCycle) * 0.5;
       m.userData.leftLeg.rotation.x = swing;
@@ -2133,9 +2161,9 @@ function animate() {
   globePivot.quaternion.copy(globeRotation);
   player.rotation.y = playerFacing;
 
-  // Broadcast position to peers (5 times/sec)
+  // Broadcast position to peers (10 times/sec)
   if (!animate._lastBroadcast) animate._lastBroadcast = 0;
-  if (clock.elapsedTime - animate._lastBroadcast > 0.2) {
+  if (clock.elapsedTime - animate._lastBroadcast > 0.1) {
     animate._lastBroadcast = clock.elapsedTime;
     broadcastPosition(globeRotation, playerFacing);
   }
@@ -2193,7 +2221,7 @@ function animate() {
     const npcRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -npcStep * Math.sin(npcFacing));
     npcGlobeRotation.premultiply(npcRotX).premultiply(npcRotZ);
   }
-  updateOtherPlayer('npc', npcGlobeRotation, npcFacing);
+  updateOtherPlayer('npc', npcGlobeRotation, npcFacing, true);
 
   // Animate all other players (NPC + future multiplayer)
   animateOtherPlayers(delta);
