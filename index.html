@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v150</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v151</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -177,7 +177,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v150</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v151</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -1850,6 +1850,22 @@ document.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; }
 const gamepadState = { aWasPressed: false, bWasPressed: false, yWasPressed: false };
 let gamepadConnected = false;
 let lastInputMode = 'keyboard';  // 'keyboard', 'gamepad', 'touch'
+let cursorHideTimeout = null;
+
+// Hide cursor when using gamepad, show on mouse movement
+function hideCursor() {
+  document.body.style.cursor = 'none';
+}
+function showCursor() {
+  document.body.style.cursor = '';
+  clearTimeout(cursorHideTimeout);
+  cursorHideTimeout = null;
+}
+document.addEventListener('mousemove', () => {
+  if (document.body.style.cursor === 'none') {
+    showCursor();
+  }
+});
 
 // Detect input mode and show appropriate hints
 function updateControlHints() {
@@ -2915,6 +2931,10 @@ function animate() {
     const ly = Math.abs(gp.axes[1]) > 0.15 ? gp.axes[1] : 0;
     // Right stick: axes[2]=X (with deadzone)
     const rx = Math.abs(gp.axes[2]) > 0.15 ? gp.axes[2] : 0;
+    // Hide cursor when gamepad has any input
+    if (lx || ly || rx || gp.buttons.some(b => b?.pressed)) {
+      hideCursor();
+    }
     gamepadMoveY = ly;
     gamepadMoveX = lx;
     gamepadLookX = rx;
@@ -2939,17 +2959,17 @@ function animate() {
     } else if (campPitched && campGlobeRotation) {
       // Check if near tent
       const tentDist = globeRotation.angleTo(campGlobeRotation);
-      if (tentDist < 0.15) {  // Close enough to enter
+      if (tentDist < 0.3) {  // Close enough to enter (~6 units on globe)
         walkingToTent = true;
       }
     }
   }
   // Show "Y" hint on tent button when near tent with gamepad
   const hintPitch = document.getElementById('hint-pitch');
-  if (gamepadConnected && campPitched && campGlobeRotation && !isSleeping) {
-    const tentDist = globeRotation.angleTo(campGlobeRotation);
-    if (tentDist < 0.15) {
-      hintPitch.textContent = 'Y';
+  if (gamepadConnected && !isSleeping) {
+    if (campPitched && campGlobeRotation) {
+      const tentDist = globeRotation.angleTo(campGlobeRotation);
+      hintPitch.textContent = tentDist < 0.3 ? 'Y' : 'A';
     } else {
       hintPitch.textContent = 'A';
     }
@@ -3179,8 +3199,8 @@ function animate() {
       rate: isWalking ? 8 : isTurning ? 12 : 0,
       amplitude: isWalking ? 0.5 : 0.35,
       waddle: isWalking ? 0.04 : 0.03,
-      swing: player.userData.leftLeg.rotation.x,
-      roll: player.rotation.z,
+      swing: Math.max(-0.5, Math.min(0.5, player.userData.leftLeg.rotation.x)),
+      roll: Math.max(-0.1, Math.min(0.1, player.rotation.z)),
       flashlight: flashlightOn && !isSleeping,
     });
   }
