@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v152</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v153</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -177,7 +177,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v152</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v153</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -734,8 +734,6 @@ async function createPeerConnection(peerId, initiator) {
 
 function setupDataChannel(peerId, channel) {
   dataChannels[peerId] = channel;
-  let budget = 120;
-  let budgetAt = Date.now();
   channel.onopen = () => {
     mpLog('DC open: ' + peerId.substring(0,6), true);
     if (window.globeRotation) broadcastHello(window.globeRotation);
@@ -743,17 +741,14 @@ function setupDataChannel(peerId, channel) {
     if (sharedEnvironment) channel.send(JSON.stringify({ type: 'environment', state: sharedEnvironment }));
   };
   channel.onmessage = (event) => {
-    const now = Date.now();
-    budget = Math.min(120, budget + (now - budgetAt) * 0.06) - 1;
-    budgetAt = now;
-    if (budget < 0 || typeof event.data !== 'string' || event.data.length > 1024) {
-      console.error('DC removing peer - budget:', budget, 'dataType:', typeof event.data, 'len:', event.data?.length);
-      removePeerConnection(peerId);
+    // Basic sanity checks - just ignore bad messages, don't disconnect
+    if (typeof event.data !== 'string' || event.data.length > 4096) {
+      console.warn('Ignoring oversized or non-string message');
       return;
     }
     let data;
     try { data = JSON.parse(event.data); }
-    catch (e) { console.error('DC removing peer - JSON parse failed:', e); removePeerConnection(peerId); return; }
+    catch (e) { console.warn('Ignoring unparseable message:', e.message); return; }
     if (data && data.type === 'environment') {
       const s = data.state;
       if (!s || !Number.isFinite(s.hour) || s.hour < 0 || s.hour >= 24 ||
@@ -761,8 +756,8 @@ function setupDataChannel(peerId, channel) {
           typeof s.paused !== 'boolean' || !Number.isFinite(s.fog) || s.fog < 0 || s.fog > 1 ||
           !Number.isFinite(s.moonlight) || s.moonlight < 0 || s.moonlight > 1 ||
           !Number.isSafeInteger(s.revision) || s.revision < 0 || typeof s.author !== 'string' || s.author.length > 64) {
-        console.error('DC removing peer - bad environment:', s);
-        removePeerConnection(peerId); return;
+        console.warn('Ignoring bad environment message:', s);
+        return;  // Just ignore, don't disconnect
       }
       const old = sharedEnvironment;
       if (!old || s.revision > old.revision || (s.revision === old.revision &&
@@ -775,7 +770,7 @@ function setupDataChannel(peerId, channel) {
       return;
     }
     if (data && data.type === 'camp') {
-      if (!validCampState(data.camp)) { console.error('DC removing peer - bad camp:', data.camp); removePeerConnection(peerId); return; }
+      if (!validCampState(data.camp)) { console.warn('Ignoring bad camp message:', data.camp); return; }
       remoteCampStates[peerId] = data.camp === null ? null : {
         position: data.camp.position, style: data.camp.style,
         color: data.camp.color, sleeping: data.camp.sleeping, tent: data.camp.tent, placedAt: data.camp.placedAt,
@@ -786,21 +781,25 @@ function setupDataChannel(peerId, channel) {
     // Validate bump messages
     if (data && data.type === 'bump') {
       if (!Number.isFinite(data.dx) || !Number.isFinite(data.dz) || Math.abs(data.dx) > 1 || Math.abs(data.dz) > 1) {
-        console.error('DC removing peer - bad bump:', data);
-        removePeerConnection(peerId); return;
+        console.warn('Ignoring bad bump message:', data);
+        return;  // Just ignore, don't disconnect
       }
       handleGameMessage(peerId, data);
       return;
     }
-    if (!data || !['hello', 'pos'].includes(data.type) ||
-        ![data.qx, data.qy, data.qz, data.qw].every(n => Number.isFinite(n) && Math.abs(n) <= 1) ||
-        Math.abs(Math.hypot(data.qx, data.qy, data.qz, data.qw) - 1) > 0.01 ||
-        (data.type === 'pos' && !Number.isFinite(data.facing)) ||
-        (data.type === 'hello' && !/^[a-f0-9]{6}$/.test(data.color)) ||
-        (data.type === 'hello' && (typeof data.name !== 'string' || data.name.length > 20))) {
-      console.error('DC removing peer - bad pos/hello:', data);
-      removePeerConnection(peerId);
-      return;
+    if (!data || !['hello', 'pos', 'bump'].includes(data.type)) {
+      console.warn('Ignoring unknown message type:', data?.type);
+      return;  // Just ignore unknown messages
+    }
+    if (['hello', 'pos'].includes(data.type)) {
+      if (![data.qx, data.qy, data.qz, data.qw].every(n => Number.isFinite(n) && Math.abs(n) <= 1) ||
+          Math.abs(Math.hypot(data.qx, data.qy, data.qz, data.qw) - 1) > 0.01 ||
+          (data.type === 'pos' && !Number.isFinite(data.facing)) ||
+          (data.type === 'hello' && !/^[a-f0-9]{6}$/.test(data.color)) ||
+          (data.type === 'hello' && (typeof data.name !== 'string' || data.name.length > 20))) {
+        console.warn('Ignoring bad pos/hello:', data);
+        return;  // Just ignore, don't disconnect
+      }
     }
     if (data.type === 'hello') mpLog('DC msg: hello from ' + peerId.substring(0,6), true);
     if (data.motion !== undefined) {
@@ -809,8 +808,8 @@ function setupDataChannel(peerId, channel) {
           ![0, 8, 12].includes(m.rate) || ![0.35, 0.5].includes(m.amplitude) || ![0.03, 0.04].includes(m.waddle) ||
           !Number.isFinite(m.swing) || Math.abs(m.swing) > 0.5 || !Number.isFinite(m.roll) || Math.abs(m.roll) > 0.1 ||
           typeof m.flashlight !== 'boolean') {
-        console.error('DC removing peer - bad motion:', m);
-        removePeerConnection(peerId); return;
+        console.warn('Ignoring bad motion data:', m);
+        data.motion = undefined;  // Strip bad motion, don't disconnect
       }
     }
     handleGameMessage(peerId, data);
