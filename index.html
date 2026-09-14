@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v142</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v143</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -177,7 +177,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v142</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v143</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -2935,13 +2935,14 @@ function animate() {
     }
     // Player-to-player collision
     if (canMove) {
+      const localPlayerPos = new THREE.Vector3(0, GLOBE_RADIUS, 0);
       for (const id in otherPlayers) {
         const p = otherPlayers[id];
         if (!p.mesh.visible) continue;
-        const otherPos = p.mesh.position.clone();
-        const newPlayerPos = new THREE.Vector3(0, 1, 0).applyQuaternion(newRotation.clone().invert()).applyQuaternion(globeRotation);
-        newPlayerPos.normalize().multiplyScalar(GLOBE_RADIUS);
-        const dist = otherPos.distanceTo(newPlayerPos);
+        // Transform other player's globe position to where it would be with newRotation
+        const otherGlobeDir = new THREE.Vector3(0, 1, 0).applyQuaternion(p.currentGlobeRotation.clone().invert());
+        const otherNewWorldPos = otherGlobeDir.applyQuaternion(newRotation).multiplyScalar(GLOBE_RADIUS);
+        const dist = localPlayerPos.distanceTo(otherNewWorldPos);
         if (dist < 0.8) {
           canMove = false;
           playerBounceState = { time: 0.3 };
