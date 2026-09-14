@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v111</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v112</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -121,17 +121,17 @@ canvas { display: block; }
     <div id="room-code-value" style="font-size:18px;color:#f0c040;font-family:monospace;letter-spacing:2px;"></div>
   </div>
   <div class="control-row">
-    <label>Time of Day</label>
+    <label>Time of Day (room)</label>
     <input type="range" id="time-slider" min="0" max="24" step="0.1" value="12">
     <div id="time-display" style="font-size:11px;color:#f0c040;text-align:center;margin-top:4px;">12:00</div>
     <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:#aaa;"><input type="checkbox" id="time-pause"> Pause time cycle</label>
   </div>
   <div class="control-row">
-    <label>Moonlight</label>
+    <label>Moonlight (room)</label>
     <input type="range" id="moonlight-slider" min="0" max="100" step="1" value="50">
   </div>
   <div class="control-row">
-    <label>Fog</label>
+    <label>Fog (room)</label>
     <input type="range" id="fog-slider" min="0" max="100" step="1" value="0">
   </div>
   <div class="control-row">
@@ -171,7 +171,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v111</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v112</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -216,6 +216,27 @@ const restartTimers = new Map();
 const makingOffers = new Set();
 let localCampState = null;
 const remoteCampStates = Object.create(null);
+let sharedEnvironment = null;
+let environmentSendTimer = null;
+let roomClockOffset = 0;
+function roomNow() { return Date.now() + roomClockOffset; }
+
+function sharedHour() {
+  if (!sharedEnvironment) return 12;
+  const state = sharedEnvironment;
+  return ((state.hour + (state.paused ? 0 : Math.max(0, roomNow() - state.at) / 1000 * state.rate)) % 24 + 24) % 24;
+}
+
+function publishEnvironment(changes) {
+  sharedEnvironment = { ...sharedEnvironment, hour: sharedHour(), at: roomNow(), ...changes,
+    revision: Math.max(roomNow(), (sharedEnvironment?.revision || 0) + 1), author: localPlayerId };
+  if (window.applyEnvironment) window.applyEnvironment();
+  if (!environmentSendTimer) environmentSendTimer = setTimeout(() => {
+    environmentSendTimer = null;
+    const message = JSON.stringify({ type: 'environment', state: sharedEnvironment });
+    for (const dc of Object.values(dataChannels)) if (dc.readyState === 'open') dc.send(message);
+  }, 100);
+}
 
 function validCampState(camp) {
   return camp === null || (camp && typeof camp === 'object' &&
@@ -224,6 +245,8 @@ function validCampState(camp) {
     Math.abs(Math.hypot(...camp.position) - 1) < 0.001 &&
     ['aframe', 'dome', 'cabin', 'tunnel'].includes(camp.style) &&
     typeof camp.color === 'string' && /^[a-f0-9]{6}$/.test(camp.color) &&
+    Array.isArray(camp.tent) && camp.tent.length === 2 && camp.tent.every(n => Number.isFinite(n) && Math.abs(n) <= 60) &&
+    Number.isSafeInteger(camp.placedAt) && camp.placedAt > 0 &&
     typeof camp.sleeping === 'boolean');
 }
 
@@ -357,6 +380,9 @@ async function handleSignalMessage(msg) {
       case 'room-info': {
         localPlayerId = msg.id;
         worldSeed = msg.seed;
+        roomClockOffset = Number.isSafeInteger(msg.serverTime) ? msg.serverTime - Date.now() : 0;
+        sharedEnvironment = { hour: 8 + (worldSeed % 800) / 100, at: roomNow(), rate: 0.04,
+          paused: false, fog: 0, moonlight: 0.5, revision: 0, author: '' };
         applyTurnCredentials(msg);
         signalingWs.send(JSON.stringify({ type: 'ready' }));
         break;
@@ -533,6 +559,7 @@ function setupDataChannel(peerId, channel) {
     mpLog('DC open: ' + peerId.substring(0,6));
     if (window.globeRotation) broadcastHello(window.globeRotation);
     channel.send(JSON.stringify({ type: 'camp', camp: localCampState }));
+    if (sharedEnvironment) channel.send(JSON.stringify({ type: 'environment', state: sharedEnvironment }));
   };
   channel.onmessage = (event) => {
     const now = Date.now();
@@ -545,11 +572,30 @@ function setupDataChannel(peerId, channel) {
     let data;
     try { data = JSON.parse(event.data); }
     catch { removePeerConnection(peerId); return; }
+    if (data && data.type === 'environment') {
+      const s = data.state;
+      if (!s || !Number.isFinite(s.hour) || s.hour < 0 || s.hour >= 24 ||
+          !Number.isSafeInteger(s.at) || s.at < 0 || ![0.04, 0.1].includes(s.rate) ||
+          typeof s.paused !== 'boolean' || !Number.isFinite(s.fog) || s.fog < 0 || s.fog > 1 ||
+          !Number.isFinite(s.moonlight) || s.moonlight < 0 || s.moonlight > 1 ||
+          !Number.isSafeInteger(s.revision) || s.revision < 0 || typeof s.author !== 'string' || s.author.length > 64) {
+        removePeerConnection(peerId); return;
+      }
+      const old = sharedEnvironment;
+      if (!old || s.revision > old.revision || (s.revision === old.revision &&
+          (s.author > old.author || (s.author === old.author && s.at < old.at)))) {
+        sharedEnvironment = { hour: s.hour, at: s.at, rate: s.rate, paused: s.paused,
+          fog: s.fog, moonlight: s.moonlight, revision: s.revision, author: s.author };
+        if (window.applyEnvironment) window.applyEnvironment();
+        if (window.syncCamps) window.syncCamps();
+      }
+      return;
+    }
     if (data && data.type === 'camp') {
       if (!validCampState(data.camp)) { removePeerConnection(peerId); return; }
       remoteCampStates[peerId] = data.camp === null ? null : {
         position: data.camp.position, style: data.camp.style,
-        color: data.camp.color, sleeping: data.camp.sleeping,
+        color: data.camp.color, sleeping: data.camp.sleeping, tent: data.camp.tent, placedAt: data.camp.placedAt,
       };
       if (window.syncCamps) window.syncCamps();
       return;
@@ -707,12 +753,12 @@ scene.add(moon.target);
 // Visual sun and moon spheres
 const sunSphere = new THREE.Mesh(
   new THREE.SphereGeometry(1.5, 16, 12),
-  new THREE.MeshBasicMaterial({ color: 0xffee88 })
+    new THREE.MeshBasicMaterial({ color: 0xffee88, transparent: true, depthWrite: false })
 );
 scene.add(sunSphere);
 const moonSphere = new THREE.Mesh(
   new THREE.SphereGeometry(1.0, 16, 12),
-  new THREE.MeshBasicMaterial({ color: 0xddeeff })
+    new THREE.MeshBasicMaterial({ color: 0xddeeff, transparent: true, depthWrite: false })
 );
 scene.add(moonSphere);
 
@@ -1208,6 +1254,7 @@ function buildPlayer() {
 
   const bodyGeo = new THREE.CapsuleGeometry(0.22, 0.3, 4, 8);
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0xd35f3e, roughness: 0.7 });
+  bodyMat.userData.playerTint = true;
   const body = new THREE.Mesh(bodyGeo, bodyMat);
   body.position.y = 0.6;
   body.castShadow = true;
@@ -1221,7 +1268,7 @@ function buildPlayer() {
   group.add(head);
 
   const noseGeo = new THREE.SphereGeometry(0.05, 6, 4);
-  const noseMat = new THREE.MeshStandardMaterial({ color: 0xf4a080, roughness: 0.6 });
+  const noseMat = headMat;
   const nose = new THREE.Mesh(noseGeo, noseMat);
   nose.position.set(0, 1.03, 0.17);
   group.add(nose);
@@ -1264,6 +1311,7 @@ function buildPlayer() {
   group.userData.leftLeg = leftLeg;
 
   const armMat = new THREE.MeshStandardMaterial({ color: 0xd35f3e, roughness: 0.7 });
+  armMat.userData.playerTint = true;
 
   const rightShoulder = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 4), armMat);
   rightShoulder.position.set(-0.2, 0.75, 0);
@@ -1327,7 +1375,7 @@ const otherPlayers = {};
 function addOtherPlayer(id, color, startGlobeRotation) {
   const mesh = buildPlayer();
   mesh.traverse(c => { if (c.isMesh && c.material) { c.material = c.material.clone(); } });
-  mesh.traverse(c => { if (c.isMesh && c.material && c.material.color && c.material.color.r > 0.7 && c.material.color.g < 0.5) c.material.color.set(color); });
+  mesh.traverse(c => { if (c.isMesh && c.material?.userData.playerTint) c.material.color.set(color); });
   scene.add(mesh);
   otherPlayers[id] = {
     mesh,
@@ -1718,8 +1766,23 @@ function saveSettings() {
   }));
 }
 
+function applyEnvironment() {
+  if (!sharedEnvironment) return;
+  timeOfDay = sharedHour();
+  timePaused = sharedEnvironment.paused;
+  fogDensity = sharedEnvironment.fog;
+  moonlightStrength = sharedEnvironment.moonlight;
+  timeSlider.value = timeOfDay;
+  document.getElementById('time-pause').checked = timePaused;
+  document.getElementById('fog-slider').value = fogDensity * 100;
+  document.getElementById('moonlight-slider').value = moonlightStrength * 100;
+}
+window.applyEnvironment = applyEnvironment;
+applyEnvironment();
+
 timeSlider.addEventListener('input', (e) => {
-  timeOfDay = parseFloat(e.target.value);
+  timeOfDay = parseFloat(e.target.value) % 24;
+  publishEnvironment({ hour: timeOfDay });
   const h = Math.floor(timeOfDay);
   const m = Math.floor((timeOfDay - h) * 60);
   timeDisplay.textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
@@ -1728,16 +1791,19 @@ timeSlider.addEventListener('input', (e) => {
 
 document.getElementById('moonlight-slider').addEventListener('input', (e) => {
   moonlightStrength = parseInt(e.target.value) / 100;
+  publishEnvironment({ moonlight: moonlightStrength });
   saveSettings();
 });
 
 document.getElementById('fog-slider').addEventListener('input', (e) => {
   fogDensity = parseInt(e.target.value) / 100;
+  publishEnvironment({ fog: fogDensity });
   saveSettings();
 });
 
 document.getElementById('time-pause').addEventListener('change', (e) => {
   timePaused = e.target.checked;
+  publishEnvironment({ paused: timePaused });
   saveSettings();
 });
 
@@ -1806,11 +1872,60 @@ document.getElementById('tent-style').addEventListener('change', (e) => {
 function pitchCamp() {
   if (isSleeping) return;
   walkingToTent = false;
-  localCampState = localCampState ? null : {
-    position: new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert()).normalize().toArray(),
-    style: tentStyle, color: tentColor.toString(16).padStart(6, '0'), sleeping: false,
-  };
+  if (localCampState) {
+    localCampState = null;
+    publishCampState();
+    return;
+  }
+  const here = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert()).multiplyScalar(GLOBE_RADIUS);
+  const camps = Object.values(remoteCampStates).filter(Boolean);
+  const nearby = camps.map(camp => ({ camp, distance: new THREE.Vector3(...camp.position).multiplyScalar(GLOBE_RADIUS).distanceTo(here) }))
+    .filter(site => site.distance < 8).sort((a, b) => a.distance - b.distance)[0];
+  const forward = new THREE.Vector3(Math.sin(playerFacing), 0, Math.cos(playerFacing)).applyQuaternion(globeRotation.clone().invert());
+  const anchor = nearby ? nearby.camp.position : here.clone().addScaledVector(forward, 3.5).normalize().toArray();
+  const basis = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...anchor));
+  const localHere = here.clone().sub(new THREE.Vector3(...anchor).multiplyScalar(GLOBE_RADIUS)).applyQuaternion(basis.clone().invert());
+  const occupied = camps.filter(c => JSON.stringify(c.position) === JSON.stringify(anchor)).map(c => c.tent);
+  const tent = findTentSpace(anchor, [localHere.x, localHere.z], occupied, [localHere.x, localHere.z]);
+  if (!tent) { mpLog('This campsite is full. Move a little farther away to pitch.'); return; }
+  localCampState = { position: anchor, tent, placedAt: roomNow(),
+    style: tentStyle, color: tentColor.toString(16).padStart(6, '0'), sleeping: false };
+  if (here.distanceTo(new THREE.Vector3(...anchor).multiplyScalar(GLOBE_RADIUS)) < 1.8) {
+    for (let i = 0; i < 32; i++) {
+      const angle = Math.atan2(localHere.x, localHere.z) + i * Math.PI / 16;
+      const offset = [Math.sin(angle) * 2, Math.cos(angle) * 2];
+      if ([...occupied, tent].some(t => Math.hypot(t[0] - offset[0], t[1] - offset[1]) < 1.6)) continue;
+      const safe = campsitePoint(anchor, offset).normalize().applyQuaternion(globeRotation);
+      globeRotation.premultiply(new THREE.Quaternion().setFromUnitVectors(safe, new THREE.Vector3(0, 1, 0)));
+      break;
+    }
+  }
   publishCampState();
+}
+
+function campsitePoint(anchor, offset) {
+  const basis = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...anchor));
+  return new THREE.Vector3(offset[0], GLOBE_RADIUS, offset[1]).applyQuaternion(basis);
+}
+
+function findTentSpace(anchor, preferred, occupied, playerOffset = null) {
+  const clear = offset => {
+    if (Math.hypot(...offset) < 3 || occupied.some(t => Math.hypot(t[0] - offset[0], t[1] - offset[1]) < 3)) return false;
+    if (playerOffset && Math.hypot(playerOffset[0] - offset[0], playerOffset[1] - offset[1]) < 1.8) return false;
+    const point = campsitePoint(anchor, offset).normalize().multiplyScalar(GLOBE_RADIUS);
+    return !collidables.some(c => point.distanceTo(latLonToWorld(c.lat, c.lon)) < c.radius + 1.2);
+  };
+  if (clear(preferred)) return preferred;
+  let best = null, distance = Infinity;
+  for (let radius = 3; radius <= 30; radius += 0.75) {
+    for (let i = 0; i < 64; i++) {
+      const angle = i * Math.PI / 32;
+      const candidate = [Math.sin(angle) * radius, Math.cos(angle) * radius];
+      const d = Math.hypot(candidate[0] - preferred[0], candidate[1] - preferred[1]);
+      if (d < distance && clear(candidate)) { best = candidate; distance = d; }
+    }
+  }
+  return best;
 }
 
 function disposeCampObject(object) {
@@ -1827,32 +1942,33 @@ function disposeCampObject(object) {
 
 function syncCamps() {
   const states = Object.entries({ ...remoteCampStates, [localPlayerId]: localCampState })
-    .filter(([, state]) => state).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
-  const remaining = new Set(states.map(([id]) => id));
+    .filter(([, state]) => state).sort(([a, sa], [b, sb]) => sa.placedAt - sb.placedAt || (a < b ? -1 : a > b ? 1 : 0));
   const desired = new Map();
-  for (const [leader, anchor] of states) {
-    if (!remaining.delete(leader)) continue;
-    const members = [[leader, anchor]];
-    for (let i = 0; i < members.length; i++) {
-      for (const entry of states) {
-        if (!remaining.has(entry[0])) continue;
-        const distance = new THREE.Vector3(...members[i][1].position).distanceTo(new THREE.Vector3(...entry[1].position)) * GLOBE_RADIUS;
-        if (distance <= 6) { remaining.delete(entry[0]); members.push(entry); }
+  const sites = new Map();
+  let correctedOwn = false;
+  for (const [id, state] of states) {
+      const siteKey = JSON.stringify(state.position);
+      const occupied = sites.get(siteKey) || [];
+      let tent = state.tent;
+      if (occupied.some(t => Math.hypot(t[0] - tent[0], t[1] - tent[1]) < 3)) {
+        tent = findTentSpace(state.position, tent, occupied);
+        if (!tent) continue;
+        if (id === localPlayerId) { localCampState.tent = tent; correctedOwn = true; }
       }
-    }
-    members.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
-    members.forEach(([id, state], slot) => {
-      const key = JSON.stringify([anchor.position, slot, members.length, state.style, state.color]);
+      const ownsFire = occupied.length === 0;
+      occupied.push(tent);
+      sites.set(siteKey, occupied);
+      const key = JSON.stringify([state.position, tent, state.style, state.color]);
       let model = campModels.get(id);
       if (!model || model.key !== key) {
         if (model) disposeCampObject(model.group);
-        model = buildCampModel(state, anchor.position, slot, members.length);
+        model = buildCampModel({ ...state, tent }, state.position);
         model.key = key;
         campModels.set(id, model);
       }
       model.sleeping = state.sleeping;
+      model.fireAnchor.visible = ownsFire;
       desired.set(id, model);
-    });
   }
   for (const [id, model] of campModels) {
     if (!desired.has(id)) { disposeCampObject(model.group); campModels.delete(id); }
@@ -1870,9 +1986,15 @@ function syncCamps() {
     campGlobeRotation = null;
   }
   document.getElementById('btn-pitch').style.borderColor = campPitched ? '#f0c040' : 'rgba(255,255,255,0.3)';
+  if (correctedOwn) publishCampState();
+  const connected = Object.keys(dataChannels).filter(id => dataChannels[id].readyState === 'open');
+  if (sharedEnvironment && [localPlayerId, ...connected].sort()[0] === localPlayerId) {
+    const rate = localCampState?.sleeping && connected.every(id => remoteCampStates[id]?.sleeping) ? 0.1 : 0.04;
+    if (rate !== sharedEnvironment.rate) publishEnvironment({ rate });
+  }
 }
 
-function buildCampModel(state, anchor, slot, count) {
+function buildCampModel(state, anchor) {
   const tentStyle = state.style;
   const tentColor = parseInt(state.color, 16);
   const campGroup = new THREE.Group();
@@ -1929,9 +2051,8 @@ function buildCampModel(state, anchor, slot, count) {
   }
 
   const tent = campGroup.children[0];
-  const angle = slot * Math.PI * 2 / count;
-  const radius = Math.max(2.8, count * 0.6);
-  tent.position.set(Math.sin(angle) * radius, tent.position.y, Math.cos(angle) * radius);
+  const angle = Math.atan2(state.tent[0], state.tent[1]);
+  tent.position.set(state.tent[0], tent.position.y, state.tent[1]);
   tent.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle + Math.PI));
   if (tentStyle === 'aframe') tent.geometry.translate(0, 0, -0.6);
 
@@ -1940,7 +2061,6 @@ function buildCampModel(state, anchor, slot, count) {
   const fireAnchor = new THREE.Group();
   fireAnchor.position.copy(fireOffset);
   campGroup.add(fireAnchor);
-  fireAnchor.visible = slot === 0;
 
   for (let i = 0; i < 14; i++) {
     const size = 0.08 + rng() * 0.12;
@@ -2192,18 +2312,8 @@ document.getElementById('btn-pitch').addEventListener('touchstart', (e) => {
 function updateDayNight() {
   const hour = timeOfDay;
 
-  // Sun/moon orbit: sun rises at 6, overhead at 12, sets at 18
-  // Full circle over 24 hours, 0h = directly below (nadir)
-  // Sun orbit: rises at 6, sets at 21 (summer timing)
-  // Map 6-21 (15h of daylight) to 0-PI for the sun arc above horizon
-  // Map 21-6 (9h of night) to PI-2PI for below horizon
-  let sunAngle;
-  if (hour >= 6 && hour <= 21) {
-    sunAngle = ((hour - 6) / 15) * Math.PI;
-  } else {
-    const nightHour = hour >= 21 ? hour - 21 : hour + 3;
-    sunAngle = Math.PI + (nightHour / 9) * Math.PI;
-  }
+  // Continuous orbit with a soft horizon fade for the miniature globe.
+  const sunAngle = (hour - 6) / 24 * Math.PI * 2;
   const orbitRadius = 40;
   const sunX = Math.cos(sunAngle) * orbitRadius;
   const sunY = GLOBE_RADIUS + Math.sin(sunAngle) * orbitRadius;
@@ -2211,60 +2321,29 @@ function updateDayNight() {
 
   sun.position.set(sunX, sunY, sunZ);
   sun.target.position.set(0, GLOBE_RADIUS, 0);
-  sunSphere.position.copy(sun.position);
+  sunSphere.position.set(sunX * 3, GLOBE_RADIUS + Math.sin(sunAngle) * orbitRadius * 3, 0);
+  sunSphere.scale.setScalar(3);
 
   // Moon is opposite the sun
   moon.position.set(-sunX, GLOBE_RADIUS + Math.sin(sunAngle + Math.PI) * orbitRadius, 0);
   moon.target.position.set(0, GLOBE_RADIUS, 0);
-  moonSphere.position.copy(moon.position);
+  moonSphere.position.set(-sunX * 3, GLOBE_RADIUS - Math.sin(sunAngle) * orbitRadius * 3, 0);
+  moonSphere.scale.setScalar(3);
 
   // Intensity based on altitude
   const sunAltitude = Math.sin(sunAngle);
-  let sunIntensity, skyColor, ambientIntensity;
-
-  if (sunAltitude < -0.15) {
-    sunIntensity = 0;
-    skyColor = new THREE.Color(0x0a0a1e);
-    ambientIntensity = 0.05 + moonlightStrength * 0.15;
-    moon.intensity = 0.2 + moonlightStrength * 0.3;
-    moonSphere.visible = true;
-    moonSphere.material.opacity = 1;
-    moonSphere.material.transparent = false;
-    moonSphere.material.color.set(0xddeeff);
-    sunSphere.visible = true;
-    sunSphere.material.opacity = 0;
-    sunSphere.material.transparent = true;
-  } else if (sunAltitude < 0.15) {
-    const t = (sunAltitude + 0.15) / 0.3;
-    sunIntensity = t * 1.2;
-    skyColor = new THREE.Color(0x0a0a1e).lerp(new THREE.Color(0xffaa55), t).lerp(new THREE.Color(0x68b8e8), Math.max(0, t - 0.5) * 2);
-    ambientIntensity = 0.1 + t * 0.2;
-    moon.intensity = (1 - t) * (0.2 + moonlightStrength * 0.3);
-    moonSphere.visible = true;
-    moonSphere.material.transparent = true;
-    moonSphere.material.opacity = Math.max(0, 1 - t * 1.5);
-    moonSphere.material.color.copy(new THREE.Color(0xddeeff).lerp(new THREE.Color(0x68b8e8), Math.min(t * 2, 1.0)));
-    sunSphere.visible = true;
-    sunSphere.material.transparent = true;
-    sunSphere.material.opacity = Math.min(1, t * 2);
-  } else {
-    sunIntensity = 1.2;
-    skyColor = new THREE.Color(0x68b8e8);
-    ambientIntensity = 0.3;
-    moon.intensity = 0;
-    moonSphere.visible = true;
-    moonSphere.material.opacity = 0;
-    moonSphere.material.transparent = true;
-    sunSphere.visible = true;
-    sunSphere.material.opacity = 1;
-    sunSphere.material.transparent = false;
-  }
-
-  sun.intensity = sunIntensity;
+  const daylight = THREE.MathUtils.smoothstep(sunAltitude, -0.12, 0.22);
+  const twilight = Math.exp(-Math.pow(sunAltitude / 0.12, 2)) * 0.65;
+  const skyColor = new THREE.Color(0x0a0a1e).lerp(new THREE.Color(0x68b8e8), daylight)
+    .lerp(new THREE.Color(0xffaa55), twilight);
+  sun.intensity = 1.2 * THREE.MathUtils.smoothstep(sunAltitude, -0.03, 0.2);
+  moon.intensity = (0.2 + moonlightStrength * 0.3) * (1 - THREE.MathUtils.smoothstep(sunAltitude, -0.2, 0.08));
+  sunSphere.material.opacity = THREE.MathUtils.smoothstep(sunAltitude, -0.02, 0.12);
+  moonSphere.material.opacity = THREE.MathUtils.smoothstep(-sunAltitude, -0.02, 0.12);
 
   scene.background = skyColor;
-  ambient.intensity = ambientIntensity;
-  hemi.intensity = sun.intensity > 0 ? 0.6 : 0.05 + moonlightStrength * 0.1;
+  ambient.intensity = THREE.MathUtils.lerp(0.05 + moonlightStrength * 0.15, 0.3, daylight);
+  hemi.intensity = THREE.MathUtils.lerp(0.05 + moonlightStrength * 0.1, 0.6, daylight);
 
   if (fogDensity > 0) {
     scene.fog = new THREE.FogExp2(skyColor, fogDensity * 0.15);
@@ -2289,10 +2368,10 @@ function updateDayNight() {
   }
 
   // Stars visible at night
-  starMat.opacity = sunAltitude < 0 ? Math.min(1, -sunAltitude * 5) : 0;
+  starMat.opacity = 1 - THREE.MathUtils.smoothstep(sunAltitude, -0.25, 0.02);
 
   // Fireflies visible at dusk/night
-  const fireflyVisibility = sunAltitude < 0.1 ? Math.min(1, (0.1 - sunAltitude) * 5) : 0;
+  const fireflyVisibility = 1 - THREE.MathUtils.smoothstep(sunAltitude, -0.1, 0.15);
   fireflyMat.opacity = fireflyVisibility;
 }
 
@@ -2488,11 +2567,9 @@ function animate() {
     player.position.y = hits[0].point.y;
   }
 
-  // Day/night cycle: 10 minutes = full 24h, sleeping = 1h per 10s
-  if (!timePaused) {
-    const timeSpeed = isSleeping ? (3600 / 10) / 3600 : (24 / 600);
-    timeOfDay += timeSpeed * delta;
-    if (timeOfDay >= 24) timeOfDay -= 24;
+  // Shared room clock continues through dropped frames and background tabs.
+  {
+    timeOfDay = sharedHour();
     document.getElementById('time-slider').value = timeOfDay;
     const h = Math.floor(timeOfDay);
     const m = Math.floor((timeOfDay - h) * 60);
