@@ -56,11 +56,11 @@ canvas { display: block; }
   <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:280px;">
     <button id="btn-create-room" style="padding:14px;font-size:16px;background:#337733;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Create World</button>
     <div style="display:flex;gap:8px;">
-      <input id="input-room-code" type="text" placeholder="Room code" maxlength="6" style="flex:1;padding:12px;font-size:16px;background:#2a2a3e;color:#fff;border:1px solid #555;border-radius:8px;text-align:center;font-family:monospace;text-transform:lowercase;">
+      <input id="input-room-code" type="text" placeholder="Room code" maxlength="12" style="flex:1;min-width:0;padding:12px;font-size:16px;background:#2a2a3e;color:#fff;border:1px solid #555;border-radius:8px;text-align:center;font-family:monospace;text-transform:lowercase;">
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v109</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v110</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -171,9 +171,9 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v109</div>
-<div id="mp-status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:200;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;"></div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v110</div>
 </div><!-- /game-screen -->
+<div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
 <script type="importmap">
 {
@@ -201,24 +201,50 @@ let playerName = 'Camper';
 let lobbyTentColor = 'cc5522';
 let lobbyTentStyle = 'aframe';
 let signalingWs = null;
-let localPlayerId = Math.random().toString(36).substring(2, 10);
-const peerConnections = {};
-const dataChannels = {};
-const pendingCandidates = {};
-window.__mp = { peerConnections, dataChannels, pendingCandidates, get signalingWs() { return signalingWs; }, localPlayerId };
+let localPlayerId = null;
+let multiplayerReady = false;
+let turnRefreshTimer = null;
+let heartbeatTimer = null;
+let turnRefreshAt = 0;
+let turnRefreshPending = false;
+const peerConnections = Object.create(null);
+const dataChannels = Object.create(null);
+const pendingCandidates = Object.create(null);
+const restartPending = new Set();
+const restartTimes = new Map();
+const restartTimers = new Map();
+const makingOffers = new Set();
+window.__mp = { peerConnections, dataChannels, pendingCandidates, get signalingWs() { return signalingWs; }, get localPlayerId() { return localPlayerId; } };
+
+function networkError(error) {
+  console.error(error);
+  mpLog(error.message);
+}
+
+async function createRoom() {
+  const button = document.getElementById('btn-create-room');
+  button.disabled = true;
+  try {
+    const resp = await fetch(SIGNAL_SERVER + '/api/create', { method: 'POST', signal: AbortSignal.timeout(15000) });
+    if (!resp.ok) throw new Error('Room creation failed: HTTP ' + resp.status);
+    const data = await resp.json();
+    roomId = data.roomId;
+    worldSeed = data.seed;
+    showLobby();
+  } finally {
+    button.disabled = false;
+  }
+}
 
 // Landing screen handlers
-document.getElementById('btn-create-room').addEventListener('click', async () => {
-  const resp = await fetch(SIGNAL_SERVER + '/create');
-  const data = await resp.json();
-  roomId = data.roomId;
-  worldSeed = data.seed;
-  showLobby();
-});
+document.getElementById('btn-create-room').addEventListener('click', () => createRoom().catch(networkError));
 
 document.getElementById('btn-join-room').addEventListener('click', () => {
   const code = document.getElementById('input-room-code').value.trim().toLowerCase();
-  if (code.length < 4) return;
+  if (!/^[a-f0-9]{12}$/.test(code)) {
+    mpLog('Enter the 12-character room code.');
+    return;
+  }
   roomId = code;
   worldSeed = null;
   showLobby();
@@ -230,11 +256,13 @@ document.getElementById('input-room-code').addEventListener('keydown', (e) => {
 
 // Lobby screen handlers
 document.getElementById('btn-enter-world').addEventListener('click', () => {
+  if (!multiplayerReady || worldSeed === null) return;
+  document.getElementById('btn-enter-world').disabled = true;
   playerName = document.getElementById('input-player-name').value.trim() || 'Camper';
   document.getElementById('landing-screen').style.display = 'none';
   document.getElementById('lobby-screen').style.display = 'none';
   document.getElementById('game-screen').style.display = 'block';
-  startGame(worldSeed || 42);
+  startGame(worldSeed);
 });
 
 document.querySelectorAll('#lobby-tent-colors button').forEach(btn => {
@@ -253,65 +281,108 @@ function showLobby() {
   document.getElementById('landing-screen').style.display = 'none';
   document.getElementById('lobby-screen').style.display = 'flex';
   document.getElementById('lobby-room-id').textContent = roomId;
-  document.getElementById('lobby-seed-display').textContent = worldSeed ? 'seed: ' + worldSeed : 'joining...';
-  fetchTurnCredentials().then(() => connectSignaling());
+  document.getElementById('lobby-seed-display').textContent = 'Joining room...';
+  document.getElementById('btn-enter-world').disabled = true;
+  connectSignaling();
 }
 
 function connectSignaling() {
-  const wsUrl = SIGNAL_SERVER.replace('https://', 'wss://') + '/room/' + roomId;
+  const wsUrl = SIGNAL_SERVER.replace('https://', 'wss://') + '/api/room/' + roomId;
   signalingWs = new WebSocket(wsUrl);
 
   signalingWs.addEventListener('open', () => {
     signalingWs.send(JSON.stringify({
       type: 'join',
-      id: localPlayerId,
       name: playerName || 'Camper',
       color: lobbyTentColor,
       tentStyle: lobbyTentStyle,
       tentColor: lobbyTentColor,
-      seed: worldSeed,
     }));
   });
 
-  signalingWs.addEventListener('message', (event) => {
-    const msg = JSON.parse(event.data);
-    mpLog('← ' + msg.type + (msg.from ? ' from:' + msg.from.substring(0,6) : '') + (msg.id ? ' id:' + msg.id.substring(0,6) : '') + (msg.seed ? ' seed:' + msg.seed : ''));
+  let messages = Promise.resolve();
+  signalingWs.addEventListener('message', event => {
+    messages = messages.then(async () => {
+      const msg = JSON.parse(event.data);
+      try {
+        await handleSignalMessage(msg);
+      } catch (error) {
+        if (['offer', 'answer', 'ice-candidate'].includes(msg.type) && typeof msg.from === 'string') {
+          removePeerConnection(msg.from);
+          networkError(error);
+        } else {
+          throw error;
+        }
+      }
+    }).catch(error => {
+      networkError(error);
+      signalingWs.close(1000, 'Signaling processing failed');
+    });
+  });
+  signalingWs.addEventListener('error', () => mpLog('Room connection failed. Check the code or wait a minute, then reload.'));
+  signalingWs.addEventListener('close', event => {
+    multiplayerReady = false;
+    clearTimeout(turnRefreshTimer);
+    clearInterval(heartbeatTimer);
+    document.getElementById('btn-enter-world').disabled = true;
+    for (const id of Object.keys(peerConnections)) removePeerConnection(id);
+    mpLog('Disconnected: ' + (event.reason || 'connection lost') + '. Reload to rejoin.');
+  });
+}
 
+async function handleSignalMessage(msg) {
+    if (msg.type === 'pong') return;
+    mpLog('← ' + msg.type + (msg.from ? ' from:' + msg.from.substring(0,6) : '') + (msg.id ? ' id:' + msg.id.substring(0,6) : ''));
     switch (msg.type) {
       case 'room-info': {
-        if (msg.seed) {
-          worldSeed = msg.seed;
-          document.getElementById('lobby-seed-display').textContent = 'seed: ' + worldSeed;
-        }
+        localPlayerId = msg.id;
+        worldSeed = msg.seed;
+        applyTurnCredentials(msg);
+        signalingWs.send(JSON.stringify({ type: 'ready' }));
+        break;
+      }
+      case 'ready': {
+        multiplayerReady = true;
+        document.getElementById('lobby-seed-display').textContent = 'seed: ' + worldSeed;
+        document.getElementById('btn-enter-world').disabled = false;
+        heartbeatTimer = setInterval(() => {
+          if (signalingWs.readyState === WebSocket.OPEN) {
+            signalingWs.send(JSON.stringify({ type: 'ping' }));
+            refreshTurnIfDue();
+          }
+        }, 20000);
+        break;
+      }
+      case 'turn-creds': {
+        applyTurnCredentials(msg);
         break;
       }
       case 'peer-joined': {
         updateLobbyPeers(msg);
-        if (msg.seed) worldSeed = msg.seed;
-        // Only initiate if our ID is lexically greater (prevents both sides offering)
-        createPeerConnection(msg.id, localPlayerId > msg.id);
+        await createPeerConnection(msg.id, localPlayerId > msg.id);
         break;
       }
       case 'peer-left': {
-        delete peerConnections[msg.id];
-        delete dataChannels[msg.id];
-        if (window.removeOtherPlayer) window.removeOtherPlayer(msg.id);
+        removePeerConnection(msg.id);
         break;
       }
       case 'offer': {
-        handleOffer(msg);
+        await handleOffer(msg);
         break;
       }
       case 'answer': {
-        handleAnswer(msg);
+        await handleAnswer(msg);
         break;
       }
       case 'ice-candidate': {
-        handleIceCandidate(msg);
+        await handleIceCandidate(msg);
+        break;
+      }
+      case 'restart-request': {
+        if (localPlayerId > msg.from) requestIceRestart(msg.from);
         break;
       }
     }
-  });
 }
 
 function updateLobbyPeers(msg) {
@@ -321,20 +392,73 @@ function updateLobbyPeers(msg) {
 }
 
 // --- WebRTC ---
-const rtcConfig = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ]
-};
+const rtcConfig = { iceServers: [], iceTransportPolicy: 'all' };
 
-async function fetchTurnCredentials() {
-  const resp = await fetch(SIGNAL_SERVER + '/turn-creds');
-  const data = await resp.json();
-  if (data.iceServers) {
-    rtcConfig.iceServers = data.iceServers;
-    mpLog('TURN creds loaded');
+function applyTurnCredentials(data) {
+  rtcConfig.iceServers = data.iceServers;
+  turnRefreshPending = false;
+  turnRefreshAt = Date.now() + data.refreshAfterMs;
+  clearTimeout(turnRefreshTimer);
+  turnRefreshTimer = setTimeout(refreshTurnIfDue, data.refreshAfterMs);
+  for (const [id, pc] of Object.entries(peerConnections)) {
+    pc.setConfiguration(rtcConfig);
+    if (localPlayerId > id) requestIceRestart(id);
+    else signalingWs.send(JSON.stringify({ type: 'restart-request', target: id }));
   }
+  mpLog('TURN credentials updated');
+}
+
+function refreshTurnIfDue() {
+  if (!multiplayerReady || turnRefreshPending || Date.now() < turnRefreshAt || signalingWs.readyState !== WebSocket.OPEN) return;
+  turnRefreshPending = true;
+  signalingWs.send(JSON.stringify({ type: 'turn-refresh' }));
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshTurnIfDue();
+});
+
+function removePeerConnection(id) {
+  const pc = peerConnections[id];
+  delete peerConnections[id];
+  delete pendingCandidates[id];
+  const dc = dataChannels[id];
+  delete dataChannels[id];
+  restartPending.delete(id);
+  restartTimes.delete(id);
+  clearTimeout(restartTimers.get(id));
+  restartTimers.delete(id);
+  if (dc) dc.close();
+  if (pc) pc.close();
+  if (window.removeOtherPlayer) window.removeOtherPlayer(id);
+}
+
+async function sendOffer(peerId, iceRestart = false) {
+  const pc = peerConnections[peerId];
+  makingOffers.add(peerId);
+  try {
+    const offer = await pc.createOffer({ iceRestart });
+    await pc.setLocalDescription(offer);
+    signalingWs.send(JSON.stringify({ type: 'offer', target: peerId, sdp: pc.localDescription }));
+  } finally {
+    makingOffers.delete(peerId);
+  }
+}
+
+function requestIceRestart(peerId) {
+  const pc = peerConnections[peerId];
+  if (!pc || localPlayerId < peerId || signalingWs.readyState !== WebSocket.OPEN) return;
+  restartPending.add(peerId);
+  if (pc.signalingState !== 'stable' || makingOffers.has(peerId)) return;
+  const delay = 10000 - (Date.now() - (restartTimes.get(peerId) || 0));
+  if (delay > 0) {
+    clearTimeout(restartTimers.get(peerId));
+    restartTimers.set(peerId, setTimeout(() => requestIceRestart(peerId), delay));
+    return;
+  }
+  restartPending.delete(peerId);
+  restartTimes.set(peerId, Date.now());
+  sendOffer(peerId, true).catch(networkError);
 }
 
 async function createPeerConnection(peerId, initiator) {
@@ -342,14 +466,22 @@ async function createPeerConnection(peerId, initiator) {
   mpLog('PC create: ' + peerId.substring(0,6) + (initiator ? ' (initiator)' : ''));
   const pc = new RTCPeerConnection(rtcConfig);
   peerConnections[peerId] = pc;
-  pendingCandidates[peerId] = [];
+  pendingCandidates[peerId] ||= [];
+
+  pc.onsignalingstatechange = () => {
+    if (pc.signalingState === 'stable' && restartPending.has(peerId)) requestIceRestart(peerId);
+  };
 
   pc.oniceconnectionstatechange = () => {
     mpLog('ICE: ' + pc.iceConnectionState + ' ' + peerId.substring(0,6));
+    if (pc.iceConnectionState === 'failed' && signalingWs.readyState === WebSocket.OPEN) {
+      if (localPlayerId > peerId) requestIceRestart(peerId);
+      else signalingWs.send(JSON.stringify({ type: 'restart-request', target: peerId }));
+    }
   };
 
   pc.onicecandidate = (event) => {
-    if (event.candidate) {
+    if (event.candidate && signalingWs.readyState === WebSocket.OPEN) {
       signalingWs.send(JSON.stringify({
         type: 'ice-candidate',
         target: peerId,
@@ -365,13 +497,7 @@ async function createPeerConnection(peerId, initiator) {
   if (initiator) {
     const dc = pc.createDataChannel('game');
     setupDataChannel(peerId, dc);
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    signalingWs.send(JSON.stringify({
-      type: 'offer',
-      target: peerId,
-      sdp: offer,
-    }));
+    await sendOffer(peerId);
   }
 
   return pc;
@@ -379,18 +505,37 @@ async function createPeerConnection(peerId, initiator) {
 
 function setupDataChannel(peerId, channel) {
   dataChannels[peerId] = channel;
+  let budget = 120;
+  let budgetAt = Date.now();
   channel.onopen = () => {
     mpLog('DC open: ' + peerId.substring(0,6));
     if (window.globeRotation) broadcastHello(window.globeRotation);
   };
   channel.onmessage = (event) => {
-    const data = JSON.parse(event.data);
+    const now = Date.now();
+    budget = Math.min(120, budget + (now - budgetAt) * 0.06) - 1;
+    budgetAt = now;
+    if (budget < 0 || typeof event.data !== 'string' || event.data.length > 1024) {
+      removePeerConnection(peerId);
+      return;
+    }
+    let data;
+    try { data = JSON.parse(event.data); }
+    catch { removePeerConnection(peerId); return; }
+    if (!data || !['hello', 'pos'].includes(data.type) ||
+        ![data.qx, data.qy, data.qz, data.qw].every(n => Number.isFinite(n) && Math.abs(n) <= 1) ||
+        Math.abs(Math.hypot(data.qx, data.qy, data.qz, data.qw) - 1) > 0.01 ||
+        (data.type === 'pos' && !Number.isFinite(data.facing)) ||
+        (data.type === 'hello' && !/^[a-f0-9]{6}$/.test(data.color))) {
+      removePeerConnection(peerId);
+      return;
+    }
     if (data.type === 'hello') mpLog('DC msg: hello from ' + peerId.substring(0,6));
     handleGameMessage(peerId, data);
   };
   channel.onclose = () => {
     mpLog('DC closed: ' + peerId.substring(0,6));
-    delete dataChannels[peerId];
+    if (dataChannels[peerId] === channel) delete dataChannels[peerId];
     if (window.removeOtherPlayer) window.removeOtherPlayer(peerId);
   };
 }
@@ -431,6 +576,7 @@ async function handleIceCandidate(msg) {
     await pc.addIceCandidate(msg.candidate);
   } else {
     if (!pendingCandidates[msg.from]) pendingCandidates[msg.from] = [];
+    if (pendingCandidates[msg.from].length >= 256) throw new Error('Too many pending ICE candidates');
     pendingCandidates[msg.from].push(msg.candidate);
   }
 }
@@ -460,7 +606,7 @@ function broadcastPosition(globeRot, facing) {
   });
   for (const id in dataChannels) {
     const dc = dataChannels[id];
-    if (dc.readyState === 'open') dc.send(msg);
+    if (dc.readyState === 'open' && dc.bufferedAmount < 65536) dc.send(msg);
   }
 }
 
@@ -472,7 +618,7 @@ function broadcastHello(globeRot) {
   });
   for (const id in dataChannels) {
     const dc = dataChannels[id];
-    if (dc.readyState === 'open') dc.send(msg);
+    if (dc.readyState === 'open' && dc.bufferedAmount < 65536) dc.send(msg);
   }
 }
 
@@ -1229,7 +1375,7 @@ function animateOtherPlayers(delta) {
     fwdWorld.normalize();
     const localFwd = fwdWorld.clone().applyQuaternion(m.quaternion.clone().invert());
     const fAngle = Math.atan2(localFwd.x, localFwd.z);
-    m.rotateY(fAngle + Math.PI);
+    m.rotateY(fAngle);
 
     if (p.isWalking && p.interpT < 1) {
       p.walkCycle += delta * 8;

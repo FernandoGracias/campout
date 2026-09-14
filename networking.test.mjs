@@ -1,0 +1,136 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import { test } from 'node:test';
+import { spawnSync } from 'node:child_process';
+
+const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+const moduleSource = html.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
+const networking = moduleSource.slice(moduleSource.indexOf('const SIGNAL_SERVER'), moduleSource.indexOf('// --- GAME INITIALIZATION'));
+const credentials = { iceServers: [{ urls: 'turn:test', username: 'initial', credential: 'temporary' }], refreshAfterMs: 3000000 };
+const tick = () => new Promise(resolve => setImmediate(resolve));
+
+function browser() {
+  const elements = new Map();
+  const timers = new Map();
+  let timerId = 0;
+  const element = id => {
+    if (!elements.has(id)) elements.set(id, { style: {}, textContent: '', value: '', disabled: false, addEventListener() {} });
+    return elements.get(id);
+  };
+  class Socket {
+    static OPEN = 1;
+    readyState = 1;
+    handlers = new Map();
+    sent = [];
+    constructor(url) { this.url = url; }
+    addEventListener(type, fn) { this.handlers.set(type, fn); }
+    send(data) { this.sent.push(JSON.parse(data)); }
+    close() { this.readyState = 3; this.handlers.get('close')?.({ reason: 'test closed' }); }
+    message(data) { this.handlers.get('message')({ data: JSON.stringify(data) }); }
+  }
+  class PC {
+    signalingState = 'stable';
+    offers = [];
+    constructor(config) { this.config = structuredClone(config); }
+    setConfiguration(config) { this.config = structuredClone(config); }
+    async createOffer(options) { this.offers.push(options); return { type: 'offer', sdp: 'valid' }; }
+    async setLocalDescription(sdp) { this.localDescription = sdp; this.signalingState = sdp.type === 'offer' ? 'have-local-offer' : 'stable'; }
+    async setRemoteDescription(sdp) {
+      if (sdp.sdp === 'bad') throw new Error('Invalid SDP');
+      this.remoteDescription = sdp;
+      this.signalingState = sdp.type === 'answer' ? 'stable' : 'have-remote-offer';
+    }
+    async createAnswer() { return { type: 'answer', sdp: 'valid' }; }
+    async addIceCandidate() {}
+    createDataChannel() { return { readyState: 'open', bufferedAmount: 0, close() {} }; }
+    close() { this.signalingState = 'closed'; }
+  }
+  const context = vm.createContext({
+    window: {},
+    document: { getElementById: element, querySelectorAll: () => [], addEventListener() {} },
+    console: { error() {} },
+    WebSocket: Socket, RTCPeerConnection: PC,
+    setTimeout: (fn, delay) => { timers.set(++timerId, { fn, delay }); return timerId; },
+    clearTimeout: id => timers.delete(id),
+    setInterval: () => ++timerId, clearInterval() {},
+    AbortSignal,
+  });
+  vm.runInContext(networking, context);
+  vm.runInContext("roomId = '0123456789ab'; showLobby();", context);
+  const ws = context.window.__mp.signalingWs;
+  ws.handlers.get('open')();
+  return { context, ws, element, timers };
+}
+
+async function admitted() {
+  const fixture = browser();
+  fixture.ws.message({ type: 'room-info', id: 'middle', seed: 0, ...credentials });
+  fixture.ws.message({ type: 'ready' });
+  await tick();
+  return fixture;
+}
+
+test('complete browser module parses', () => {
+  const result = spawnSync(process.execPath, ['--input-type=module', '--check'], { input: moduleSource, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test('client joins before receiving TURN credentials and waits for server readiness', async () => {
+  const { context, ws, element } = browser();
+  assert.match(ws.url, /\/api\/room\/0123456789ab$/);
+  assert.equal(ws.sent[0].type, 'join');
+  assert.equal(ws.sent[0].id, undefined);
+  assert.equal(element('btn-enter-world').disabled, true);
+  ws.message({ type: 'room-info', id: 'middle', seed: 0, ...credentials });
+  await tick();
+  assert.equal(context.window.__mp.localPlayerId, 'middle');
+  assert.equal(ws.sent.at(-1).type, 'ready');
+  assert.equal(element('btn-enter-world').disabled, true);
+  ws.message({ type: 'ready' });
+  await tick();
+  assert.equal(element('btn-enter-world').disabled, false);
+  assert.equal(element('lobby-seed-display').textContent, 'seed: 0');
+});
+
+test('renewal updates existing connections, keeps direct-first policy and selects one restart initiator', async () => {
+  const { context, ws, timers } = await admitted();
+  ws.message({ type: 'peer-joined', id: 'a', name: 'A' });
+  ws.message({ type: 'answer', from: 'a', sdp: { type: 'answer', sdp: 'valid' } });
+  ws.message({ type: 'peer-joined', id: 'z', name: 'Z' });
+  await tick();
+  ws.sent.length = 0;
+  ws.message({ type: 'turn-creds', ...credentials, iceServers: [{ urls: 'turn:test', username: 'renewed', credential: 'new' }] });
+  await tick();
+  for (const pc of Object.values(context.window.__mp.peerConnections)) {
+    assert.equal(pc.config.iceServers[0].username, 'renewed');
+    assert.equal(pc.config.iceTransportPolicy, 'all');
+  }
+  assert.equal(context.window.__mp.peerConnections.a.offers.at(-1).iceRestart, true);
+  assert.equal(ws.sent.filter(m => m.type === 'offer').length, 1);
+  assert.equal(ws.sent.find(m => m.type === 'restart-request').target, 'z');
+  assert.ok([...timers.values()].some(timer => timer.delay === 3000000));
+});
+
+test('bad SDP from one peer does not disconnect the room or other peers', async () => {
+  const { context, ws } = await admitted();
+  ws.message({ type: 'peer-joined', id: 'z', name: 'Z' });
+  ws.message({ type: 'peer-joined', id: 'y', name: 'Y' });
+  ws.message({ type: 'offer', from: 'z', sdp: { type: 'offer', sdp: 'bad' } });
+  await tick();
+  assert.equal(ws.readyState, 1);
+  assert.equal(context.window.__mp.peerConnections.z, undefined);
+  assert.ok(context.window.__mp.peerConnections.y);
+});
+
+test('disconnect closes peer connections and cancels renewal', async () => {
+  const { context, ws, timers, element } = await admitted();
+  ws.message({ type: 'peer-joined', id: 'z', name: 'Z' });
+  await tick();
+  const pc = context.window.__mp.peerConnections.z;
+  ws.close();
+  assert.equal(pc.signalingState, 'closed');
+  assert.equal(Object.keys(context.window.__mp.peerConnections).length, 0);
+  assert.equal(timers.size, 0);
+  assert.equal(element('btn-enter-world').disabled, true);
+});
