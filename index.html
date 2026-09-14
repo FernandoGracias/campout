@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v148</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v149</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -177,7 +177,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v148</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v149</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -500,6 +500,7 @@ function connectSignaling() {
         await handleSignalMessage(msg);
       } catch (error) {
         if (['offer', 'answer', 'ice-candidate'].includes(msg.type) && typeof msg.from === 'string') {
+          console.error('Signaling error, removing peer:', msg.from, error);
           removePeerConnection(msg.from);
           networkError(error);
         } else {
@@ -586,6 +587,7 @@ async function handleSignalMessage(msg) {
         break;
       }
       case 'peer-left': {
+        console.log('Signaling: peer-left received for', msg.id);
         removePeerConnection(msg.id);
         break;
       }
@@ -642,6 +644,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function removePeerConnection(id) {
+  console.log('removePeerConnection called for', id.substring(0,6), new Error().stack);
   delete peerColors[id];
   delete remoteCampStates[id];
   if (window.syncCamps) window.syncCamps();
@@ -1597,7 +1600,7 @@ function buildPlayer() {
   lens.position.y = 0.24;
   lens.rotation.x = -Math.PI / 2;
   stickGroup.add(lens);
-  stickGroup.position.set(-0.04, -0.28, 0.1);
+  stickGroup.position.set(-0.01, -0.28, -0.08);
   stickGroup.rotation.x = Math.PI / 2 + 0.3;
   stickGroup.visible = false;
   rightArm.add(stickGroup);
