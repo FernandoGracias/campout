@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v117</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v118</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -173,7 +173,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v117</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v118</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -2079,7 +2079,6 @@ function syncCamps() {
         tentColliders.push({ lat, lon, radius: 1.0 });
       }
   }
-  }
   for (const [id, model] of campModels) {
     if (!desired.has(id)) { disposeCampObject(model.group); campModels.delete(id); }
   }
@@ -2749,12 +2748,13 @@ function animate() {
     if (model.zTimer >= 5) {
       model.zTimer = 0;
       for (let i = 0; i < 3; i++) {
-        const xOffset = (i - 1) * 0.5;
-        const yOffset = i * 0.6;
-        const sprite = makeZSprite(i, xOffset);
-        sprite.position.copy(model.tent.position).add(new THREE.Vector3(xOffset, 1.2 + yOffset, 0));
+        const size = 2 - i;  // size: 2, 1, 0 (biggest first)
+        const sprite = makeZSprite(size, 0);
+        sprite.position.copy(model.tent.position).add(new THREE.Vector3(0, 1.2, 0));
         model.group.add(sprite);
-        model.zSprites.push({ sprite, age: -i * 0.6, speed: 0.3 + i * 0.08 });
+        // Biggest (size=2) appears first (age=0), rises fastest (speed=0.5)
+        // Smallest (size=0) appears last (age=-1.2), rises slowest (speed=0.3)
+        model.zSprites.push({ sprite, age: -i * 0.6, speed: 0.5 - i * 0.1 });
       }
     }
     for (let i = model.zSprites.length - 1; i >= 0; i--) {
