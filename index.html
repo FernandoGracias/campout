@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v121</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v122</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -173,7 +173,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v121</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v122</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -192,6 +192,48 @@ import * as THREE from 'three';
 const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
 const DEBUG_MODE = new URLSearchParams(window.location.search).has('debug');
 const URL_ROOM = new URLSearchParams(window.location.search).get('room')?.toLowerCase();
+
+// Random camper name generator
+const CAMPER_ADJECTIVES = ['Burly', 'Jolly', 'Rugged', 'Sleepy', 'Happy', 'Grumpy', 'Brave', 'Lucky', 'Dusty', 'Sunny', 'Rustic', 'Wandering', 'Cheerful', 'Mellow'];
+const CAMPER_NAMES = ['Joe', 'Tom', 'Max', 'Sam', 'Jake', 'Pete', 'Lou', 'Ben', 'Gus', 'Hank', 'Duke', 'Ace', 'Red', 'Slim', 'Buck', 'Chip', 'Finn', 'Rex', 'Bo', 'Cal'];
+function randomCamperName() {
+  const adj = CAMPER_ADJECTIVES[Math.floor(Math.random() * CAMPER_ADJECTIVES.length)];
+  const name = CAMPER_NAMES[Math.floor(Math.random() * CAMPER_NAMES.length)];
+  return `${adj} ${name}`;
+}
+
+// Session persistence
+function saveSession() {
+  if (!roomId || !localPlayerId) return;
+  const session = {
+    roomId,
+    localPlayerId,
+    playerName,
+    lobbyTentColor,
+    lobbyTentStyle,
+    globeRotation: window.globeRotation ? { x: window.globeRotation.x, y: window.globeRotation.y, z: window.globeRotation.z, w: window.globeRotation.w } : null,
+    campState: localCampState,
+    savedAt: Date.now()
+  };
+  localStorage.setItem('campout-session', JSON.stringify(session));
+}
+
+function loadSession() {
+  const saved = localStorage.getItem('campout-session');
+  if (!saved) return null;
+  const session = JSON.parse(saved);
+  // Session expires after 1 hour
+  if (Date.now() - session.savedAt > 3600000) {
+    localStorage.removeItem('campout-session');
+    return null;
+  }
+  return session;
+}
+
+function clearSession() {
+  localStorage.removeItem('campout-session');
+}
+
 const mpLogs = [];
 function mpLog(msg, debugOnly = false) {
   if (debugOnly && !DEBUG_MODE) return;
@@ -355,6 +397,29 @@ function showLobby() {
   document.getElementById('lobby-room-id').textContent = roomId;
   document.getElementById('lobby-seed-display').textContent = 'Joining room...';
   document.getElementById('btn-enter-world').disabled = true;
+  
+  // Set random default name if not already set
+  const nameInput = document.getElementById('input-player-name');
+  if (!nameInput.value) {
+    const session = loadSession();
+    if (session && session.roomId === roomId && session.playerName) {
+      nameInput.value = session.playerName;
+      // Restore tent settings from session
+      if (session.lobbyTentColor) {
+        lobbyTentColor = session.lobbyTentColor;
+        document.querySelectorAll('#lobby-tent-colors button').forEach(b => {
+          b.style.borderColor = b.dataset.color === lobbyTentColor ? '#fff' : 'transparent';
+        });
+      }
+      if (session.lobbyTentStyle) {
+        lobbyTentStyle = session.lobbyTentStyle;
+        document.getElementById('lobby-tent-style').value = lobbyTentStyle;
+      }
+    } else {
+      nameInput.value = randomCamperName();
+    }
+  }
+  
   connectSignaling();
 }
 
@@ -2543,6 +2608,16 @@ const globeRotation = new THREE.Quaternion();
 globeRotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.6);
 window.globeRotation = globeRotation;
 
+// Restore position and camp from previous session if rejoining same room
+const savedSession = loadSession();
+if (savedSession && savedSession.roomId === roomId && savedSession.globeRotation) {
+  globeRotation.set(savedSession.globeRotation.x, savedSession.globeRotation.y, savedSession.globeRotation.z, savedSession.globeRotation.w);
+  if (savedSession.campState) {
+    localCampState = savedSession.campState;
+    publishCampState();
+  }
+}
+
 function animate() {
   requestAnimationFrame(animate);
   clock.getDelta();
@@ -2693,6 +2768,7 @@ function animate() {
     player.rotation.z *= 0.9;
   }
 
+  // Broadcast position to peers (10 times/sec)
   if (clock.elapsedTime - (animate._lastBroadcast || 0) > 0.1) {
     animate._lastBroadcast = clock.elapsedTime;
     broadcastPosition(globeRotation, playerFacing, {
@@ -2704,6 +2780,12 @@ function animate() {
       roll: player.rotation.z,
       flashlight: flashlightOn && !isSleeping,
     });
+  }
+  
+  // Save session state every 5 seconds
+  if (clock.elapsedTime - (animate._lastSessionSave || 0) > 5) {
+    animate._lastSessionSave = clock.elapsedTime;
+    saveSession();
   }
 
   // Animate connected players.
