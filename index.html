@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v132</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v133</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -177,7 +177,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v132</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v133</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -1583,7 +1583,7 @@ function buildPlayer() {
   lens.position.y = 0.24;
   lens.rotation.x = -Math.PI / 2;
   stickGroup.add(lens);
-  stickGroup.position.set(-0.35, 0.55, 0.25);
+  stickGroup.position.set(-0.32, 0.45, 0.08);
   stickGroup.rotation.x = Math.PI / 2 + 0.3;
   stickGroup.visible = false;
   group.add(stickGroup);
@@ -1600,21 +1600,21 @@ scene.add(player);
 // --- NAME LABELS ---
 let showNameLabels = true;
 
-function createNameLabel(name) {
+function createNameLabel(name, color = '#00ff00') {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 64;
   const ctx = canvas.getContext('2d');
-  ctx.font = 'bold 32px system-ui, sans-serif';
+  ctx.font = 'bold 28px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#00ff00';
+  ctx.fillStyle = color;
   ctx.fillText(name.substring(0, 15), 128, 32);
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
-  const mat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false });
+  const mat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false });
   const sprite = new THREE.Sprite(mat);
-  sprite.scale.set(1.2, 0.3, 1);
+  sprite.scale.set(0.08, 0.02, 1);
   sprite.renderOrder = 999;
   return sprite;
 }
@@ -2768,6 +2768,12 @@ function updateDayNight() {
     );
   }
 
+  // Local player name label
+  localNameLabel.visible = showNameLabels && !isSleeping;
+  if (localNameLabel.visible) {
+    localNameLabel.position.set(0, player.position.y - 0.3, 0);
+  }
+
   // Stars visible at night
   starMat.opacity = 1 - THREE.MathUtils.smoothstep(sunAltitude, -0.25, 0.02);
 
@@ -3153,6 +3159,11 @@ if (roomId) {
     });
   });
 }
+
+// Local player name label (white, smaller)
+const localNameLabel = createNameLabel(playerName || 'Camper', '#ffffff');
+localNameLabel.scale.set(0.05, 0.012, 1);
+scene.add(localNameLabel);
 
 } // end startGame
 </script>
