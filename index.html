@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v144</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v145</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -177,7 +177,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v144</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v145</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -2933,22 +2933,27 @@ function animate() {
         }
       }
     }
-    // Player-to-player collision (disabled - was causing issues)
-    // if (canMove) {
-    //   const localPlayerPos = new THREE.Vector3(0, GLOBE_RADIUS, 0);
-    //   for (const id in otherPlayers) {
-    //     const p = otherPlayers[id];
-    //     if (!p.mesh.visible) continue;
-    //     const otherGlobeDir = new THREE.Vector3(0, 1, 0).applyQuaternion(p.currentGlobeRotation.clone().invert());
-    //     const otherNewWorldPos = otherGlobeDir.applyQuaternion(newRotation).multiplyScalar(GLOBE_RADIUS);
-    //     const dist = localPlayerPos.distanceTo(otherNewWorldPos);
-    //     if (dist < 0.8) {
-    //       canMove = false;
-    //       playerBounceState = { time: 0.3 };
-    //       break;
-    //     }
-    //   }
-    // }
+    // Player-to-player collision: use actual mesh position (already computed last frame)
+    let playerCollisionId = null;
+    if (canMove) {
+      const localPlayerPos = new THREE.Vector3(0, GLOBE_RADIUS, 0);
+      for (const id in otherPlayers) {
+        const p = otherPlayers[id];
+        if (!p.mesh.visible) continue;
+        // Compute where other player would appear if we moved to newRotation
+        const otherGlobeDir = new THREE.Vector3(0, 1, 0).applyQuaternion(p.currentGlobeRotation.clone().invert());
+        const otherNewWorldPos = otherGlobeDir.clone().applyQuaternion(newRotation).multiplyScalar(GLOBE_RADIUS);
+        // Sanity check: skip if position is NaN
+        if (!Number.isFinite(otherNewWorldPos.x)) continue;
+        const dist = localPlayerPos.distanceTo(otherNewWorldPos);
+        if (dist < 1.0) {
+          canMove = false;
+          playerCollisionId = id;
+          playerBounceState = { time: 0.3 };
+          break;
+        }
+      }
+    }
     if (canMove) {
       globeRotation.copy(newRotation);
     } else {
@@ -2967,11 +2972,38 @@ function animate() {
           const curDist = playerWorldPos.distanceTo(curObjPos);
           if (sDist < c.radius + 0.5 && sDist < curDist) { slideOk = false; break; }
         }
+        // Also check player collision for slides
+        if (slideOk && playerCollisionId) {
+          const p = otherPlayers[playerCollisionId];
+          if (p && p.mesh.visible) {
+            const otherGlobeDir = new THREE.Vector3(0, 1, 0).applyQuaternion(p.currentGlobeRotation.clone().invert());
+            const otherSlideWorldPos = otherGlobeDir.clone().applyQuaternion(slideRotation).multiplyScalar(GLOBE_RADIUS);
+            const slideDist = playerWorldPos.distanceTo(otherSlideWorldPos);
+            const curOtherWorldPos = otherGlobeDir.clone().applyQuaternion(globeRotation).multiplyScalar(GLOBE_RADIUS);
+            const curPlayerDist = playerWorldPos.distanceTo(curOtherWorldPos);
+            if (slideDist < 1.0 && slideDist < curPlayerDist) slideOk = false;
+          }
+        }
         if (slideOk) {
           globeRotation.copy(slideRotation);
           slid = true;
           break;
         }
+      }
+      // If no slide found and we hit a player, bounce back slightly
+      if (!slid && playerCollisionId) {
+        const bounceStep = -step * 0.3;
+        const bRotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), bounceStep * Math.cos(playerFacing));
+        const bRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -bounceStep * Math.sin(playerFacing));
+        const bounceRotation = globeRotation.clone().premultiply(bRotX).premultiply(bRotZ);
+        // Verify bounce doesn't push into an obstacle
+        let bounceOk = true;
+        for (const c of activeColliders) {
+          const bObjPos = latLonToWorld(c.lat, c.lon).applyQuaternion(bounceRotation);
+          const bDist = playerWorldPos.distanceTo(bObjPos);
+          if (bDist < c.radius + 0.5) { bounceOk = false; break; }
+        }
+        if (bounceOk) globeRotation.copy(bounceRotation);
       }
     }
   }
