@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v131</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v132</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -147,6 +147,9 @@ canvas { display: block; }
   <div class="control-row">
     <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#aaa;"><input type="checkbox" id="invert-x"> Invert pan direction</label>
   </div>
+  <div class="control-row">
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#aaa;"><input type="checkbox" id="show-names" checked> Show player names</label>
+  </div>
   <hr style="border:none;border-top:1px solid #444;margin:12px 0;">
   <h3 style="margin-bottom:12px;color:#f0c040;font-size:14px;">TENT OPTIONS</h3>
   <div class="control-row">
@@ -174,7 +177,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v131</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v132</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -779,7 +782,8 @@ function setupDataChannel(peerId, channel) {
         ![data.qx, data.qy, data.qz, data.qw].every(n => Number.isFinite(n) && Math.abs(n) <= 1) ||
         Math.abs(Math.hypot(data.qx, data.qy, data.qz, data.qw) - 1) > 0.01 ||
         (data.type === 'pos' && !Number.isFinite(data.facing)) ||
-        (data.type === 'hello' && !/^[a-f0-9]{6}$/.test(data.color))) {
+        (data.type === 'hello' && !/^[a-f0-9]{6}$/.test(data.color)) ||
+        (data.type === 'hello' && (typeof data.name !== 'string' || data.name.length > 20))) {
       removePeerConnection(peerId);
       return;
     }
@@ -862,7 +866,7 @@ function handleGameMessage(peerId, msg) {
   }
   if (msg.type === 'hello') {
     if (window.addOtherPlayer && !window.otherPlayers[peerId]) {
-      window.addOtherPlayer(peerId, color, new THREE.Quaternion(msg.qx, msg.qy, msg.qz, msg.qw));
+      window.addOtherPlayer(peerId, color, new THREE.Quaternion(msg.qx, msg.qy, msg.qz, msg.qw), msg.name || 'Camper');
     }
   }
   if (window.setOtherPlayerColor) window.setOtherPlayerColor(peerId, color);
@@ -886,6 +890,7 @@ function broadcastHello(globeRot) {
   const msg = JSON.stringify({
     type: 'hello',
     color: window.getTentColor ? window.getTentColor() : lobbyTentColor,
+    name: playerName || 'Camper',
     qx: globeRot.x, qy: globeRot.y, qz: globeRot.z, qw: globeRot.w,
   });
   for (const id in dataChannels) {
@@ -1446,6 +1451,7 @@ const raycaster = new THREE.Raycaster();
 // --- PLAYER ---
 let playerFacing = 0;
 let walkCycle = 0;
+let playerBounceState = null;
 
 function buildPlayer() {
   const group = new THREE.Group();
@@ -1560,6 +1566,30 @@ function buildPlayer() {
   sleepingBag.castShadow = true;
   group.add(sleepingBag);
 
+  // Flashlight stick (held in right hand)
+  const stickGroup = new THREE.Group();
+  const stickGeo = new THREE.CylinderGeometry(0.025, 0.03, 0.35, 6);
+  const stickMat = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.5, metalness: 0.3 });
+  const stick = new THREE.Mesh(stickGeo, stickMat);
+  stick.castShadow = true;
+  stickGroup.add(stick);
+  const headGeo2 = new THREE.CylinderGeometry(0.045, 0.035, 0.08, 8);
+  const headMat2 = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.4, metalness: 0.4 });
+  const flashHead = new THREE.Mesh(headGeo2, headMat2);
+  flashHead.position.y = 0.2;
+  stickGroup.add(flashHead);
+  const lensMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
+  const lens = new THREE.Mesh(new THREE.CircleGeometry(0.04, 8), lensMat);
+  lens.position.y = 0.24;
+  lens.rotation.x = -Math.PI / 2;
+  stickGroup.add(lens);
+  stickGroup.position.set(-0.35, 0.55, 0.25);
+  stickGroup.rotation.x = Math.PI / 2 + 0.3;
+  stickGroup.visible = false;
+  group.add(stickGroup);
+  group.userData.flashlightStick = stickGroup;
+  group.userData.flashlightLens = lens;
+
   return group;
 }
 
@@ -1567,10 +1597,32 @@ const player = buildPlayer();
 player.position.set(0, GLOBE_RADIUS - 0.05, 0);
 scene.add(player);
 
+// --- NAME LABELS ---
+let showNameLabels = true;
+
+function createNameLabel(name) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.font = 'bold 32px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#00ff00';
+  ctx.fillText(name.substring(0, 15), 128, 32);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(1.2, 0.3, 1);
+  sprite.renderOrder = 999;
+  return sprite;
+}
+
 // --- OTHER PLAYERS ---
 const otherPlayers = {};
 
-function addOtherPlayer(id, color, startGlobeRotation) {
+function addOtherPlayer(id, color, startGlobeRotation, name) {
   const mesh = buildPlayer();
   mesh.traverse(c => { if (c.isMesh && c.material) { c.material = c.material.clone(); } });
   mesh.traverse(c => { if (c.isMesh && c.material?.userData.playerTint) c.material.color.set(color); });
@@ -1581,10 +1633,14 @@ function addOtherPlayer(id, color, startGlobeRotation) {
   const torchTip = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 4), new THREE.MeshBasicMaterial({ color: 0xffffff }));
   torchTip.visible = false;
   scene.add(torch, torch.target, torchTip);
+  const nameLabel = createNameLabel(name || 'Camper');
+  scene.add(nameLabel);
   otherPlayers[id] = {
     mesh,
     torch, torchTip, motion: null, motionReceivedAt: 0,
     color,
+    name: name || 'Camper',
+    nameLabel,
     currentGlobeRotation: startGlobeRotation.clone(),
     targetGlobeRotation: startGlobeRotation.clone(),
     prevGlobeRotation: startGlobeRotation.clone(),
@@ -1604,9 +1660,12 @@ function removeOtherPlayer(id) {
   if (!p) return;
   scene.remove(p.mesh);
   scene.remove(p.torch, p.torch.target, p.torchTip);
+  scene.remove(p.nameLabel);
   p.torch.shadow.dispose();
   p.torchTip.geometry.dispose();
   p.torchTip.material.dispose();
+  p.nameLabel.material.map.dispose();
+  p.nameLabel.material.dispose();
   delete otherPlayers[id];
 }
 
@@ -1676,11 +1735,14 @@ function animateOtherPlayers(delta) {
     const torchOn = !!p.motion?.flashlight && m.visible && motionAge < 2;
     p.torch.visible = torchOn;
     p.torch.intensity = torchOn ? 15 : 0;
-    p.torchTip.visible = torchOn;
+    p.torchTip.visible = false;
+    m.userData.flashlightStick.visible = torchOn;
+    m.userData.flashlightLens.material.color.setHex(torchOn ? 0xffffcc : 0x333333);
     if (torchOn) {
-      p.torch.position.copy(new THREE.Vector3(-0.35, 0.55, 0.3).applyQuaternion(m.quaternion).add(m.position));
+      const lensWorld = new THREE.Vector3();
+      m.userData.flashlightLens.getWorldPosition(lensWorld);
+      p.torch.position.copy(lensWorld);
       p.torch.target.position.copy(new THREE.Vector3(0, -0.5, 5).applyQuaternion(m.quaternion).add(m.position));
-      p.torchTip.position.copy(p.torch.position);
     }
 
     if (p.motion) {
@@ -1708,6 +1770,12 @@ function animateOtherPlayers(delta) {
       m.userData.rightLeg.rotation.x *= 0.85;
       m.userData.leftArm.rotation.x *= 0.85;
       m.userData.rightArm.rotation.x *= 0.85;
+    }
+
+    // Position name label below player
+    p.nameLabel.visible = showNameLabels && m.visible;
+    if (p.nameLabel.visible) {
+      p.nameLabel.position.copy(m.position).addScaledVector(wDir, -0.3);
     }
   }
 }
@@ -1754,6 +1822,10 @@ document.getElementById('control-mode').addEventListener('change', (e) => {
 });
 document.getElementById('invert-x').addEventListener('change', (e) => {
   invertX = e.target.checked;
+  saveSettings();
+});
+document.getElementById('show-names').addEventListener('change', (e) => {
+  showNameLabels = e.target.checked;
   saveSettings();
 });
 
@@ -2006,6 +2078,7 @@ let timePaused = false;
   if (s.tentStyle) { tentStyle = s.tentStyle; document.getElementById('tent-style').value = s.tentStyle; }
   if (s.timePaused) { timePaused = s.timePaused; document.getElementById('time-pause').checked = s.timePaused; }
   if (s.invertX) { invertX = s.invertX; document.getElementById('invert-x').checked = s.invertX; }
+  if (s.showNameLabels !== undefined) { showNameLabels = s.showNameLabels; document.getElementById('show-names').checked = s.showNameLabels; }
   const h = Math.floor(timeOfDay); const m = Math.floor((timeOfDay - h) * 60);
   document.getElementById('time-display').textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 })();
@@ -2025,7 +2098,7 @@ document.querySelectorAll('#tent-colors button').forEach(button => {
 function saveSettings() {
   localStorage.setItem('campout-settings', JSON.stringify({
     moonlight: moonlightStrength, fog: fogDensity,
-    controlMode, tentColor: tentColor.toString(16), tentStyle, timePaused, invertX
+    controlMode, tentColor: tentColor.toString(16), tentStyle, timePaused, invertX, showNameLabels
   }));
 }
 
@@ -2682,14 +2755,12 @@ function updateDayNight() {
   }
 
   flashlight.intensity = flashlightOn ? 15 : 0;
+  player.userData.flashlightStick.visible = flashlightOn;
+  player.userData.flashlightLens.material.color.setHex(flashlightOn ? 0xffffcc : 0x333333);
   if (flashlightOn) {
-    const handOffsetRight = 0.35;
-    const handHeight = 0.55;
-    flashlight.position.set(
-      Math.sin(playerFacing) * 0.3 + Math.sin(playerFacing - Math.PI/2) * handOffsetRight,
-      player.position.y + handHeight,
-      Math.cos(playerFacing) * 0.3 + Math.cos(playerFacing - Math.PI/2) * handOffsetRight
-    );
+    const stickWorld = new THREE.Vector3();
+    player.userData.flashlightLens.getWorldPosition(stickWorld);
+    flashlight.position.copy(stickWorld);
     flashlight.target.position.set(
       Math.sin(playerFacing) * 5,
       player.position.y - 0.5,
@@ -2813,6 +2884,22 @@ function animate() {
         }
       }
     }
+    // Player-to-player collision
+    if (canMove) {
+      for (const id in otherPlayers) {
+        const p = otherPlayers[id];
+        if (!p.mesh.visible) continue;
+        const otherPos = p.mesh.position.clone();
+        const newPlayerPos = new THREE.Vector3(0, 1, 0).applyQuaternion(newRotation.clone().invert()).applyQuaternion(globeRotation);
+        newPlayerPos.normalize().multiplyScalar(GLOBE_RADIUS);
+        const dist = otherPos.distanceTo(newPlayerPos);
+        if (dist < 0.8) {
+          canMove = false;
+          playerBounceState = { time: 0.3 };
+          break;
+        }
+      }
+    }
     if (canMove) {
       globeRotation.copy(newRotation);
     } else {
@@ -2873,6 +2960,16 @@ function animate() {
     player.userData.leftArm.rotation.x *= 0.85;
     player.userData.rightArm.rotation.x *= 0.85;
     player.rotation.z *= 0.9;
+  }
+
+  // Bounce/waddle effect when colliding with another player
+  if (playerBounceState) {
+    playerBounceState.time -= delta;
+    const bounceIntensity = Math.sin(playerBounceState.time * 25) * playerBounceState.time * 2;
+    player.rotation.z += bounceIntensity * 0.3;
+    player.userData.leftArm.rotation.x += bounceIntensity * 0.5;
+    player.userData.rightArm.rotation.x -= bounceIntensity * 0.5;
+    if (playerBounceState.time <= 0) playerBounceState = null;
   }
 
   // Broadcast position to peers (10 times/sec)
