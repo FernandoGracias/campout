@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v130</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v131</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -174,7 +174,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v130</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v131</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -192,7 +192,7 @@ import * as THREE from 'three';
 // --- SCREEN MANAGEMENT & NETWORKING ---
 const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
 const DEBUG_MODE = new URLSearchParams(window.location.search).has('debug');
-const URL_ROOM = new URLSearchParams(window.location.search).get('room')?.toLowerCase();
+const URL_WORLD = new URLSearchParams(window.location.search).get('world')?.toLowerCase();
 
 // Random camper name generator
 const CAMPER_ADJECTIVES = ['Burly', 'Jolly', 'Rugged', 'Sleepy', 'Happy', 'Grumpy', 'Brave', 'Lucky', 'Dusty', 'Sunny', 'Rustic', 'Wandering', 'Cheerful', 'Mellow'];
@@ -367,16 +367,24 @@ document.getElementById('input-room-code').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('btn-join-room').click();
 });
 
-// Auto-join if room code in URL
-if (URL_ROOM && /^[a-f0-9]{12}$/.test(URL_ROOM)) {
+// Auto-join if world code in URL
+if (URL_WORLD && /^[a-f0-9]{12}$/.test(URL_WORLD)) {
   (async () => {
-    const resp = await fetch(`${SIGNAL_SERVER}/api/room/${URL_ROOM}/exists`).catch(() => null);
+    const resp = await fetch(`${SIGNAL_SERVER}/api/room/${URL_WORLD}/exists`).catch(() => null);
     if (!resp || !resp.ok) {
       mpLog('World from URL not found. It may have expired.');
       return;
     }
-    roomId = URL_ROOM;
+    roomId = URL_WORLD;
     worldSeed = null;
+    // Auto-enter if we have a saved session for this same world
+    const savedSession = loadSession();
+    if (savedSession && savedSession.roomId === URL_WORLD) {
+      playerName = savedSession.playerName || 'Camper';
+      lobbyTentColor = savedSession.lobbyTentColor || 'cc5522';
+      lobbyTentStyle = savedSession.lobbyTentStyle || 'aframe';
+      autoEnterWorld = true;
+    }
     showLobby();
   })();
 } else {
@@ -426,7 +434,7 @@ document.getElementById('lobby-tent-style').addEventListener('change', (e) => {
 document.getElementById('btn-copy-link').addEventListener('click', () => {
   const url = new URL(window.location.href);
   url.search = '';
-  url.searchParams.set('room', roomId);
+  url.searchParams.set('world', roomId);
   navigator.clipboard.writeText(url.toString()).then(() => {
     const btn = document.getElementById('btn-copy-link');
     btn.textContent = 'Copied!';
@@ -3039,7 +3047,7 @@ if (roomId) {
   document.getElementById('btn-copy-link-game').addEventListener('click', () => {
     const url = new URL(window.location.href);
     url.search = '';
-    url.searchParams.set('room', roomId);
+    url.searchParams.set('world', roomId);
     navigator.clipboard.writeText(url.toString()).then(() => {
       const btn = document.getElementById('btn-copy-link-game');
       btn.textContent = 'Copied!';
