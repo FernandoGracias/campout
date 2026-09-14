@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v112</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v113</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -171,7 +171,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v112</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v113</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -216,6 +216,7 @@ const restartTimers = new Map();
 const makingOffers = new Set();
 let localCampState = null;
 const remoteCampStates = Object.create(null);
+const peerColors = Object.create(null);
 let sharedEnvironment = null;
 let environmentSendTimer = null;
 let roomClockOffset = 0;
@@ -404,6 +405,7 @@ async function handleSignalMessage(msg) {
         break;
       }
       case 'peer-joined': {
+        peerColors[msg.id] = msg.color;
         updateLobbyPeers(msg);
         await createPeerConnection(msg.id, localPlayerId > msg.id);
         break;
@@ -465,6 +467,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function removePeerConnection(id) {
+  delete peerColors[id];
   delete remoteCampStates[id];
   if (window.syncCamps) window.syncCamps();
   const pc = peerConnections[id];
@@ -664,25 +667,29 @@ async function handleIceCandidate(msg) {
 }
 
 function handleGameMessage(peerId, msg) {
+  if (typeof msg.color === 'string' && /^[a-f0-9]{6}$/.test(msg.color)) peerColors[peerId] = msg.color;
+  const color = parseInt(peerColors[peerId] || remoteCampStates[peerId]?.color || 'cc5522', 16);
   if (msg.type === 'pos') {
     const q = new THREE.Quaternion(msg.qx, msg.qy, msg.qz, msg.qw);
     if (window.updateOtherPlayer) {
       if (!window.otherPlayers[peerId]) {
-        window.addOtherPlayer(peerId, 0x2266aa, q);
+        window.addOtherPlayer(peerId, color, q);
       }
       window.updateOtherPlayer(peerId, q, msg.facing);
     }
   }
   if (msg.type === 'hello') {
     if (window.addOtherPlayer && !window.otherPlayers[peerId]) {
-      window.addOtherPlayer(peerId, parseInt(msg.color, 16) || 0x2266aa, new THREE.Quaternion(msg.qx, msg.qy, msg.qz, msg.qw));
+      window.addOtherPlayer(peerId, color, new THREE.Quaternion(msg.qx, msg.qy, msg.qz, msg.qw));
     }
   }
+  if (window.setOtherPlayerColor) window.setOtherPlayerColor(peerId, color);
 }
 
 function broadcastPosition(globeRot, facing) {
   const msg = JSON.stringify({
     type: 'pos',
+    color: window.getTentColor ? window.getTentColor() : lobbyTentColor,
     qx: globeRot.x, qy: globeRot.y, qz: globeRot.z, qw: globeRot.w,
     facing,
   });
@@ -695,7 +702,7 @@ function broadcastPosition(globeRot, facing) {
 function broadcastHello(globeRot) {
   const msg = JSON.stringify({
     type: 'hello',
-    color: lobbyTentColor,
+    color: window.getTentColor ? window.getTentColor() : lobbyTentColor,
     qx: globeRot.x, qy: globeRot.y, qz: globeRot.z, qw: globeRot.w,
   });
   for (const id in dataChannels) {
@@ -1379,6 +1386,7 @@ function addOtherPlayer(id, color, startGlobeRotation) {
   scene.add(mesh);
   otherPlayers[id] = {
     mesh,
+    color,
     currentGlobeRotation: startGlobeRotation.clone(),
     targetGlobeRotation: startGlobeRotation.clone(),
     prevGlobeRotation: startGlobeRotation.clone(),
@@ -1485,16 +1493,12 @@ window.addOtherPlayer = addOtherPlayer;
 window.removeOtherPlayer = removeOtherPlayer;
 window.updateOtherPlayer = updateOtherPlayer;
 window.otherPlayers = otherPlayers;
-
-// --- NPC (uses OtherPlayers system) ---
-const npcGlobeRotation = new THREE.Quaternion();
-npcGlobeRotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.6);
-npcGlobeRotation.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.15));
-let npcFacing = Math.random() * Math.PI * 2;
-let npcWanderTimer = 0;
-let npcWanderDir = npcFacing;
-let npcWanderPause = 0;
-addOtherPlayer('npc', 0x2266aa, npcGlobeRotation);
+window.setOtherPlayerColor = (id, color) => {
+  const p = otherPlayers[id];
+  if (!p || p.color === color) return;
+  p.color = color;
+  p.mesh.traverse(c => { if (c.isMesh && c.material?.userData.playerTint) c.material.color.set(color); });
+};
 
 // --- CAMERA SETUP ---
 camera.position.set(0, GLOBE_RADIUS + 6, 6);
@@ -1754,6 +1758,11 @@ let timePaused = false;
 
 tentColor = parseInt(lobbyTentColor, 16);
 tentStyle = lobbyTentStyle;
+window.getTentColor = () => tentColor.toString(16).padStart(6, '0');
+function updateOwnShirt() {
+  player.traverse(c => { if (c.isMesh && c.material?.userData.playerTint) c.material.color.set(tentColor); });
+}
+updateOwnShirt();
 document.getElementById('tent-style').value = tentStyle;
 document.querySelectorAll('#tent-colors button').forEach(button => {
   button.style.borderColor = button.dataset.color === lobbyTentColor ? '#fff' : 'transparent';
@@ -1858,6 +1867,7 @@ tentColorsDiv.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-color]');
   if (!btn) return;
   tentColor = parseInt(btn.dataset.color, 16);
+  updateOwnShirt();
   tentColorsDiv.querySelectorAll('button').forEach(b => b.style.borderColor = 'transparent');
   btn.style.borderColor = '#fff';
   if (localCampState) { localCampState.color = btn.dataset.color; publishCampState(); }
@@ -1886,7 +1896,9 @@ function pitchCamp() {
   const basis = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...anchor));
   const localHere = here.clone().sub(new THREE.Vector3(...anchor).multiplyScalar(GLOBE_RADIUS)).applyQuaternion(basis.clone().invert());
   const occupied = camps.filter(c => JSON.stringify(c.position) === JSON.stringify(anchor)).map(c => c.tent);
-  const tent = findTentSpace(anchor, [localHere.x, localHere.z], occupied, [localHere.x, localHere.z]);
+  const firstAngle = Math.atan2(localHere.x, localHere.z) + Math.PI / 3;
+  const preferred = nearby ? [localHere.x, localHere.z] : [Math.sin(firstAngle) * 2.3, Math.cos(firstAngle) * 2.3];
+  const tent = findTentSpace(anchor, preferred, occupied, [localHere.x, localHere.z]);
   if (!tent) { mpLog('This campsite is full. Move a little farther away to pitch.'); return; }
   localCampState = { position: anchor, tent, placedAt: roomNow(),
     style: tentStyle, color: tentColor.toString(16).padStart(6, '0'), sleeping: false };
@@ -1910,14 +1922,14 @@ function campsitePoint(anchor, offset) {
 
 function findTentSpace(anchor, preferred, occupied, playerOffset = null) {
   const clear = offset => {
-    if (Math.hypot(...offset) < 3 || occupied.some(t => Math.hypot(t[0] - offset[0], t[1] - offset[1]) < 3)) return false;
+    if (Math.hypot(...offset) < 2.3 - 1e-6 || occupied.some(t => Math.hypot(t[0] - offset[0], t[1] - offset[1]) < 3)) return false;
     if (playerOffset && Math.hypot(playerOffset[0] - offset[0], playerOffset[1] - offset[1]) < 1.8) return false;
     const point = campsitePoint(anchor, offset).normalize().multiplyScalar(GLOBE_RADIUS);
     return !collidables.some(c => point.distanceTo(latLonToWorld(c.lat, c.lon)) < c.radius + 1.2);
   };
   if (clear(preferred)) return preferred;
   let best = null, distance = Infinity;
-  for (let radius = 3; radius <= 30; radius += 0.75) {
+  for (let radius = 2.3; radius <= 30; radius += 0.75) {
     for (let i = 0; i < 64; i++) {
       const angle = i * Math.PI / 32;
       const candidate = [Math.sin(angle) * radius, Math.cos(angle) * radius];
@@ -2533,30 +2545,7 @@ function animate() {
     player.rotation.z *= 0.9;
   }
 
-  // NPC: wander behavior (feeds into OtherPlayers system)
-  npcWanderTimer += delta;
-  if (npcWanderPause > 0) {
-    npcWanderPause -= delta;
-  } else {
-    if (npcWanderTimer > 3 + Math.random() * 4) {
-      npcWanderTimer = 0;
-      npcWanderDir += (Math.random() - 0.5) * 2.0;
-      if (Math.random() < 0.2) npcWanderPause = 1 + Math.random() * 2;
-    }
-
-    let angleDiff = npcWanderDir - npcFacing;
-    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-    npcFacing += angleDiff * Math.min(delta * 3, 1);
-
-    const npcStep = 0.15 * delta;
-    const npcRotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), npcStep * Math.cos(npcFacing));
-    const npcRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -npcStep * Math.sin(npcFacing));
-    npcGlobeRotation.premultiply(npcRotX).premultiply(npcRotZ);
-  }
-  updateOtherPlayer('npc', npcGlobeRotation, npcFacing, true);
-
-  // Animate all other players (NPC + future multiplayer)
+  // Animate connected players.
   animateOtherPlayers(delta);
 
   // Terrain following: raycast downward to find globe surface
