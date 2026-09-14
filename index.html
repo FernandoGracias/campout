@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v156</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v157</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -177,7 +177,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v156</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v157</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -1878,7 +1878,11 @@ const keys = {};
 document.addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; });
 document.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
 
-const gamepadState = { aWasPressed: false, bWasPressed: false, yWasPressed: false };
+const gamepadState = { 
+  aWasPressed: false, bWasPressed: false, yWasPressed: false,
+  dpadUpWasPressed: false, dpadUpLastTap: 0,
+  dpadDownWasPressed: false, dpadDownLastTap: 0
+};
 let gamepadConnected = false;
 let lastInputMode = 'keyboard';  // 'keyboard', 'gamepad', 'touch'
 let cursorHideTimeout = null;
@@ -2987,7 +2991,29 @@ function animate() {
     if (gp.buttons[15]?.pressed) cameraAngle -= delta * 2.5;
     break; // Use first connected gamepad
   }
-  // D-pad up/down = zoom in/out
+  // D-pad up/down = zoom in/out (hold), or double-tap for preset views
+  const now = performance.now();
+  if (gamepadDpadUp && !gamepadState.dpadUpWasPressed) {
+    // Check for double-tap (within 300ms)
+    if (now - gamepadState.dpadUpLastTap < 300) {
+      // Double-tap up: reset to default view
+      cameraDistance = 6;
+      cameraHeight = 6;
+    }
+    gamepadState.dpadUpLastTap = now;
+  }
+  gamepadState.dpadUpWasPressed = gamepadDpadUp;
+  if (gamepadDpadDown && !gamepadState.dpadDownWasPressed) {
+    // Check for double-tap (within 300ms)
+    if (now - gamepadState.dpadDownLastTap < 300) {
+      // Double-tap down: zoom out to overhead angled view
+      cameraDistance = 30;
+      cameraHeight = 9;  // ~75% tilt for angled overhead
+    }
+    gamepadState.dpadDownLastTap = now;
+  }
+  gamepadState.dpadDownWasPressed = gamepadDpadDown;
+  // Hold for continuous zoom
   if (gamepadDpadUp) cameraDistance = Math.max(4, cameraDistance - delta * 15);
   if (gamepadDpadDown) cameraDistance = Math.min(60, cameraDistance + delta * 15);
   // Right stick Y = tilt camera
