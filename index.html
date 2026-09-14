@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v151</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v152</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -177,7 +177,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v151</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v152</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -783,6 +783,15 @@ function setupDataChannel(peerId, channel) {
       if (window.syncCamps) window.syncCamps();
       return;
     }
+    // Validate bump messages
+    if (data && data.type === 'bump') {
+      if (!Number.isFinite(data.dx) || !Number.isFinite(data.dz) || Math.abs(data.dx) > 1 || Math.abs(data.dz) > 1) {
+        console.error('DC removing peer - bad bump:', data);
+        removePeerConnection(peerId); return;
+      }
+      handleGameMessage(peerId, data);
+      return;
+    }
     if (!data || !['hello', 'pos'].includes(data.type) ||
         ![data.qx, data.qy, data.qz, data.qw].every(n => Number.isFinite(n) && Math.abs(n) <= 1) ||
         Math.abs(Math.hypot(data.qx, data.qy, data.qz, data.qw) - 1) > 0.01 ||
@@ -862,6 +871,11 @@ async function handleIceCandidate(msg) {
 function handleGameMessage(peerId, msg) {
   if (typeof msg.color === 'string' && /^[a-f0-9]{6}$/.test(msg.color)) peerColors[peerId] = msg.color;
   const color = parseInt(peerColors[peerId] || remoteCampStates[peerId]?.color || 'cc5522', 16);
+  // Handle bump message - other player is telling us we collided
+  if (msg.type === 'bump') {
+    if (window.receiveBump) window.receiveBump(peerId, msg.dx, msg.dz);
+    return;
+  }
   if (msg.type === 'pos') {
     const q = new THREE.Quaternion(msg.qx, msg.qy, msg.qz, msg.qw);
     if (window.updateOtherPlayer) {
@@ -904,6 +918,14 @@ function broadcastHello(globeRot) {
   for (const id in dataChannels) {
     const dc = dataChannels[id];
     if (dc.readyState === 'open' && dc.bufferedAmount < 65536) dc.send(msg);
+  }
+}
+
+// Send bump notification to a specific peer
+function sendBump(peerId, dx, dz) {
+  const dc = dataChannels[peerId];
+  if (dc && dc.readyState === 'open') {
+    dc.send(JSON.stringify({ type: 'bump', dx, dz }));
   }
 }
 
@@ -1460,6 +1482,14 @@ const raycaster = new THREE.Raycaster();
 let playerFacing = 0;
 let walkCycle = 0;
 let playerBounceState = null;
+let pendingBump = null;  // Incoming bump from another player
+
+// Called when another player tells us we bumped into them
+window.receiveBump = function(peerId, dx, dz) {
+  // Queue the bump to be applied in the next frame
+  pendingBump = { dx, dz };
+  playerBounceState = { time: 0.25 };
+};
 
 function buildPlayer() {
   const group = new THREE.Group();
@@ -2975,6 +3005,14 @@ function animate() {
     }
   }
 
+  // Apply any pending bump from another player
+  if (pendingBump) {
+    const bRotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pendingBump.dx);
+    const bRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -pendingBump.dz);
+    globeRotation.premultiply(bRotX).premultiply(bRotZ);
+    pendingBump = null;
+  }
+
   let moveInput = 0;
   let strafeInput = 0;  // Gamepad strafe (left stick X in pan mode)
   if (keys['w'] || keys['arrowup']) moveInput = -1;
@@ -3069,6 +3107,7 @@ function animate() {
     }
     // Player-to-player collision: use actual mesh position (already computed last frame)
     let playerCollisionId = null;
+    let collisionBounceDir = null;
     if (canMove) {
       const localPlayerPos = new THREE.Vector3(0, GLOBE_RADIUS, 0);
       for (const id in otherPlayers) {
@@ -3083,11 +3122,13 @@ function animate() {
           continue;
         }
         const dist = localPlayerPos.distanceTo(otherNewWorldPos);
-        if (dist < 1.0) {
+        if (dist < 0.55) {  // Smaller collision radius for closer contact
           canMove = false;
           playerCollisionId = id;
-          playerBounceState = { time: 0.3 };
-          mpLog('COLLISION dist=' + dist.toFixed(2) + ' with ' + id.substring(0,6));
+          playerBounceState = { time: 0.25 };
+          // Calculate bounce direction (away from other player, in globe-local coords)
+          const bounceDir = localPlayerPos.clone().sub(otherNewWorldPos).normalize();
+          collisionBounceDir = { x: bounceDir.x * 0.15, z: bounceDir.z * 0.15 };
           break;
         }
       }
@@ -3119,7 +3160,7 @@ function animate() {
             const slideDist = playerWorldPos.distanceTo(otherSlideWorldPos);
             const curOtherWorldPos = otherGlobeDir.clone().applyQuaternion(globeRotation).multiplyScalar(GLOBE_RADIUS);
             const curPlayerDist = playerWorldPos.distanceTo(curOtherWorldPos);
-            if (slideDist < 1.0 && slideDist < curPlayerDist) slideOk = false;
+            if (slideDist < 0.55 && slideDist < curPlayerDist) slideOk = false;
           }
         }
         if (slideOk) {
@@ -3128,11 +3169,11 @@ function animate() {
           break;
         }
       }
-      // If no slide found and we hit a player, bounce back slightly
-      if (!slid && playerCollisionId) {
-        const bounceStep = -step * 0.3;
-        const bRotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), bounceStep * Math.cos(playerFacing));
-        const bRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -bounceStep * Math.sin(playerFacing));
+      // If we hit a player, bounce both players apart
+      if (playerCollisionId && collisionBounceDir) {
+        // Apply bounce to local player (in the direction away from collision)
+        const bRotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), collisionBounceDir.x);
+        const bRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -collisionBounceDir.z);
         const bounceRotation = globeRotation.clone().premultiply(bRotX).premultiply(bRotZ);
         // Verify bounce doesn't push into an obstacle
         let bounceOk = true;
@@ -3142,6 +3183,8 @@ function animate() {
           if (bDist < c.radius + 0.5) { bounceOk = false; break; }
         }
         if (bounceOk) globeRotation.copy(bounceRotation);
+        // Tell the other player to bounce in the opposite direction
+        sendBump(playerCollisionId, -collisionBounceDir.x, -collisionBounceDir.z);
       }
     }
   }
