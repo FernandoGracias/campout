@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v113</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v114</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -171,7 +171,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v113</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v114</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -188,12 +188,18 @@ import * as THREE from 'three';
 
 // --- SCREEN MANAGEMENT & NETWORKING ---
 const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
+const DEBUG_MODE = new URLSearchParams(window.location.search).has('debug');
 const mpLogs = [];
-function mpLog(msg) {
+function mpLog(msg, debugOnly = false) {
+  if (debugOnly && !DEBUG_MODE) return;
   mpLogs.push(msg);
   if (mpLogs.length > 20) mpLogs.shift();
   const el = document.getElementById('mp-status');
-  if (el) { el.style.display = 'block'; el.textContent = mpLogs.slice(-5).join('\n'); }
+  if (el) {
+    const visibleLogs = DEBUG_MODE ? mpLogs.slice(-5) : mpLogs.filter((_, i) => i >= mpLogs.length - 5);
+    el.textContent = visibleLogs.join('\n');
+    el.style.display = visibleLogs.length > 0 ? 'block' : 'none';
+  }
 }
 let roomId = null;
 let worldSeed = null;
@@ -376,7 +382,7 @@ function connectSignaling() {
 
 async function handleSignalMessage(msg) {
     if (msg.type === 'pong') return;
-    mpLog('← ' + msg.type + (msg.from ? ' from:' + msg.from.substring(0,6) : '') + (msg.id ? ' id:' + msg.id.substring(0,6) : ''));
+    mpLog('← ' + msg.type + (msg.from ? ' from:' + msg.from.substring(0,6) : '') + (msg.id ? ' id:' + msg.id.substring(0,6) : ''), true);
     switch (msg.type) {
       case 'room-info': {
         localPlayerId = msg.id;
@@ -453,7 +459,7 @@ function applyTurnCredentials(data) {
     if (localPlayerId > id) requestIceRestart(id);
     else signalingWs.send(JSON.stringify({ type: 'restart-request', target: id }));
   }
-  mpLog('TURN credentials updated');
+  mpLog('TURN credentials updated', true);
 }
 
 function refreshTurnIfDue() {
@@ -514,7 +520,7 @@ function requestIceRestart(peerId) {
 
 async function createPeerConnection(peerId, initiator) {
   if (peerConnections[peerId]) return peerConnections[peerId];
-  mpLog('PC create: ' + peerId.substring(0,6) + (initiator ? ' (initiator)' : ''));
+  mpLog('PC create: ' + peerId.substring(0,6) + (initiator ? ' (initiator)' : ''), true);
   const pc = new RTCPeerConnection(rtcConfig);
   peerConnections[peerId] = pc;
   pendingCandidates[peerId] ||= [];
@@ -524,7 +530,7 @@ async function createPeerConnection(peerId, initiator) {
   };
 
   pc.oniceconnectionstatechange = () => {
-    mpLog('ICE: ' + pc.iceConnectionState + ' ' + peerId.substring(0,6));
+    mpLog('ICE: ' + pc.iceConnectionState + ' ' + peerId.substring(0,6), true);
     if (pc.iceConnectionState === 'failed' && signalingWs.readyState === WebSocket.OPEN) {
       if (localPlayerId > peerId) requestIceRestart(peerId);
       else signalingWs.send(JSON.stringify({ type: 'restart-request', target: peerId }));
@@ -559,7 +565,7 @@ function setupDataChannel(peerId, channel) {
   let budget = 120;
   let budgetAt = Date.now();
   channel.onopen = () => {
-    mpLog('DC open: ' + peerId.substring(0,6));
+    mpLog('DC open: ' + peerId.substring(0,6), true);
     if (window.globeRotation) broadcastHello(window.globeRotation);
     channel.send(JSON.stringify({ type: 'camp', camp: localCampState }));
     if (sharedEnvironment) channel.send(JSON.stringify({ type: 'environment', state: sharedEnvironment }));
@@ -611,11 +617,11 @@ function setupDataChannel(peerId, channel) {
       removePeerConnection(peerId);
       return;
     }
-    if (data.type === 'hello') mpLog('DC msg: hello from ' + peerId.substring(0,6));
+    if (data.type === 'hello') mpLog('DC msg: hello from ' + peerId.substring(0,6), true);
     handleGameMessage(peerId, data);
   };
   channel.onclose = () => {
-    mpLog('DC closed: ' + peerId.substring(0,6));
+    mpLog('DC closed: ' + peerId.substring(0,6), true);
     if (dataChannels[peerId] === channel) {
       delete dataChannels[peerId];
       delete remoteCampStates[peerId];
@@ -628,9 +634,9 @@ function setupDataChannel(peerId, channel) {
 async function handleOffer(msg) {
   let pc = peerConnections[msg.from];
   if (!pc) pc = await createPeerConnection(msg.from, false);
-  mpLog('setRemoteDesc (offer) ' + msg.from.substring(0,6));
+  mpLog('setRemoteDesc (offer) ' + msg.from.substring(0,6), true);
   await pc.setRemoteDescription(msg.sdp);
-  mpLog('flushing ' + (pendingCandidates[msg.from] || []).length + ' pending ICE');
+  mpLog('flushing ' + (pendingCandidates[msg.from] || []).length + ' pending ICE', true);
   for (const c of pendingCandidates[msg.from] || []) {
     await pc.addIceCandidate(c);
   }
@@ -2291,7 +2297,7 @@ function enterTent() {
   if (localCampState) { localCampState.sleeping = true; publishCampState(); }
 }
 
-function makeZSprite(size) {
+function makeZSprite(size, xOffset) {
   const canvas = document.createElement('canvas');
   canvas.width = 64; canvas.height = 64;
   const ctx = canvas.getContext('2d');
@@ -2304,6 +2310,8 @@ function makeZSprite(size) {
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 1, depthWrite: false });
   const sprite = new THREE.Sprite(mat);
   sprite.scale.set(0.3 + size * 0.15, 0.3 + size * 0.15, 1);
+  sprite.userData.xOffset = xOffset;
+  sprite.userData.xDrift = (Math.random() - 0.5) * 0.15;
   return sprite;
 }
 
@@ -2312,7 +2320,38 @@ function wakeUp() {
   player.visible = true;
   document.getElementById('controls-row').style.opacity = '';
   document.getElementById('controls-row').style.pointerEvents = '';
-  if (localCampState) { localCampState.sleeping = false; publishCampState(); }
+  if (localCampState) {
+    localCampState.sleeping = false;
+    publishCampState();
+    // Move player to just outside the tent entrance
+    const anchor = new THREE.Vector3(...localCampState.position);
+    const tentOffset = localCampState.tent;
+    const tentAngle = Math.atan2(tentOffset[0], tentOffset[1]);
+    // Exit 1.5 units in front of tent toward campsite center
+    const exitDistance = 1.5;
+    let exitOffset = [
+      tentOffset[0] - Math.sin(tentAngle) * exitDistance,
+      tentOffset[1] - Math.cos(tentAngle) * exitDistance
+    ];
+    let exitDist = Math.hypot(exitOffset[0], exitOffset[1]);
+    // Fire ring is ~0.55 radius. If exit would land inside it, push out to safe distance
+    const fireRingRadius = 0.8;
+    if (exitDist < fireRingRadius) {
+      // Place player just outside fire ring, on the line from center through tent
+      exitOffset = [Math.sin(tentAngle) * fireRingRadius, Math.cos(tentAngle) * fireRingRadius];
+      exitDist = fireRingRadius;
+    }
+    const basis = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), anchor);
+    const exitPoint = new THREE.Vector3(exitOffset[0], GLOBE_RADIUS, exitOffset[1]).applyQuaternion(basis).normalize();
+    const exitGlobeRot = globeRotation.clone().premultiply(
+      new THREE.Quaternion().setFromUnitVectors(exitPoint.clone().applyQuaternion(globeRotation), new THREE.Vector3(0, 1, 0))
+    );
+    globeRotation.copy(exitGlobeRot);
+    // Face toward campsite center (fire)
+    playerFacing = tentAngle + Math.PI;
+    cameraAngle = playerFacing - Math.PI;
+    cameraTargetAngle = cameraAngle;
+  }
 }
 
 document.getElementById('btn-pitch').addEventListener('click', pitchCamp);
@@ -2590,10 +2629,12 @@ function animate() {
     if (model.zTimer >= 5) {
       model.zTimer = 0;
       for (let i = 0; i < 3; i++) {
-        const sprite = makeZSprite(i);
-        sprite.position.copy(model.tent.position).add(new THREE.Vector3(0, 1.5, 0));
+        const xOffset = (i - 1) * 0.3 + (Math.random() - 0.5) * 0.2;
+        const yOffset = i * 0.25 + Math.random() * 0.15;
+        const sprite = makeZSprite(i, xOffset);
+        sprite.position.copy(model.tent.position).add(new THREE.Vector3(xOffset, 1.5 + yOffset, 0));
         model.group.add(sprite);
-        model.zSprites.push({ sprite, age: -i * 0.25, speed: 0.4 + i * 0.1 });
+        model.zSprites.push({ sprite, age: -i * 0.35, speed: 0.35 + i * 0.12 + Math.random() * 0.1 });
       }
     }
     for (let i = model.zSprites.length - 1; i >= 0; i--) {
@@ -2602,7 +2643,7 @@ function animate() {
       z.sprite.visible = z.age >= 0;
       if (z.age >= 0) {
         z.sprite.position.y += z.speed * delta;
-        z.sprite.position.x += 0.08 * delta;
+        z.sprite.position.x += (z.sprite.userData.xDrift || 0.08) * delta;
         z.sprite.material.opacity = Math.max(0, 1 - z.age / 3);
       }
       if (z.age > 3) { disposeCampObject(z.sprite); model.zSprites.splice(i, 1); }
