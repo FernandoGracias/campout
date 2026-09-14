@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v129</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v130</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -174,7 +174,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v129</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v130</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -218,6 +218,7 @@ function saveSession() {
     lobbyTentColor,
     lobbyTentStyle,
     globeRotation: window.globeRotation ? { x: window.globeRotation.x, y: window.globeRotation.y, z: window.globeRotation.z, w: window.globeRotation.w } : null,
+    cameraAngle: window.cameraAngle,
     campState: localCampState,
     savedAt: Date.now()
   };
@@ -1805,6 +1806,7 @@ function updateLever(touch) {
 // --- CAMERA ORBIT STATE ---
 let cameraAngle = Math.PI;
 let cameraTargetAngle = Math.PI;
+Object.defineProperty(window, 'cameraAngle', { get: () => cameraAngle });
 let cameraDistance = 6;
 let cameraHeight = 6;
 let cameraManual = false;
@@ -2705,6 +2707,10 @@ window.globeRotation = globeRotation;
 const savedSession = loadSession();
 if (savedSession && savedSession.roomId === roomId && savedSession.globeRotation) {
   globeRotation.set(savedSession.globeRotation.x, savedSession.globeRotation.y, savedSession.globeRotation.z, savedSession.globeRotation.w);
+  if (typeof savedSession.cameraAngle === 'number') {
+    cameraAngle = savedSession.cameraAngle;
+    cameraTargetAngle = savedSession.cameraAngle;
+  }
   if (savedSession.campState) {
     localCampState = savedSession.campState;
     publishCampState();
