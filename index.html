@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v139</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v140</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -177,7 +177,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v139</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v140</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -1513,6 +1513,16 @@ function buildPlayer() {
   leftLeg.castShadow = true;
   group.add(leftLeg);
   group.userData.leftLeg = leftLeg;
+
+  const bootMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.9 });
+  const rightBoot = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.16), bootMat);
+  rightBoot.position.set(-0.1, 0.05, 0.02);
+  rightBoot.castShadow = true;
+  group.add(rightBoot);
+  const leftBoot = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, 0.16), bootMat);
+  leftBoot.position.set(0.1, 0.05, 0.02);
+  leftBoot.castShadow = true;
+  group.add(leftBoot);
 
   const armMat = new THREE.MeshStandardMaterial({ color: 0xd35f3e, roughness: 0.7 });
   armMat.userData.playerTint = true;
