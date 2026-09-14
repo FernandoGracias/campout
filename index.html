@@ -60,12 +60,13 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v114</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v115</div>
 </div>
 
 <!-- LOBBY SCREEN -->
 <div id="lobby-screen" style="position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:#1a1a2e;z-index:1000;padding:20px;">
   <h2 style="color:#f0c040;font-size:24px;margin-bottom:4px;font-family:system-ui,sans-serif;">Room: <span id="lobby-room-id" style="font-family:monospace;"></span></h2>
+  <button id="btn-copy-link" style="background:transparent;border:1px solid #555;color:#aaa;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;margin-bottom:8px;font-family:system-ui,sans-serif;">Copy Invite Link</button>
   <p id="lobby-seed-display" style="color:#666;font-size:11px;margin-bottom:24px;font-family:monospace;"></p>
   <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:280px;">
     <div>
@@ -119,6 +120,7 @@ canvas { display: block; }
   <div id="room-code-display" style="display:none;margin-bottom:12px;padding:8px;background:rgba(255,255,255,0.08);border-radius:6px;text-align:center;">
     <div style="font-size:10px;color:#888;margin-bottom:2px;">ROOM CODE</div>
     <div id="room-code-value" style="font-size:18px;color:#f0c040;font-family:monospace;letter-spacing:2px;"></div>
+    <button id="btn-copy-link-game" style="background:transparent;border:1px solid #555;color:#aaa;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:10px;margin-top:6px;">Copy Invite Link</button>
   </div>
   <div class="control-row">
     <label>Time of Day (room)</label>
@@ -171,7 +173,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v114</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v115</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -189,6 +191,7 @@ import * as THREE from 'three';
 // --- SCREEN MANAGEMENT & NETWORKING ---
 const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
 const DEBUG_MODE = new URLSearchParams(window.location.search).has('debug');
+const URL_ROOM = new URLSearchParams(window.location.search).get('room')?.toLowerCase();
 const mpLogs = [];
 function mpLog(msg, debugOnly = false) {
   if (debugOnly && !DEBUG_MODE) return;
@@ -304,6 +307,13 @@ document.getElementById('input-room-code').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('btn-join-room').click();
 });
 
+// Auto-join if room code in URL
+if (URL_ROOM && /^[a-f0-9]{12}$/.test(URL_ROOM)) {
+  roomId = URL_ROOM;
+  worldSeed = null;
+  setTimeout(() => showLobby(), 100);
+}
+
 // Lobby screen handlers
 document.getElementById('btn-enter-world').addEventListener('click', () => {
   if (!multiplayerReady || worldSeed === null) return;
@@ -325,6 +335,18 @@ document.querySelectorAll('#lobby-tent-colors button').forEach(btn => {
 
 document.getElementById('lobby-tent-style').addEventListener('change', (e) => {
   lobbyTentStyle = e.target.value;
+});
+
+document.getElementById('btn-copy-link').addEventListener('click', () => {
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.searchParams.set('room', roomId);
+  navigator.clipboard.writeText(url.toString()).then(() => {
+    const btn = document.getElementById('btn-copy-link');
+    btn.textContent = 'Copied!';
+    btn.style.borderColor = '#4a4';
+    setTimeout(() => { btn.textContent = 'Copy Invite Link'; btn.style.borderColor = '#555'; }, 2000);
+  });
 });
 
 function showLobby() {
@@ -2629,12 +2651,12 @@ function animate() {
     if (model.zTimer >= 5) {
       model.zTimer = 0;
       for (let i = 0; i < 3; i++) {
-        const xOffset = (i - 1) * 0.3 + (Math.random() - 0.5) * 0.2;
-        const yOffset = i * 0.25 + Math.random() * 0.15;
+        const xOffset = (i - 1) * 0.5;
+        const yOffset = i * 0.6;
         const sprite = makeZSprite(i, xOffset);
-        sprite.position.copy(model.tent.position).add(new THREE.Vector3(xOffset, 1.5 + yOffset, 0));
+        sprite.position.copy(model.tent.position).add(new THREE.Vector3(xOffset, 1.2 + yOffset, 0));
         model.group.add(sprite);
-        model.zSprites.push({ sprite, age: -i * 0.35, speed: 0.35 + i * 0.12 + Math.random() * 0.1 });
+        model.zSprites.push({ sprite, age: -i * 0.6, speed: 0.3 + i * 0.08 });
       }
     }
     for (let i = model.zSprites.length - 1; i >= 0; i--) {
@@ -2643,10 +2665,10 @@ function animate() {
       z.sprite.visible = z.age >= 0;
       if (z.age >= 0) {
         z.sprite.position.y += z.speed * delta;
-        z.sprite.position.x += (z.sprite.userData.xDrift || 0.08) * delta;
-        z.sprite.material.opacity = Math.max(0, 1 - z.age / 3);
+        z.sprite.position.x += (z.sprite.userData.xDrift || 0.05) * delta;
+        z.sprite.material.opacity = Math.max(0, 1 - z.age / 3.5);
       }
-      if (z.age > 3) { disposeCampObject(z.sprite); model.zSprites.splice(i, 1); }
+      if (z.age > 3.5) { disposeCampObject(z.sprite); model.zSprites.splice(i, 1); }
     }
   }
 
@@ -2732,6 +2754,17 @@ setTimeout(() => broadcastHello(globeRotation), 1000);
 if (roomId) {
   document.getElementById('room-code-value').textContent = roomId;
   document.getElementById('room-code-display').style.display = 'block';
+  document.getElementById('btn-copy-link-game').addEventListener('click', () => {
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.searchParams.set('room', roomId);
+    navigator.clipboard.writeText(url.toString()).then(() => {
+      const btn = document.getElementById('btn-copy-link-game');
+      btn.textContent = 'Copied!';
+      btn.style.borderColor = '#4a4';
+      setTimeout(() => { btn.textContent = 'Copy Invite Link'; btn.style.borderColor = '#555'; }, 2000);
+    });
+  });
 }
 
 } // end startGame
