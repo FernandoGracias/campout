@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v147</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v148</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -177,7 +177,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v147</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v148</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -744,12 +744,13 @@ function setupDataChannel(peerId, channel) {
     budget = Math.min(120, budget + (now - budgetAt) * 0.06) - 1;
     budgetAt = now;
     if (budget < 0 || typeof event.data !== 'string' || event.data.length > 1024) {
+      console.error('DC removing peer - budget:', budget, 'dataType:', typeof event.data, 'len:', event.data?.length);
       removePeerConnection(peerId);
       return;
     }
     let data;
     try { data = JSON.parse(event.data); }
-    catch { removePeerConnection(peerId); return; }
+    catch (e) { console.error('DC removing peer - JSON parse failed:', e); removePeerConnection(peerId); return; }
     if (data && data.type === 'environment') {
       const s = data.state;
       if (!s || !Number.isFinite(s.hour) || s.hour < 0 || s.hour >= 24 ||
@@ -757,6 +758,7 @@ function setupDataChannel(peerId, channel) {
           typeof s.paused !== 'boolean' || !Number.isFinite(s.fog) || s.fog < 0 || s.fog > 1 ||
           !Number.isFinite(s.moonlight) || s.moonlight < 0 || s.moonlight > 1 ||
           !Number.isSafeInteger(s.revision) || s.revision < 0 || typeof s.author !== 'string' || s.author.length > 64) {
+        console.error('DC removing peer - bad environment:', s);
         removePeerConnection(peerId); return;
       }
       const old = sharedEnvironment;
@@ -770,7 +772,7 @@ function setupDataChannel(peerId, channel) {
       return;
     }
     if (data && data.type === 'camp') {
-      if (!validCampState(data.camp)) { removePeerConnection(peerId); return; }
+      if (!validCampState(data.camp)) { console.error('DC removing peer - bad camp:', data.camp); removePeerConnection(peerId); return; }
       remoteCampStates[peerId] = data.camp === null ? null : {
         position: data.camp.position, style: data.camp.style,
         color: data.camp.color, sleeping: data.camp.sleeping, tent: data.camp.tent, placedAt: data.camp.placedAt,
@@ -784,6 +786,7 @@ function setupDataChannel(peerId, channel) {
         (data.type === 'pos' && !Number.isFinite(data.facing)) ||
         (data.type === 'hello' && !/^[a-f0-9]{6}$/.test(data.color)) ||
         (data.type === 'hello' && (typeof data.name !== 'string' || data.name.length > 20))) {
+      console.error('DC removing peer - bad pos/hello:', data);
       removePeerConnection(peerId);
       return;
     }
@@ -794,6 +797,7 @@ function setupDataChannel(peerId, channel) {
           ![0, 8, 12].includes(m.rate) || ![0.35, 0.5].includes(m.amplitude) || ![0.03, 0.04].includes(m.waddle) ||
           !Number.isFinite(m.swing) || Math.abs(m.swing) > 0.5 || !Number.isFinite(m.roll) || Math.abs(m.roll) > 0.1 ||
           typeof m.flashlight !== 'boolean') {
+        console.error('DC removing peer - bad motion:', m);
         removePeerConnection(peerId); return;
       }
     }
@@ -2892,6 +2896,7 @@ function animate() {
   }
 
   let moveInput = 0;
+  let strafeInput = 0;  // Gamepad strafe (left stick X in pan mode)
   if (keys['w'] || keys['arrowup']) moveInput = -1;
   if (keys['s'] || keys['arrowdown']) moveInput = 1;
   if (gamepadMoveY) moveInput = gamepadMoveY;
@@ -2902,7 +2907,8 @@ function animate() {
   } else {
     if (keys['a'] || keys['arrowleft']) cameraAngle += 2.5 * delta;
     if (keys['d'] || keys['arrowright']) cameraAngle -= 2.5 * delta;
-    if (gamepadMoveX) cameraAngle += gamepadMoveX * 2.5 * delta * (invertX ? -1 : 1);
+    // Gamepad left stick X = strafe in pan mode
+    if (gamepadMoveX) strafeInput = gamepadMoveX;
   }
   if (gamepadLookX) cameraAngle += gamepadLookX * 2.5 * delta * (invertX ? -1 : 1);
   if (leverActive) {
@@ -2948,13 +2954,20 @@ function animate() {
     }
   }
 
-  const isWalking = Math.abs(moveInput) > 0.1 || walkingToTent;
+  const isWalking = Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1 || walkingToTent;
   const moveSpeed = 0.2 * delta;
 
-  if (Math.abs(moveInput) > 0.1) {
+  if (Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1) {
+    // Forward/back movement
     const step = moveSpeed * moveInput;
-    const rotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), step * Math.cos(playerFacing));
-    const rotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -step * Math.sin(playerFacing));
+    // Strafe movement (perpendicular to facing, i.e. facing + 90 degrees)
+    const strafeStep = moveSpeed * strafeInput;
+    const strafeAngle = playerFacing + Math.PI / 2;
+    // Combine both movements
+    const totalX = step * Math.cos(playerFacing) + strafeStep * Math.cos(strafeAngle);
+    const totalZ = step * Math.sin(playerFacing) + strafeStep * Math.sin(strafeAngle);
+    const rotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), totalX);
+    const rotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -totalZ);
     const newRotation = globeRotation.clone().premultiply(rotX).premultiply(rotZ);
 
     const playerWorldPos = new THREE.Vector3(0, GLOBE_RADIUS, 0);
