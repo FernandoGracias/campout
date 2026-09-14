@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v115</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v116</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -173,7 +173,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v115</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v116</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -640,6 +640,15 @@ function setupDataChannel(peerId, channel) {
       return;
     }
     if (data.type === 'hello') mpLog('DC msg: hello from ' + peerId.substring(0,6), true);
+    if (data.motion !== undefined) {
+      const m = data.motion;
+      if (!m || typeof m !== 'object' || !Number.isFinite(m.phase) || m.phase < 0 || m.phase > Math.PI * 2 ||
+          ![0, 8, 12].includes(m.rate) || ![0.35, 0.5].includes(m.amplitude) || ![0.03, 0.04].includes(m.waddle) ||
+          !Number.isFinite(m.swing) || Math.abs(m.swing) > 0.5 || !Number.isFinite(m.roll) || Math.abs(m.roll) > 0.1 ||
+          typeof m.flashlight !== 'boolean') {
+        removePeerConnection(peerId); return;
+      }
+    }
     handleGameMessage(peerId, data);
   };
   channel.onclose = () => {
@@ -704,6 +713,7 @@ function handleGameMessage(peerId, msg) {
         window.addOtherPlayer(peerId, color, q);
       }
       window.updateOtherPlayer(peerId, q, msg.facing);
+      if (msg.motion && window.setOtherPlayerMotion) window.setOtherPlayerMotion(peerId, msg.motion);
     }
   }
   if (msg.type === 'hello') {
@@ -714,12 +724,13 @@ function handleGameMessage(peerId, msg) {
   if (window.setOtherPlayerColor) window.setOtherPlayerColor(peerId, color);
 }
 
-function broadcastPosition(globeRot, facing) {
+function broadcastPosition(globeRot, facing, motion) {
   const msg = JSON.stringify({
     type: 'pos',
     color: window.getTentColor ? window.getTentColor() : lobbyTentColor,
     qx: globeRot.x, qy: globeRot.y, qz: globeRot.z, qw: globeRot.w,
     facing,
+    motion,
   });
   for (const id in dataChannels) {
     const dc = dataChannels[id];
@@ -1412,8 +1423,15 @@ function addOtherPlayer(id, color, startGlobeRotation) {
   mesh.traverse(c => { if (c.isMesh && c.material) { c.material = c.material.clone(); } });
   mesh.traverse(c => { if (c.isMesh && c.material?.userData.playerTint) c.material.color.set(color); });
   scene.add(mesh);
+  const torch = new THREE.SpotLight(0xffffff, 0, 25, Math.PI * 0.08, 0.15, 0.5);
+  torch.castShadow = true;
+  torch.shadow.mapSize.set(512, 512);
+  const torchTip = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 4), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  torchTip.visible = false;
+  scene.add(torch, torch.target, torchTip);
   otherPlayers[id] = {
     mesh,
+    torch, torchTip, motion: null, motionReceivedAt: 0,
     color,
     currentGlobeRotation: startGlobeRotation.clone(),
     targetGlobeRotation: startGlobeRotation.clone(),
@@ -1433,6 +1451,10 @@ function removeOtherPlayer(id) {
   const p = otherPlayers[id];
   if (!p) return;
   scene.remove(p.mesh);
+  scene.remove(p.torch, p.torch.target, p.torchTip);
+  p.torch.shadow.dispose();
+  p.torchTip.geometry.dispose();
+  p.torchTip.material.dispose();
   delete otherPlayers[id];
 }
 
@@ -1498,7 +1520,29 @@ function animateOtherPlayers(delta) {
     const fAngle = Math.atan2(localFwd.x, localFwd.z);
     m.rotateY(fAngle);
 
-    if (p.isWalking && p.interpT < 1) {
+    const motionAge = (performance.now() - p.motionReceivedAt) / 1000;
+    const torchOn = !!p.motion?.flashlight && m.visible && motionAge < 2;
+    p.torch.visible = torchOn;
+    p.torch.intensity = torchOn ? 15 : 0;
+    p.torchTip.visible = torchOn;
+    if (torchOn) {
+      p.torch.position.copy(new THREE.Vector3(-0.35, 0.55, 0.3).applyQuaternion(m.quaternion).add(m.position));
+      p.torch.target.position.copy(new THREE.Vector3(0, -0.5, 5).applyQuaternion(m.quaternion).add(m.position));
+      p.torchTip.position.copy(p.torch.position);
+    }
+
+    if (p.motion) {
+      const pose = p.motion;
+      const age = Math.min(motionAge, 0.25);
+      const phase = pose.phase + pose.rate * age;
+      const swing = pose.rate ? Math.sin(phase) * pose.amplitude : pose.swing * Math.pow(0.85, age * 30);
+      const roll = pose.rate ? Math.sin(phase) * pose.waddle : pose.roll * Math.pow(0.9, age * 30);
+      m.userData.leftLeg.rotation.x = swing;
+      m.userData.rightLeg.rotation.x = -swing;
+      m.userData.leftArm.rotation.x = -swing * 0.4;
+      m.userData.rightArm.rotation.x = swing * 0.4;
+      m.rotateZ(roll);
+    } else if (p.isWalking && p.interpT < 1) {
       p.walkCycle += delta * 8;
       const swing = Math.sin(p.walkCycle) * 0.5;
       m.userData.leftLeg.rotation.x = swing;
@@ -1521,6 +1565,12 @@ window.addOtherPlayer = addOtherPlayer;
 window.removeOtherPlayer = removeOtherPlayer;
 window.updateOtherPlayer = updateOtherPlayer;
 window.otherPlayers = otherPlayers;
+window.setOtherPlayerMotion = (id, motion) => {
+  const p = otherPlayers[id];
+  if (!p) return;
+  p.motion = motion;
+  p.motionReceivedAt = performance.now();
+};
 window.setOtherPlayerColor = (id, color) => {
   const p = otherPlayers[id];
   if (!p || p.color === color) return;
@@ -2567,13 +2617,6 @@ function animate() {
   globePivot.quaternion.copy(globeRotation);
   player.rotation.y = playerFacing;
 
-  // Broadcast position to peers (10 times/sec)
-  if (!animate._lastBroadcast) animate._lastBroadcast = 0;
-  if (clock.elapsedTime - animate._lastBroadcast > 0.1) {
-    animate._lastBroadcast = clock.elapsedTime;
-    broadcastPosition(globeRotation, playerFacing);
-  }
-
   // Camera: cameraHeight is tilt (1=ground level, 12=overhead), cameraDistance is total distance
   const tiltFraction = cameraHeight / 12;
   const playerY = player.position.y;
@@ -2587,7 +2630,7 @@ function animate() {
 
   const isKeyTurning = keys['a'] || keys['d'] || keys['arrowleft'] || keys['arrowright'];
   const isCameraPanTurning = (isDragging || orbitTouchId !== null) && controlMode === 'pan';
-  const isTurning = isCameraPanTurning || isKeyTurning;
+  const isTurning = isCameraPanTurning || isKeyTurning || (controlMode === 'joystick' && leverActive && Math.abs(leverX) > 0.1);
 
   if (isWalking || isTurning) {
     walkCycle += delta * (isWalking ? 8 : 12);
@@ -2604,6 +2647,19 @@ function animate() {
     player.userData.leftArm.rotation.x *= 0.85;
     player.userData.rightArm.rotation.x *= 0.85;
     player.rotation.z *= 0.9;
+  }
+
+  if (clock.elapsedTime - (animate._lastBroadcast || 0) > 0.1) {
+    animate._lastBroadcast = clock.elapsedTime;
+    broadcastPosition(globeRotation, playerFacing, {
+      phase: walkCycle % (Math.PI * 2),
+      rate: isWalking ? 8 : isTurning ? 12 : 0,
+      amplitude: isWalking ? 0.5 : 0.35,
+      waddle: isWalking ? 0.04 : 0.03,
+      swing: player.userData.leftLeg.rotation.x,
+      roll: player.rotation.z,
+      flashlight: flashlightOn && !isSleeping,
+    });
   }
 
   // Animate connected players.
