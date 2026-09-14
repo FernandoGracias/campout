@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v155</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v156</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -177,7 +177,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v155</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v156</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -2982,6 +2982,9 @@ function animate() {
     else if (!gp.buttons[1]?.pressed) gamepadState.bWasPressed = false;
     if (gp.buttons[3]?.pressed && !gamepadState.yWasPressed) { gamepadY = true; gamepadState.yWasPressed = true; }
     else if (!gp.buttons[3]?.pressed) gamepadState.yWasPressed = false;
+    // D-pad left/right: buttons[14]=left, buttons[15]=right
+    if (gp.buttons[14]?.pressed) cameraAngle += delta * 2.5;
+    if (gp.buttons[15]?.pressed) cameraAngle -= delta * 2.5;
     break; // Use first connected gamepad
   }
   // D-pad up/down = zoom in/out
