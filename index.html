@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v123</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v124</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -173,7 +173,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v123</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v124</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -360,9 +360,15 @@ if (URL_ROOM && /^[a-f0-9]{12}$/.test(URL_ROOM)) {
   if (savedSession && savedSession.roomId) {
     roomId = savedSession.roomId;
     worldSeed = null;
+    playerName = savedSession.playerName || 'Camper';
+    lobbyTentColor = savedSession.lobbyTentColor || 'cc5522';
+    lobbyTentStyle = savedSession.lobbyTentStyle || 'aframe';
+    autoEnterWorld = true;  // Skip lobby, go straight to game
     setTimeout(() => showLobby(), 100);
   }
 }
+
+let autoEnterWorld = false;
 
 // Lobby screen handlers
 document.getElementById('btn-enter-world').addEventListener('click', () => {
@@ -471,7 +477,18 @@ function connectSignaling() {
     clearInterval(heartbeatTimer);
     document.getElementById('btn-enter-world').disabled = true;
     for (const id of Object.keys(peerConnections)) removePeerConnection(id);
-    mpLog('Disconnected: ' + (event.reason || 'connection lost') + '. Reload to rejoin.');
+    
+    // Auto-reconnect after 2 seconds if we were in-game
+    if (document.getElementById('game-screen').style.display === 'block') {
+      mpLog('Connection lost. Reconnecting...');
+      setTimeout(() => {
+        if (!signalingWs || signalingWs.readyState === WebSocket.CLOSED) {
+          connectSignaling();
+        }
+      }, 2000);
+    } else {
+      mpLog('Disconnected: ' + (event.reason || 'connection lost') + '. Reload to rejoin.');
+    }
   });
 }
 
@@ -499,6 +516,15 @@ async function handleSignalMessage(msg) {
             refreshTurnIfDue();
           }
         }, 20000);
+        
+        // Auto-enter world if restoring from session
+        if (autoEnterWorld && worldSeed !== null) {
+          autoEnterWorld = false;
+          document.getElementById('landing-screen').style.display = 'none';
+          document.getElementById('lobby-screen').style.display = 'none';
+          document.getElementById('game-screen').style.display = 'block';
+          startGame(worldSeed);
+        }
         break;
       }
       case 'turn-creds': {
