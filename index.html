@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v116</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v117</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -173,7 +173,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v116</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v117</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -936,6 +936,13 @@ function latLonToWorld(lat, lon) {
   return new THREE.Vector3(x, y, z);
 }
 
+function worldToLatLon(pos) {
+  const n = pos.clone().normalize();
+  const lat = Math.asin(n.y);
+  const lon = Math.atan2(n.z, n.x);
+  return { lat, lon };
+}
+
 function randomPointOnSphere() {
   const u = rng();
   const v = rng();
@@ -974,6 +981,7 @@ function makeTree(height, trunkColor, foliageColor) {
 }
 
 const collidables = [];
+const tentColliders = [];
 const trees = [];
 for (let i = 0; i < 120; i++) {
   const { lat, lon } = randomPointOnSphere();
@@ -2036,6 +2044,10 @@ function syncCamps() {
   const desired = new Map();
   const sites = new Map();
   let correctedOwn = false;
+  
+  // Clear and rebuild tent colliders
+  tentColliders.length = 0;
+  
   for (const [id, state] of states) {
       const siteKey = JSON.stringify(state.position);
       const occupied = sites.get(siteKey) || [];
@@ -2059,6 +2071,14 @@ function syncCamps() {
       model.sleeping = state.sleeping;
       model.fireAnchor.visible = ownsFire;
       desired.set(id, model);
+      
+      // Add tent collider (skip own tent so player can walk into their own)
+      if (id !== localPlayerId) {
+        const tentWorldPos = campsitePoint(state.position, tent);
+        const { lat, lon } = worldToLatLon(tentWorldPos);
+        tentColliders.push({ lat, lon, radius: 1.0 });
+      }
+  }
   }
   for (const [id, model] of campModels) {
     if (!desired.has(id)) { disposeCampObject(model.group); campModels.delete(id); }
@@ -2344,13 +2364,34 @@ let walkingToTent = false;
 let campGlobeRotation = null;
 const tapRaycaster = new THREE.Raycaster();
 const tapMouse = new THREE.Vector2();
+let lastMouseDownPos = null;
+let lastMouseDownTime = 0;
+
+renderer.domElement.addEventListener('mousedown', (e) => {
+  lastMouseDownPos = { x: e.clientX, y: e.clientY };
+  lastMouseDownTime = performance.now();
+}, true);
 
 renderer.domElement.addEventListener('click', (e) => {
-  if (!campPitched || !campGroup) return;
+  if (!campPitched) return;
+  const ownModel = campModels.get(localPlayerId);
+  if (!ownModel) return;
+  
+  // Ignore if this was a drag (moved more than 10px or held longer than 300ms)
+  if (lastMouseDownPos) {
+    const dx = e.clientX - lastMouseDownPos.x;
+    const dy = e.clientY - lastMouseDownPos.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const duration = performance.now() - lastMouseDownTime;
+    if (dist > 10 || duration > 300) return;
+  }
+  
   tapMouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   tapMouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
   tapRaycaster.setFromCamera(tapMouse, camera);
-  const hits = tapRaycaster.intersectObjects(campGroup.children, true);
+  
+  // Only raycast against the tent mesh itself, not the whole camp
+  const hits = tapRaycaster.intersectObject(ownModel.tent, true);
   if (hits.length > 0) {
     if (isSleeping) {
       wakeUp();
@@ -2574,7 +2615,8 @@ function animate() {
 
     const playerWorldPos = new THREE.Vector3(0, GLOBE_RADIUS, 0);
     let canMove = true;
-    for (const c of collidables) {
+    const allColliders = [...collidables, ...tentColliders];
+    for (const c of allColliders) {
       const newObjPos = latLonToWorld(c.lat, c.lon).applyQuaternion(newRotation);
       const newDist = playerWorldPos.distanceTo(newObjPos);
       const minDist = c.radius + 0.5;
@@ -2598,7 +2640,7 @@ function animate() {
         const sRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -step * 0.8 * Math.sin(slideAngle));
         const slideRotation = globeRotation.clone().premultiply(sRotX).premultiply(sRotZ);
         let slideOk = true;
-        for (const c of collidables) {
+        for (const c of allColliders) {
           const sObjPos = latLonToWorld(c.lat, c.lon).applyQuaternion(slideRotation);
           const sDist = playerWorldPos.distanceTo(sObjPos);
           const curObjPos = latLonToWorld(c.lat, c.lon).applyQuaternion(globeRotation);
