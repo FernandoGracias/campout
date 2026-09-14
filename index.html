@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v110</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v111</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -171,7 +171,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v110</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v111</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -214,6 +214,26 @@ const restartPending = new Set();
 const restartTimes = new Map();
 const restartTimers = new Map();
 const makingOffers = new Set();
+let localCampState = null;
+const remoteCampStates = Object.create(null);
+
+function validCampState(camp) {
+  return camp === null || (camp && typeof camp === 'object' &&
+    Array.isArray(camp.position) && camp.position.length === 3 &&
+    camp.position.every(n => Number.isFinite(n) && Math.abs(n) <= 1) &&
+    Math.abs(Math.hypot(...camp.position) - 1) < 0.001 &&
+    ['aframe', 'dome', 'cabin', 'tunnel'].includes(camp.style) &&
+    typeof camp.color === 'string' && /^[a-f0-9]{6}$/.test(camp.color) &&
+    typeof camp.sleeping === 'boolean');
+}
+
+function publishCampState() {
+  const message = JSON.stringify({ type: 'camp', camp: localCampState });
+  for (const dc of Object.values(dataChannels)) {
+    if (dc.readyState === 'open') dc.send(message);
+  }
+  if (window.syncCamps) window.syncCamps();
+}
 window.__mp = { peerConnections, dataChannels, pendingCandidates, get signalingWs() { return signalingWs; }, get localPlayerId() { return localPlayerId; } };
 
 function networkError(error) {
@@ -419,6 +439,8 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function removePeerConnection(id) {
+  delete remoteCampStates[id];
+  if (window.syncCamps) window.syncCamps();
   const pc = peerConnections[id];
   delete peerConnections[id];
   delete pendingCandidates[id];
@@ -510,6 +532,7 @@ function setupDataChannel(peerId, channel) {
   channel.onopen = () => {
     mpLog('DC open: ' + peerId.substring(0,6));
     if (window.globeRotation) broadcastHello(window.globeRotation);
+    channel.send(JSON.stringify({ type: 'camp', camp: localCampState }));
   };
   channel.onmessage = (event) => {
     const now = Date.now();
@@ -522,6 +545,15 @@ function setupDataChannel(peerId, channel) {
     let data;
     try { data = JSON.parse(event.data); }
     catch { removePeerConnection(peerId); return; }
+    if (data && data.type === 'camp') {
+      if (!validCampState(data.camp)) { removePeerConnection(peerId); return; }
+      remoteCampStates[peerId] = data.camp === null ? null : {
+        position: data.camp.position, style: data.camp.style,
+        color: data.camp.color, sleeping: data.camp.sleeping,
+      };
+      if (window.syncCamps) window.syncCamps();
+      return;
+    }
     if (!data || !['hello', 'pos'].includes(data.type) ||
         ![data.qx, data.qy, data.qz, data.qw].every(n => Number.isFinite(n) && Math.abs(n) <= 1) ||
         Math.abs(Math.hypot(data.qx, data.qy, data.qz, data.qw) - 1) > 0.01 ||
@@ -535,7 +567,11 @@ function setupDataChannel(peerId, channel) {
   };
   channel.onclose = () => {
     mpLog('DC closed: ' + peerId.substring(0,6));
-    if (dataChannels[peerId] === channel) delete dataChannels[peerId];
+    if (dataChannels[peerId] === channel) {
+      delete dataChannels[peerId];
+      delete remoteCampStates[peerId];
+      if (window.syncCamps) window.syncCamps();
+    }
     if (window.removeOtherPlayer) window.removeOtherPlayer(peerId);
   };
 }
@@ -1345,6 +1381,7 @@ function animateOtherPlayers(delta) {
   for (const id in otherPlayers) {
     const p = otherPlayers[id];
     const m = p.mesh;
+    m.visible = !remoteCampStates[id]?.sleeping;
 
     p.interpT = Math.min(p.interpT + delta / INTERP_DURATION, 1);
     p.currentGlobeRotation.slerpQuaternions(p.prevGlobeRotation, p.targetGlobeRotation, p.interpT);
@@ -1667,6 +1704,13 @@ let timePaused = false;
   document.getElementById('time-display').textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 })();
 
+tentColor = parseInt(lobbyTentColor, 16);
+tentStyle = lobbyTentStyle;
+document.getElementById('tent-style').value = tentStyle;
+document.querySelectorAll('#tent-colors button').forEach(button => {
+  button.style.borderColor = button.dataset.color === lobbyTentColor ? '#fff' : 'transparent';
+});
+
 function saveSettings() {
   localStorage.setItem('campout-settings', JSON.stringify({
     moonlight: moonlightStrength, fog: fogDensity,
@@ -1722,17 +1766,9 @@ document.getElementById('btn-flashlight').addEventListener('touchstart', (e) => 
 let campPitched = false;
 let campGroup = null;
 
-// Fire animation state
-let campCoals = [];
-let campFireGeo = null;
-let campFireAlphas = null;
-let campFireLifespan = null;
-let campSmokeGeo = null;
-let campSmokeVelocities = [];
-let campFireLight = null;
-let campFireLight2 = null;
+const campModels = new Map();
 
-function respawnCampFireParticle(positions, i, randomHeight) {
+function respawnCampFireParticle(positions, i, randomHeight, campFireLifespan, campFireAlphas) {
   const angle = Math.random() * Math.PI * 2;
   const dist = 0.08 + Math.random() * 0.3;
   positions[i * 3] = Math.cos(angle) * dist;
@@ -1758,24 +1794,90 @@ tentColorsDiv.addEventListener('click', (e) => {
   tentColor = parseInt(btn.dataset.color, 16);
   tentColorsDiv.querySelectorAll('button').forEach(b => b.style.borderColor = 'transparent');
   btn.style.borderColor = '#fff';
-  if (campPitched) { pitchCamp(); pitchCamp(); }
+  if (localCampState) { localCampState.color = btn.dataset.color; publishCampState(); }
   saveSettings();
 });
 document.getElementById('tent-style').addEventListener('change', (e) => {
   tentStyle = e.target.value;
-  if (campPitched) { pitchCamp(); pitchCamp(); }
+  if (localCampState) { localCampState.style = tentStyle; publishCampState(); }
   saveSettings();
 });
 
 function pitchCamp() {
   if (isSleeping) return;
-  if (campPitched && campGroup) {
-    globePivot.remove(campGroup);
-    campPitched = false;
-    document.getElementById('btn-pitch').style.borderColor = 'rgba(255,255,255,0.3)';
-    return;
+  walkingToTent = false;
+  localCampState = localCampState ? null : {
+    position: new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert()).normalize().toArray(),
+    style: tentStyle, color: tentColor.toString(16).padStart(6, '0'), sleeping: false,
+  };
+  publishCampState();
+}
+
+function disposeCampObject(object) {
+  object.removeFromParent();
+  object.traverse(child => {
+    child.geometry?.dispose();
+    if (child.material) {
+      child.material.map?.dispose();
+      child.material.dispose();
+    }
+    child.shadow?.dispose();
+  });
+}
+
+function syncCamps() {
+  const states = Object.entries({ ...remoteCampStates, [localPlayerId]: localCampState })
+    .filter(([, state]) => state).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+  const remaining = new Set(states.map(([id]) => id));
+  const desired = new Map();
+  for (const [leader, anchor] of states) {
+    if (!remaining.delete(leader)) continue;
+    const members = [[leader, anchor]];
+    for (let i = 0; i < members.length; i++) {
+      for (const entry of states) {
+        if (!remaining.has(entry[0])) continue;
+        const distance = new THREE.Vector3(...members[i][1].position).distanceTo(new THREE.Vector3(...entry[1].position)) * GLOBE_RADIUS;
+        if (distance <= 6) { remaining.delete(entry[0]); members.push(entry); }
+      }
+    }
+    members.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+    members.forEach(([id, state], slot) => {
+      const key = JSON.stringify([anchor.position, slot, members.length, state.style, state.color]);
+      let model = campModels.get(id);
+      if (!model || model.key !== key) {
+        if (model) disposeCampObject(model.group);
+        model = buildCampModel(state, anchor.position, slot, members.length);
+        model.key = key;
+        campModels.set(id, model);
+      }
+      model.sleeping = state.sleeping;
+      desired.set(id, model);
+    });
   }
-  campGroup = new THREE.Group();
+  for (const [id, model] of campModels) {
+    if (!desired.has(id)) { disposeCampObject(model.group); campModels.delete(id); }
+  }
+  const own = campModels.get(localPlayerId);
+  campGroup = own?.group || null;
+  campPitched = !!own;
+  if (own) {
+    globePivot.updateMatrixWorld(true);
+    const tentNormal = own.tent.getWorldPosition(new THREE.Vector3());
+    globePivot.worldToLocal(tentNormal).normalize();
+    campGlobeRotation = globeRotation.clone().premultiply(new THREE.Quaternion().setFromUnitVectors(
+      tentNormal.applyQuaternion(globeRotation), new THREE.Vector3(0, 1, 0)));
+  } else {
+    campGlobeRotation = null;
+  }
+  document.getElementById('btn-pitch').style.borderColor = campPitched ? '#f0c040' : 'rgba(255,255,255,0.3)';
+}
+
+function buildCampModel(state, anchor, slot, count) {
+  const tentStyle = state.style;
+  const tentColor = parseInt(state.color, 16);
+  const campGroup = new THREE.Group();
+  let campCoals, campFireGeo, campFireAlphas, campFireLifespan;
+  let campSmokeGeo, campSmokeVelocities, campFireLight, campFireLight2;
 
   const tentMat = new THREE.MeshStandardMaterial({ color: tentColor, roughness: 0.7 });
   if (tentStyle === 'aframe') {
@@ -1826,11 +1928,19 @@ function pitchCamp() {
     campGroup.add(tent);
   }
 
+  const tent = campGroup.children[0];
+  const angle = slot * Math.PI * 2 / count;
+  const radius = Math.max(2.8, count * 0.6);
+  tent.position.set(Math.sin(angle) * radius, tent.position.y, Math.cos(angle) * radius);
+  tent.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle + Math.PI));
+  if (tentStyle === 'aframe') tent.geometry.translate(0, 0, -0.6);
+
   // Fireplace - ported from camping-sim (physics-based fire)
-  const fireOffset = new THREE.Vector3(1.5, 0, 0);
+  const fireOffset = new THREE.Vector3(0, 0, 0);
   const fireAnchor = new THREE.Group();
   fireAnchor.position.copy(fireOffset);
   campGroup.add(fireAnchor);
+  fireAnchor.visible = slot === 0;
 
   for (let i = 0; i < 14; i++) {
     const size = 0.08 + rng() * 0.12;
@@ -1889,7 +1999,7 @@ function pitchCamp() {
   campFireAlphas = new Float32Array(56);
   campFireLifespan = new Float32Array(56);
   for (let i = 0; i < 56; i++) {
-    respawnCampFireParticle(firePositions, i, true);
+    respawnCampFireParticle(firePositions, i, true, campFireLifespan, campFireAlphas);
   }
   campFireGeo.setAttribute('position', new THREE.BufferAttribute(firePositions, 3));
   const fireParticleMat = new THREE.PointsMaterial({
@@ -1931,8 +2041,8 @@ function pitchCamp() {
   fireAnchor.add(campFireLight2);
 
   // Place on globe surface using raycast for proper terrain height
-  const inverseRot = globeRotation.clone().invert();
-  const surfaceNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(inverseRot);
+  globePivot.updateMatrixWorld(true);
+  const surfaceNormal = new THREE.Vector3(...anchor).applyQuaternion(globePivot.quaternion);
   const pos = surfaceNormal.clone().multiplyScalar(GLOBE_RADIUS);
 
   // Raycast from well above to find actual deformed terrain surface
@@ -1942,13 +2052,14 @@ function pitchCamp() {
   const campRay = new THREE.Raycaster(rayOrigin, rayDir, 0, 20);
   const campHits = campRay.intersectObject(globe, false);
   if (campHits.length > 0) {
-    campGroup.position.copy(campHits[0].point);
-    const hitNormal = campHits[0].face.normal.clone().transformDirection(globe.matrixWorld).normalize();
+    campGroup.position.copy(globePivot.worldToLocal(campHits[0].point.clone()));
+    const hitNormal = campHits[0].face.normal.clone().transformDirection(globe.matrixWorld)
+      .applyQuaternion(globePivot.quaternion.clone().invert()).normalize();
     const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), hitNormal);
     campGroup.quaternion.copy(quat);
   } else {
-    campGroup.position.copy(pos);
-    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), surfaceNormal);
+    campGroup.position.copy(globePivot.worldToLocal(pos.clone()));
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...anchor));
     campGroup.quaternion.copy(quat);
   }
 
@@ -2012,9 +2123,9 @@ function pitchCamp() {
     }
   }
 
-  campPitched = true;
-  campGlobeRotation = globeRotation.clone();
-  document.getElementById('btn-pitch').style.borderColor = '#f0c040';
+  return { group: campGroup, tent, fireAnchor, campCoals, campFireGeo, campFireAlphas,
+    campFireLifespan, campSmokeGeo, campSmokeVelocities, campFireLight, campFireLight2,
+    zTimer: 4.5, zSprites: [], sleeping: state.sleeping };
 }
 
 // Sleep state
@@ -2045,12 +2156,8 @@ function enterTent() {
   player.visible = false;
   document.getElementById('controls-row').style.opacity = '0.3';
   document.getElementById('controls-row').style.pointerEvents = 'none';
-  sleepZTimer = 0;
-  sleepZSprites = [];
+  if (localCampState) { localCampState.sleeping = true; publishCampState(); }
 }
-
-let sleepZTimer = 0;
-let sleepZSprites = [];
 
 function makeZSprite(size) {
   const canvas = document.createElement('canvas');
@@ -2073,8 +2180,7 @@ function wakeUp() {
   player.visible = true;
   document.getElementById('controls-row').style.opacity = '';
   document.getElementById('controls-row').style.pointerEvents = '';
-  for (const z of sleepZSprites) { globePivot.remove(z.sprite); }
-  sleepZSprites = [];
+  if (localCampState) { localCampState.sleeping = false; publishCampState(); }
 }
 
 document.getElementById('btn-pitch').addEventListener('click', pitchCamp);
@@ -2198,9 +2304,11 @@ window.globeRotation = globeRotation;
 
 function animate() {
   requestAnimationFrame(animate);
-  const delta = clock.getDelta();
-  if (clock.elapsedTime - (animate._lastFrame || 0) < 1/30) return;
+  clock.getDelta();
+  const frameTime = clock.elapsedTime - (animate._lastFrame || 0);
+  if (frameTime < 1/30) return;
   animate._lastFrame = clock.elapsedTime;
+  const delta = Math.min(frameTime, 0.1);
   stars.rotation.y += delta * 0.003;
 
   let moveInput = 0;
@@ -2405,46 +2513,41 @@ function animate() {
     fireflyGeo.attributes.position.needsUpdate = true;
   }
 
-  // Animate sleep Zs
-  if (isSleeping && campGroup) {
-    sleepZTimer += delta;
-    // Spawn a set of 3 Zs every 5 seconds, staggered 250ms apart
-    if (sleepZTimer > 5) {
-      sleepZTimer = 0;
+  for (const model of campModels.values()) {
+    if (!model.sleeping) {
+      for (const z of model.zSprites) disposeCampObject(z.sprite);
+      model.zSprites = [];
+      model.zTimer = 4.5;
+      continue;
+    }
+    model.zTimer += delta;
+    if (model.zTimer >= 5) {
+      model.zTimer = 0;
       for (let i = 0; i < 3; i++) {
-        setTimeout(() => {
-          if (!isSleeping) return;
-          const sprite = makeZSprite(i);
-          sprite.position.set(
-            (Math.random() - 0.5) * 0.3,
-            1.0 + i * 0.2,
-            (Math.random() - 0.5) * 0.3
-          );
-          const zGroup = new THREE.Group();
-          zGroup.position.copy(campGroup.position);
-          zGroup.quaternion.copy(campGroup.quaternion);
-          zGroup.add(sprite);
-          globePivot.add(zGroup);
-          sleepZSprites.push({ sprite: zGroup, localSprite: sprite, vel: 0.4 + i * 0.1, drift: (Math.random() - 0.5) * 0.3, age: 0 });
-        }, i * 250);
+        const sprite = makeZSprite(i);
+        sprite.position.copy(model.tent.position).add(new THREE.Vector3(0, 1.5, 0));
+        model.group.add(sprite);
+        model.zSprites.push({ sprite, age: -i * 0.25, speed: 0.4 + i * 0.1 });
       }
     }
-    // Animate existing Zs
-    for (let i = sleepZSprites.length - 1; i >= 0; i--) {
-      const z = sleepZSprites[i];
+    for (let i = model.zSprites.length - 1; i >= 0; i--) {
+      const z = model.zSprites[i];
       z.age += delta;
-      z.localSprite.position.y += z.vel * delta;
-      z.localSprite.position.x += z.drift * delta;
-      z.localSprite.material.opacity = Math.max(0, 1 - z.age / 3);
-      if (z.age > 3) {
-        globePivot.remove(z.sprite);
-        sleepZSprites.splice(i, 1);
+      z.sprite.visible = z.age >= 0;
+      if (z.age >= 0) {
+        z.sprite.position.y += z.speed * delta;
+        z.sprite.position.x += 0.08 * delta;
+        z.sprite.material.opacity = Math.max(0, 1 - z.age / 3);
       }
+      if (z.age > 3) { disposeCampObject(z.sprite); model.zSprites.splice(i, 1); }
     }
   }
 
   // Animate fire if camp is pitched
-  if (campPitched && campFireGeo) {
+  for (const model of campModels.values()) {
+    if (!model.fireAnchor.visible) continue;
+    const { campFireGeo, campFireAlphas, campFireLifespan, campCoals, campFireLight,
+      campFireLight2, campSmokeGeo, campSmokeVelocities } = model;
     const elapsed = clock.elapsedTime;
 
     // Fire light flicker
@@ -2482,7 +2585,7 @@ function animate() {
       }
 
       if (fp[i * 3 + 1] > campFireLifespan[i]) {
-        respawnCampFireParticle(fp, i, false);
+        respawnCampFireParticle(fp, i, false, campFireLifespan, campFireAlphas);
       }
     }
     campFireGeo.attributes.position.needsUpdate = true;
@@ -2504,6 +2607,8 @@ function animate() {
 
   renderer.render(scene, camera);
 }
+window.syncCamps = syncCamps;
+syncCamps();
 animate();
 
 window.addEventListener('resize', () => {
