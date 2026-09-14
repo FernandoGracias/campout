@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v118</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v119</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -173,7 +173,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v118</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v119</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -2072,12 +2072,13 @@ function syncCamps() {
       model.fireAnchor.visible = ownsFire;
       desired.set(id, model);
       
-      // Add tent collider (skip own tent so player can walk into their own)
-      if (id !== localPlayerId) {
-        const tentWorldPos = campsitePoint(state.position, tent);
-        const { lat, lon } = worldToLatLon(tentWorldPos);
-        tentColliders.push({ lat, lon, radius: 1.0 });
-      }
+      // Add tent collider with style-specific radius (all tents, including own)
+      const tentWorldPos = campsitePoint(state.position, tent);
+      const { lat, lon } = worldToLatLon(tentWorldPos);
+      // Tent radii based on geometry * scale (1.25): aframe ~0.5, dome 0.8, cabin 0.7, tunnel 0.6
+      const tentRadii = { aframe: 0.5, dome: 0.8, cabin: 0.7, tunnel: 0.6 };
+      const isOwn = id === localPlayerId;
+      tentColliders.push({ lat, lon, radius: tentRadii[state.style] || 0.7, isOwn });
   }
   for (const [id, model] of campModels) {
     if (!desired.has(id)) { disposeCampObject(model.group); campModels.delete(id); }
@@ -2360,6 +2361,7 @@ function buildCampModel(state, anchor) {
 // Sleep state
 let isSleeping = false;
 let walkingToTent = false;
+let wakeUpTime = 0;
 let campGlobeRotation = null;
 const tapRaycaster = new THREE.Raycaster();
 const tapMouse = new THREE.Vector2();
@@ -2430,6 +2432,8 @@ function makeZSprite(size, xOffset) {
 function wakeUp() {
   isSleeping = false;
   player.visible = true;
+  player.scale.setScalar(0.6);  // Start crouched, will animate to full height
+  wakeUpTime = performance.now();  // Track for stand-up animation
   document.getElementById('controls-row').style.opacity = '';
   document.getElementById('controls-row').style.pointerEvents = '';
   if (localCampState) {
@@ -2568,16 +2572,30 @@ function animate() {
     walkingToTent = false;
   }
 
-  // Auto-walk to tent
+  // Auto-walk to tent with crouch animation
   if (walkingToTent && campGlobeRotation) {
     const target = campGlobeRotation.clone().invert();
     const current = globeRotation.clone().invert();
     const angle = current.angleTo(target);
     if (angle < 0.02) {
       enterTent();
+      player.scale.setScalar(1);  // Reset scale
     } else {
       globeRotation.slerp(campGlobeRotation, Math.min(1, 2.0 * delta / angle));
       moveInput = 0;
+      // Crouch as player gets closer (scale down to 0.6 at tent)
+      const crouchProgress = 1 - Math.min(angle / 0.15, 1);
+      player.scale.setScalar(1 - crouchProgress * 0.4);
+    }
+  } else if (!isSleeping) {
+    // Stand-up animation after waking (0.5 second transition)
+    const standUpDuration = 500;
+    const timeSinceWake = performance.now() - wakeUpTime;
+    if (timeSinceWake < standUpDuration) {
+      const progress = timeSinceWake / standUpDuration;
+      player.scale.setScalar(0.6 + progress * 0.4);
+    } else {
+      player.scale.setScalar(1);
     }
   }
 
@@ -2614,8 +2632,9 @@ function animate() {
 
     const playerWorldPos = new THREE.Vector3(0, GLOBE_RADIUS, 0);
     let canMove = true;
-    const allColliders = [...collidables, ...tentColliders];
-    for (const c of allColliders) {
+    // Skip own tent collision only when actively walking into it
+    const activeColliders = [...collidables, ...tentColliders.filter(c => !c.isOwn || !walkingToTent)];
+    for (const c of activeColliders) {
       const newObjPos = latLonToWorld(c.lat, c.lon).applyQuaternion(newRotation);
       const newDist = playerWorldPos.distanceTo(newObjPos);
       const minDist = c.radius + 0.5;
@@ -2639,7 +2658,7 @@ function animate() {
         const sRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -step * 0.8 * Math.sin(slideAngle));
         const slideRotation = globeRotation.clone().premultiply(sRotX).premultiply(sRotZ);
         let slideOk = true;
-        for (const c of allColliders) {
+        for (const c of activeColliders) {
           const sObjPos = latLonToWorld(c.lat, c.lon).applyQuaternion(slideRotation);
           const sDist = playerWorldPos.distanceTo(sObjPos);
           const curObjPos = latLonToWorld(c.lat, c.lon).applyQuaternion(globeRotation);
