@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v182</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v183</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -101,7 +101,7 @@ canvas { display: block; }
 
 <!-- GAME SCREEN -->
 <div id="game-screen" style="display:none;">
-<div id="btn-exit-world" style="position:fixed;top:12px;left:12px;width:44px;height:44px;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:200;-webkit-tap-highlight-color:transparent;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>
+<div id="btn-exit-world" style="position:fixed;top:12px;left:12px;width:44px;height:44px;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:200;-webkit-tap-highlight-color:transparent;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>
 <div id="controls-row" style="position:fixed;bottom:calc(30px + env(safe-area-inset-bottom, 0px));left:30px;z-index:100;">
   <div style="display:flex;gap:12px;align-items:center;">
     <div style="position:relative;width:48px;height:48px;" id="lever-wrapper">
@@ -141,7 +141,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="sidebar-toggle" style="position:fixed;top:12px;right:12px;width:44px;height:44px;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:200;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div>
+<div id="sidebar-toggle" style="position:fixed;top:12px;right:12px;width:44px;height:44px;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:200;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div>
 
 <div id="controls" style="position:fixed;top:0;right:0;bottom:0;width:260px;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#ddd;padding:60px 16px 16px;z-index:150;overflow-y:auto;transform:translateX(100%);transition:transform 0.3s ease;font-family:monospace;">
   <h3 style="margin-bottom:12px;color:#f0c040;font-size:14px;">CAMP CONTROLS</h3>
@@ -227,9 +227,10 @@ canvas { display: block; }
   </div>
 </div>
 <style>@media(pointer:coarse){#winter-actions{left:auto!important;right:12px;bottom:calc(110px + env(safe-area-inset-bottom,0px))!important;align-items:flex-end!important}.winter-action{min-height:48px;min-width:48px;touch-action:manipulation}#lever-zone{touch-action:none}} </style>
-<style>.winter-action{width:48px;height:48px;border-radius:50%;background:rgba(30,50,70,0.7);border:2px solid rgba(100,140,180,0.4);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;padding:0}.winter-action:disabled{opacity:.45}.aim-panel-btn{padding:8px 12px;min-height:44px;border:1px solid rgba(255,255,255,0.3);border-radius:8px;background:rgba(255,255,255,0.1);color:white;cursor:pointer;font-size:13px}#snow-crosshair{position:fixed;display:none;width:24px;height:24px;border:4px solid #e32636;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:100}#snow-crosshair::before,#snow-crosshair::after{content:'';position:absolute;background:#e32636;border-radius:3px}#snow-crosshair::before{width:34px;height:4px;top:6px;left:-9px}#snow-crosshair::after{width:4px;height:34px;left:6px;top:-9px}</style>
+<style>.winter-action{width:48px;height:48px;border-radius:50%;background:rgba(30,50,70,0.7);border:2px solid rgba(100,140,180,0.4);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;padding:0}.winter-action:disabled{opacity:.45}.aim-panel-btn{padding:8px 12px;min-height:44px;border:1px solid rgba(255,255,255,0.3);border-radius:8px;background:rgba(255,255,255,0.1);color:white;cursor:pointer;font-size:13px}#snow-crosshair{position:fixed;display:none;width:24px;height:24px;border:4px solid #e32636;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:100}#snow-crosshair::before,#snow-crosshair::after{content:'';position:absolute;background:#e32636;border-radius:3px}#snow-crosshair::before{width:34px;height:4px;top:6px;left:-9px}#snow-crosshair::after{width:4px;height:34px;left:6px;top:-9px}
+.winter-mode #btn-exit-world,.winter-mode #sidebar-toggle,.winter-mode #btn-pitch,.winter-mode #btn-flashlight,.winter-mode #btn-minigames,.winter-mode #lever-zone,.winter-mode #joystick-base{background:rgba(30,50,70,0.7)!important;border-color:rgba(100,140,180,0.4)!important}</style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v182</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v183</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -243,7 +244,7 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=182';
+import { createWinter } from './winter.js?v=183';
 
 // --- SCREEN MANAGEMENT & NETWORKING ---
 const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
@@ -1594,6 +1595,7 @@ document.getElementById('btn-aim').addEventListener('click', () => winter.setAim
 // Mobile targeting joystick - snowball button becomes a joystick when holding a snowball
 let targetingTouch = null;
 const snowballBtn = document.getElementById('btn-snowball');
+const targetingJoystickRange = 24; // How far the knob can move from center
 snowballBtn.addEventListener('touchstart', e => {
   if (!winter.holding) return; // Not holding snowball - let click handler do normal action
   e.preventDefault();
@@ -1615,23 +1617,28 @@ snowballBtn.addEventListener('touchmove', e => {
   e.preventDefault();
   for (const touch of e.changedTouches) {
     if (touch.identifier !== targetingTouch.id) continue;
-    const dx = touch.clientX - targetingTouch.lastX;
-    const dy = touch.clientY - targetingTouch.lastY;
-    // Horizontal drag rotates player AND camera together (like pan mode)
-    // This changes aimYaw (which sets playerFacing) and cameraAngle in sync
-    if (Math.abs(dx) > 1) {
-      const turn = dx * 0.012 * (invertX ? -1 : 1);
-      winter.turnAim(turn);  // Rotate the aim direction (and thus player)
-      cameraAngle += turn;   // Rotate camera to match
-      cameraTargetAngle = cameraAngle;
+    // Calculate offset from start position
+    let dx = touch.clientX - targetingTouch.startX;
+    let dy = touch.clientY - targetingTouch.startY;
+    // Clamp to joystick range
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > targetingJoystickRange) {
+      dx = dx / dist * targetingJoystickRange;
+      dy = dy / dist * targetingJoystickRange;
     }
-    // Vertical drag adjusts power (drag up = more power, drag down = less)
-    if (Math.abs(dy) > 1) {
-      const totalDy = targetingTouch.startY - touch.clientY;
-      const powerRange = winter.powerMax - winter.powerMin;
-      const newPower = targetingTouch.startPower + (totalDy / 150) * powerRange;
-      winter.setPower(newPower);
-    }
+    // Move the button visually inside its ring
+    snowballBtn.style.transform = `translate(${dx}px, ${dy}px)`;
+    // Smooth continuous rotation - no threshold, just apply delta
+    const deltaX = touch.clientX - targetingTouch.lastX;
+    const turn = deltaX * 0.008 * (invertX ? -1 : 1);
+    winter.turnAim(turn);
+    cameraAngle += turn;
+    cameraTargetAngle = cameraAngle;
+    // Smooth continuous power adjustment based on total Y offset
+    const powerRange = winter.powerMax - winter.powerMin;
+    const normalizedY = -dy / targetingJoystickRange; // -1 to 1, negative because up = more power
+    const newPower = winter.powerMin + (powerRange / 2) + normalizedY * (powerRange / 2);
+    winter.setPower(newPower);
     targetingTouch.lastX = touch.clientX;
     targetingTouch.lastY = touch.clientY;
   }
@@ -1645,12 +1652,14 @@ snowballBtn.addEventListener('touchend', e => {
     winter.action();
     winter.setAim(false);
     targetingTouch = null;
+    snowballBtn.style.transform = '';
   }
 });
 snowballBtn.addEventListener('touchcancel', () => {
   if (targetingTouch) {
     winter.setAim(false);
     targetingTouch = null;
+    snowballBtn.style.transform = '';
   }
 });
 
@@ -2682,6 +2691,8 @@ function applyEnvironment() {
   document.getElementById('fog-slider').value = fogDensity * 100;
   document.getElementById('moonlight-slider').value = moonlightStrength * 100;
   winter.configure(sharedEnvironment);
+  // Toggle winter-mode class for dark button styling
+  document.getElementById('game-screen').classList.toggle('winter-mode', sharedEnvironment.winter === true);
 }
 window.applyEnvironment = applyEnvironment;
 applyEnvironment();
