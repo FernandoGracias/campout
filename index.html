@@ -62,7 +62,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v195</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v198</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -109,6 +109,7 @@ canvas { display: block; }
     <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
     <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
   </div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v198</div>
 </div>
 
 <!-- GAME OVER SCREEN -->
@@ -257,7 +258,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v195</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v198</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -271,7 +272,7 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=195';
+import { createWinter } from './winter.js?v=198';
 
 // Toast notification system - defined early since used by WebSocket handlers
 function showToast(message, duration = 5000) {
@@ -2136,11 +2137,48 @@ function updatePlayerHatColors() {
   if (myTeam && player.userData.hatMat) {
     player.userData.hatMat.color.setHex(TEAM_COLORS[myTeam]);
   }
-  // Update other players' hats
+  // Update other players' hats and name labels
   for (const [id, p] of Object.entries(otherPlayers)) {
     const team = getPlayerTeam(id);
     if (team && p.mesh.userData.hatMat) {
       p.mesh.userData.hatMat.color.setHex(TEAM_COLORS[team]);
+    }
+    // Update name label color to match team
+    if (team && p.nameLabel) {
+      const teamColor = team === 'red' ? '#ff6666' : '#6699ff';
+      if (p.nameLabel.userData.teamColor !== teamColor) {
+        p.nameLabel.userData.teamColor = teamColor;
+        // Recreate the label texture with team color
+        const canvas = document.createElement('canvas');
+        canvas.width = 256; canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.font = '100 28px system-ui, sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = teamColor;
+        ctx.fillText((p.name || 'Camper').substring(0, 15), 128, 32);
+        p.nameLabel.material.map.dispose();
+        p.nameLabel.material.map = new THREE.CanvasTexture(canvas);
+        p.nameLabel.material.map.minFilter = THREE.LinearFilter;
+        p.nameLabel.material.needsUpdate = true;
+      }
+    }
+  }
+  // Update local player name label
+  if (myTeam && localNameLabel) {
+    const teamColor = myTeam === 'red' ? '#ff6666' : '#6699ff';
+    if (localNameLabel.userData.teamColor !== teamColor) {
+      localNameLabel.userData.teamColor = teamColor;
+      const canvas = document.createElement('canvas');
+      canvas.width = 256; canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      ctx.font = '100 28px system-ui, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = teamColor;
+      ctx.fillText((playerName || 'Camper').substring(0, 15), 128, 32);
+      localNameLabel.material.map.dispose();
+      localNameLabel.material.map = new THREE.CanvasTexture(canvas);
+      localNameLabel.material.map.minFilter = THREE.LinearFilter;
+      localNameLabel.material.needsUpdate = true;
     }
   }
 }
