@@ -62,7 +62,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v193</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v195</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -120,12 +120,12 @@ canvas { display: block; }
 
 <!-- GAME SCREEN -->
 <div id="game-screen" style="display:none;">
-<div id="team-leaderboard" style="position:fixed;top:0;left:0;right:0;height:24px;display:flex;z-index:150;pointer-events:none;">
+<div id="team-leaderboard" style="position:fixed;top:0;left:60px;right:60px;height:24px;display:flex;z-index:150;pointer-events:none;">
   <div id="team-red-bar" style="background:linear-gradient(90deg,#cc3333,#ff5555);height:100%;width:0;transition:width 0.3s;"></div>
   <div style="flex:1;"></div>
   <div id="team-blue-bar" style="background:linear-gradient(270deg,#3366cc,#5588ff);height:100%;width:0;transition:width 0.3s;"></div>
 </div>
-<div id="team-scores" style="position:fixed;top:28px;left:0;right:0;display:flex;justify-content:space-between;padding:0 12px;z-index:150;pointer-events:none;font-family:system-ui,sans-serif;font-size:14px;font-weight:bold;">
+<div id="team-scores" style="position:fixed;top:28px;left:60px;right:60px;display:flex;justify-content:space-between;padding:0 12px;z-index:150;pointer-events:none;font-family:system-ui,sans-serif;font-size:14px;font-weight:bold;">
   <span id="team-red-score" style="color:#ff6666;text-shadow:0 1px 2px rgba(0,0,0,0.5);">0</span>
   <span id="team-blue-score" style="color:#6699ff;text-shadow:0 1px 2px rgba(0,0,0,0.5);">0</span>
 </div>
@@ -257,7 +257,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v193</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v195</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -271,7 +271,26 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=193';
+import { createWinter } from './winter.js?v=195';
+
+// Toast notification system - defined early since used by WebSocket handlers
+function showToast(message, duration = 5000) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.style.cssText = 'background:rgba(30,30,50,0.95);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:12px 20px;color:#ddd;font-family:system-ui,sans-serif;font-size:14px;opacity:0;transform:translateY(-10px);transition:opacity 0.3s,transform 0.3s;pointer-events:auto;';
+  toast.textContent = message;
+  container.appendChild(toast);
+  requestAnimationFrame(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+  });
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-10px)';
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+}
 
 // --- SCREEN MANAGEMENT & NETWORKING ---
 const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
@@ -1130,11 +1149,15 @@ function sendBump(peerId, axis) {
 // --- GAME INITIALIZATION (called after lobby) ---
 function startGame(seed) {
 
-// Register player's team
-if (localTeam) {
-  teamAssignments[localPlayerId] = localTeam;
-  publishEnvironment({ teams: { ...sharedEnvironment.teams, [localPlayerId]: localTeam } });
+// Register player's team - default to red if none selected (e.g. solo play)
+if (!localTeam) {
+  const existingTeams = sharedEnvironment?.teams || {};
+  const teamCounts = { red: 0, blue: 0 };
+  for (const t of Object.values(existingTeams)) teamCounts[t]++;
+  localTeam = teamCounts.red <= teamCounts.blue ? 'red' : 'blue';
 }
+teamAssignments[localPlayerId] = localTeam;
+publishEnvironment({ teams: { ...sharedEnvironment.teams, [localPlayerId]: localTeam } });
 // Sync team scores from environment
 if (sharedEnvironment?.teamScores) {
   teamScores = { ...sharedEnvironment.teamScores };
@@ -2339,24 +2362,6 @@ document.addEventListener('mousemove', () => {
     showCursor();
   }
 });
-
-// Toast notification system
-function showToast(message, duration = 5000) {
-  const container = document.getElementById('toast-container');
-  const toast = document.createElement('div');
-  toast.style.cssText = 'background:rgba(30,30,50,0.95);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:12px 20px;color:#ddd;font-family:system-ui,sans-serif;font-size:14px;opacity:0;transform:translateY(-10px);transition:opacity 0.3s,transform 0.3s;pointer-events:auto;';
-  toast.textContent = message;
-  container.appendChild(toast);
-  requestAnimationFrame(() => {
-    toast.style.opacity = '1';
-    toast.style.transform = 'translateY(0)';
-  });
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateY(-10px)';
-    setTimeout(() => toast.remove(), 300);
-  }, duration);
-}
 
 // Minigames modal
 let minigamesOpen = false;
