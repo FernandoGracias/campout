@@ -238,12 +238,13 @@ export function createWinter(THREE, world) {
     shader.fragmentShader = shader.fragmentShader.replace('#include <clipping_planes_fragment>',
       '#include <clipping_planes_fragment>\nif (length(gl_PointCoord - vec2(0.5)) > 0.5) discard;');
   };
-  const snowTime = { value: 0 }, snowView = { value: new THREE.Vector3(0, 1, 0) };
+  const snowTime = { value: 0 }, snowView = { value: new THREE.Vector3(0, 1, 0) }, snowBrightness = { value: 1.0 };
   const fallingMaterial = flakeMat.clone();
   fallingMaterial.onBeforeCompile = shader => {
     flakeMat.onBeforeCompile(shader);
     shader.uniforms.snowTime = snowTime;
     shader.uniforms.snowView = snowView;
+    shader.uniforms.snowBrightness = snowBrightness;
     shader.vertexShader = 'attribute vec4 weather; uniform float snowTime; uniform vec3 snowView;\n' + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>',
       'vec3 transformed = position * (weather.x + mod(weather.w - snowTime * weather.z, max(weather.y, 1.0)));');
@@ -251,6 +252,9 @@ export function createWinter(THREE, world) {
       // No rasterization for uninitialized flakes or the far side of the globe.
       if (weather.y < 0.5 || dot(position, snowView) < 0.12) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     `);
+    shader.fragmentShader = 'uniform float snowBrightness;\n' + shader.fragmentShader;
+    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>',
+      '#include <color_fragment>\ndiffuseColor.rgb *= snowBrightness;');
   };
   const falling = new THREE.Points(flakeGeo, fallingMaterial);
   falling.visible = false; globePivot.add(falling);
@@ -649,16 +653,26 @@ export function createWinter(THREE, world) {
     skates = !skates; world.getPlayer().userData.skating = skates;
     refreshHints();
   }
+  // SVG icon definitions
+  const snowballIcon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round"><path d="M12 2a10 10 0 0 1 0 20" fill="rgba(255,255,255,0.2)"/><path d="M12 2v20"/><path d="M12 6l-4-2m4 2l4-2"/><path d="M12 12l-5-2m5 2l5-2"/><path d="M12 18l-4-2m4 2l4-2"/></svg>';
+  const crosshairIcon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>';
+  const skateIcon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round"><path d="M4 18h12c2 0 4-1.5 4-4v-1"/><path d="M4 18v-4c0-1 .5-2 2-2h6"/><ellipse cx="8" cy="18" rx="2" ry="1"/><ellipse cx="14" cy="18" rx="2" ry="1"/><line x1="16" y1="12" x2="16" y2="9"/><circle cx="16" cy="7" r="2"/></svg>';
+  const skateNoIcon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round"><path d="M4 18h12c2 0 4-1.5 4-4v-1"/><path d="M4 18v-4c0-1 .5-2 2-2h6"/><ellipse cx="8" cy="18" rx="2" ry="1"/><ellipse cx="14" cy="18" rx="2" ry="1"/><line x1="16" y1="12" x2="16" y2="9"/><circle cx="16" cy="7" r="2"/><line x1="4" y1="4" x2="20" y2="20" stroke="#e32636" stroke-width="2.5"/></svg>';
   function refreshHints() {
     const next = [packing > 0, held, aiming, skates, inputMode].join(':');
     if (hintState === next) return;
     hintState = next;
-    const suffix = key => inputMode === 'touch' ? '' : ` · ${key}`;
-    button.textContent = packing > 0 ? '❄ Packing…' :
-      `❄ ${held ? 'Throw' : 'Pack'} snowball${suffix(inputMode === 'gamepad' ? 'RT' : 'Q')}`;
-    aimButton.textContent = inputMode === 'touch' ? (aiming ? 'Stop aiming' : 'Aim')
-      : `${aiming ? 'Aiming' : 'Aim'} · ${aiming ? 'Release' : 'Hold'} ${inputMode === 'gamepad' ? 'LT' : 'right mouse'}`;
-    skatesButton.textContent = `${skates ? 'Remove' : 'Equip'} skates${suffix(inputMode === 'gamepad' ? 'LB' : 'C')}`;
+    const isMobile = inputMode === 'touch';
+    // Update button icons - only skates changes based on state
+    skatesButton.innerHTML = skates ? skateNoIcon : skateIcon;
+    // Update border colors to indicate active states
+    button.style.borderColor = packing > 0 ? '#f0c040' : 'rgba(255,255,255,0.15)';
+    aimButton.style.borderColor = aiming ? '#f0c040' : 'rgba(255,255,255,0.15)';
+    skatesButton.style.borderColor = skates ? '#f0c040' : 'rgba(255,255,255,0.15)';
+    // On mobile, hide aim button when no snowball held
+    if (isMobile) {
+      aimButton.style.display = held ? 'flex' : 'none';
+    }
     aimButton.setAttribute('aria-pressed', String(aiming));
     skatesButton.setAttribute('aria-pressed', String(skates));
   }
@@ -691,7 +705,7 @@ export function createWinter(THREE, world) {
       balls.length = 0;
     }
     if (cover === 0 && wasCover > 0) clearTracks();
-    button.style.display = enabled ? 'block' : 'none';
+    button.style.display = enabled ? 'flex' : 'none';
     refreshHints();
   }
   const iceContacts = new Map();
@@ -780,9 +794,9 @@ export function createWinter(THREE, world) {
         enabled && peer.mesh.userData.skating, peer.isWalking && peer.interpT < 1);
       if (peer.torch?.visible) peer.mesh.userData.flashlightLens.getWorldPosition(peer.torch.position);
     }
-    aimButton.style.display = enabled ? 'block' : 'none';
+    aimButton.style.display = enabled && (inputMode !== 'touch' || held) ? 'flex' : 'none';
     distancePanel.style.display = enabled && aiming && canAct ? 'block' : 'none';
-    skatesButton.style.display = enabled && (skates || player.userData.onIce) ? 'block' : 'none';
+    skatesButton.style.display = enabled && (skates || player.userData.onIce) ? 'flex' : 'none';
     aimButton.disabled = !canAct;
     skatesButton.disabled = !canAct;
     if (!enabled) return;
@@ -792,6 +806,15 @@ export function createWinter(THREE, world) {
     flakeGeo.setDrawRange(0, count);
     snowTime.value = elapsed;
     snowView.value.copy(world.camera.position).normalize().applyQuaternion(inverse);
+    // Snowflake brightness: dim at night, bright only in daylight or when lit by flashlight
+    if (world.getLighting) {
+      const lighting = world.getLighting();
+      // Base brightness from daylight (0.15 at night with moonlight, up to 1.0 in full day)
+      const baseBrightness = 0.12 + lighting.daylight * 0.88 + (1 - lighting.daylight) * lighting.moonlight * 0.08;
+      // Flashlight adds significant brightness when on
+      const flashBoost = lighting.flashlightOn ? 0.6 : 0;
+      snowBrightness.value = Math.min(1.0, baseBrightness + flashBoost);
+    }
     const here = up.clone().applyQuaternion(inverse);
     let spawnBudget = mobile ? 48 : 192, changed = false;
     // Once initialized, snowfall needs only a time uniform. Inspect a bounded
@@ -828,7 +851,7 @@ export function createWinter(THREE, world) {
     updateBalls(delta, inverse);
   }
   return { configure, movement, update, action, receive, setAim, adjustAim, turnAim, updateHints, toggleSkates,
-    collide, receiveIceContact, sharedVelocity,
+    collide, receiveIceContact, sharedVelocity, setPower,
     moveFacing() {
       return world.getCameraAngle() + Math.PI;
     },
@@ -837,5 +860,7 @@ export function createWinter(THREE, world) {
     stop: () => velocity.set(0, 0), get aiming() { return aiming; },
     get holding() { return enabled && held && world.canAct(); },
     get skating() { return enabled && skates; },
-    get enabled() { return enabled; }, iceRadius };
+    get enabled() { return enabled; }, iceRadius,
+    get power() { return throwPower; },
+    powerMin: 3, powerMax: 20 };
 }

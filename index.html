@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v167</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v178</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -214,22 +214,22 @@ canvas { display: block; }
 <button id="btn-stand" style="display:none;position:fixed;bottom:100px;left:30px;z-index:101;padding:10px 16px;border:1px solid #f0c040;border-radius:8px;background:#252535;color:#fff;cursor:pointer;">Stand up</button>
 <button id="camp-interaction" style="display:none;position:fixed;z-index:150;transform:translate(-50%,-100%);padding:6px 10px;border:1px solid #f0c040;border-radius:7px;background:rgba(25,25,40,0.95);color:#fff;font:14px system-ui,sans-serif;white-space:nowrap;cursor:pointer;"></button>
 <div id="winter-actions" style="position:fixed;bottom:160px;left:24px;z-index:101;display:flex;flex-direction:column;align-items:flex-start;gap:8px;">
-  <button id="btn-skates" class="winter-action" style="display:none;"></button>
-  <button id="btn-aim" class="winter-action" style="display:none;"></button>
-  <button id="btn-snowball" class="winter-action" style="display:none;">❄ Pack snowball</button>
+  <button id="btn-skates" class="winter-action" style="display:none;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round"><path d="M4 18h12c2 0 4-1.5 4-4v-1"/><path d="M4 18v-4c0-1 .5-2 2-2h6"/><ellipse cx="8" cy="18" rx="2" ry="1"/><ellipse cx="14" cy="18" rx="2" ry="1"/><line x1="16" y1="12" x2="16" y2="9"/><circle cx="16" cy="7" r="2"/></svg></button>
+  <button id="btn-aim" class="winter-action" style="display:none;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg></button>
+  <button id="btn-snowball" class="winter-action" style="display:none;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round"><path d="M12 2a10 10 0 0 1 0 20" fill="rgba(255,255,255,0.2)"/><path d="M12 2v20"/><path d="M12 6l-4-2m4 2l4-2"/><path d="M12 12l-5-2m5 2l5-2"/><path d="M12 18l-4-2m4 2l4-2"/></svg></button>
 </div>
 <div id="aim-distance" style="display:none;position:fixed;top:70px;left:50%;transform:translateX(-50%);width:min(310px,calc(100vw - 24px));padding:8px 10px;background:rgba(25,35,45,.9);border-radius:12px;color:white;z-index:102;">
   <label for="throw-power" style="display:block;text-align:center;font-size:13px;">Throw distance <output id="throw-power-value">38%</output></label>
   <div style="display:flex;align-items:center;gap:8px;">
-    <button id="throw-closer" class="winter-action" style="padding:8px;min-height:44px;">Closer</button>
+    <button id="throw-closer" class="aim-panel-btn">Closer</button>
     <input type="range" id="throw-power" aria-label="Throw distance, closer to farther" min="3" max="20" step="0.25" value="9.5" style="flex:1;min-width:0;height:44px;touch-action:none;">
-    <button id="throw-farther" class="winter-action" style="padding:8px;min-height:44px;">Farther</button>
+    <button id="throw-farther" class="aim-panel-btn">Farther</button>
   </div>
 </div>
-<style>@media(pointer:coarse){#winter-actions{left:auto!important;right:12px;bottom:calc(110px + env(safe-area-inset-bottom,0px))!important;align-items:flex-end!important}.winter-action{min-height:44px;touch-action:manipulation}#lever-zone{touch-action:none}} </style>
-<style>.winter-action{padding:10px 14px;border:1px solid #cde;border-radius:20px;background:#243848;color:white;cursor:pointer}.winter-action:disabled{opacity:.45}#snow-crosshair{position:fixed;display:none;width:24px;height:24px;border:4px solid #e32636;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:100}#snow-crosshair::before,#snow-crosshair::after{content:'';position:absolute;background:#e32636;border-radius:3px}#snow-crosshair::before{width:34px;height:4px;top:6px;left:-9px}#snow-crosshair::after{width:4px;height:34px;left:6px;top:-9px}</style>
+<style>@media(pointer:coarse){#winter-actions{left:auto!important;right:12px;bottom:calc(110px + env(safe-area-inset-bottom,0px))!important;align-items:flex-end!important}.winter-action{min-height:48px;min-width:48px;touch-action:manipulation}#lever-zone{touch-action:none}} </style>
+<style>.winter-action{width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;padding:0}.winter-action:disabled{opacity:.45}.aim-panel-btn{padding:8px 12px;min-height:44px;border:1px solid rgba(255,255,255,0.3);border-radius:8px;background:rgba(255,255,255,0.1);color:white;cursor:pointer;font-size:13px}#snow-crosshair{position:fixed;display:none;width:24px;height:24px;border:4px solid #e32636;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:100}#snow-crosshair::before,#snow-crosshair::after{content:'';position:absolute;background:#e32636;border-radius:3px}#snow-crosshair::before{width:34px;height:4px;top:6px;left:-9px}#snow-crosshair::after{width:4px;height:34px;left:6px;top:-9px}</style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v176</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v178</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -243,7 +243,7 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=176';
+import { createWinter } from './winter.js?v=178';
 
 // --- SCREEN MANAGEMENT & NETWORKING ---
 const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
@@ -1561,6 +1561,12 @@ const winter = createWinter(THREE, {
   getObstacles: () => [...rockData.map(r => r.obj), ...Array.from(campModels.values(), model => model.tent).filter(tent => tent.visible)],
   canAct: () => !isSleeping && sittingFireId === null && !walkingToTent && !walkingToFire && !minigamesOpen,
   toast: message => showToast(message),
+  getLighting: () => {
+    const sunAngle = (timeOfDay - 6) / 24 * Math.PI * 2;
+    const sunAltitude = Math.sin(sunAngle);
+    const daylight = THREE.MathUtils.smoothstep(sunAltitude, -0.12, 0.22);
+    return { daylight, flashlightOn: flashlightOn && !isSleeping && player.visible, moonlight: moonlightStrength };
+  },
   sendTo: (id, message) => {
     const dc = dataChannels[id];
     if (dc?.readyState === 'open' && dc.bufferedAmount < 65536) dc.send(JSON.stringify(message));
@@ -1575,6 +1581,69 @@ window.receiveIceContact = winter.receiveIceContact;
 document.getElementById('btn-snowball').addEventListener('click', winter.action);
 document.getElementById('btn-skates').addEventListener('click', winter.toggleSkates);
 document.getElementById('btn-aim').addEventListener('click', () => winter.setAim(!winter.aiming));
+
+// Mobile targeting joystick - snowball button becomes a joystick when holding a snowball
+let targetingTouch = null;
+const snowballBtn = document.getElementById('btn-snowball');
+snowballBtn.addEventListener('touchstart', e => {
+  if (!winter.holding) return; // Not holding snowball - let click handler do normal action
+  e.preventDefault();
+  e.stopPropagation();
+  const touch = e.changedTouches[0];
+  targetingTouch = {
+    id: touch.identifier,
+    startX: touch.clientX,
+    startY: touch.clientY,
+    lastX: touch.clientX,
+    lastY: touch.clientY,
+    startPower: winter.power,
+    startCameraAngle: cameraAngle
+  };
+  winter.setAim(true);
+}, { passive: false });
+snowballBtn.addEventListener('touchmove', e => {
+  if (!targetingTouch) return;
+  e.preventDefault();
+  for (const touch of e.changedTouches) {
+    if (touch.identifier !== targetingTouch.id) continue;
+    const dx = touch.clientX - targetingTouch.lastX;
+    const dy = touch.clientY - targetingTouch.lastY;
+    // Horizontal drag rotates player (invert direction for natural feel)
+    if (Math.abs(dx) > 1) {
+      const turn = dx * 0.012 * (invertX ? -1 : 1);
+      cameraAngle += turn;
+      cameraTargetAngle = cameraAngle;
+      // In pan mode, playerFacing follows cameraAngle automatically
+    }
+    // Vertical drag adjusts power (drag up = more power, drag down = less)
+    if (Math.abs(dy) > 1) {
+      const totalDy = targetingTouch.startY - touch.clientY;
+      const powerRange = winter.powerMax - winter.powerMin;
+      const newPower = targetingTouch.startPower + (totalDy / 150) * powerRange;
+      winter.setPower(newPower);
+    }
+    targetingTouch.lastX = touch.clientX;
+    targetingTouch.lastY = touch.clientY;
+  }
+}, { passive: false });
+snowballBtn.addEventListener('touchend', e => {
+  if (!targetingTouch) return;
+  for (const touch of e.changedTouches) {
+    if (touch.identifier !== targetingTouch.id) continue;
+    e.preventDefault();
+    // Throw the snowball
+    winter.action();
+    winter.setAim(false);
+    targetingTouch = null;
+  }
+});
+snowballBtn.addEventListener('touchcancel', () => {
+  if (targetingTouch) {
+    winter.setAim(false);
+    targetingTouch = null;
+  }
+});
+
 document.addEventListener('keydown', e => {
   if (!e.repeat && !e.target.closest('input, select, textarea, [contenteditable]')) {
     if (e.key.toLowerCase() === 'q') { e.preventDefault(); winter.action(); }
