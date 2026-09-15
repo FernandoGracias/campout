@@ -204,7 +204,8 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v169</div>
+<button id="btn-stand" style="display:none;position:fixed;bottom:100px;left:30px;z-index:101;padding:10px 16px;border:1px solid #f0c040;border-radius:8px;background:#252535;color:#fff;cursor:pointer;">Stand up</button>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v170</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -1580,7 +1581,7 @@ const bumpCooldowns = new Map();
 function startPlayerBump(peerId, axis, notify) {
   const p = otherPlayers[peerId];
   const now = performance.now();
-  if (!p || isSleeping || remoteCampStates[peerId]?.sleeping || playerBounceState ||
+  if (!p || isSleeping || sittingFireId !== null || p.motion?.sitting || remoteCampStates[peerId]?.sleeping || playerBounceState ||
       now < (bumpCooldowns.get(peerId) || 0)) return;
   bumpCooldowns.set(peerId, now + 850);
   playerBounceState = { elapsed: 0, axis: axis.clone() };
@@ -1977,7 +1978,8 @@ function animateOtherPlayers(delta) {
       m.userData.rightArm.rotation.x *= 0.85;
     }
 
-    applySwimPose(m);
+    if (p.motion?.sitting && m.visible) applySitPose(m);
+    else applySwimPose(m);
 
     if (p.bump) {
       p.bump.elapsed = Math.min(BUMP_DURATION, p.bump.elapsed + delta);
@@ -2382,7 +2384,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === '=' || e.key === '+') cameraDistance = Math.max(4, cameraDistance - 0.5);
   if (e.key === '-') cameraDistance = Math.min(60, cameraDistance + 0.5);
   if (e.key === 't' && !e.repeat) pitchCamp();
-  if (e.key === 'f' && !e.repeat) {
+  if (e.key === 'f' && !e.repeat && !isSleeping) {
     flashlightOn = !flashlightOn;
     document.getElementById('btn-flashlight').style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
   }
@@ -2592,6 +2594,7 @@ function ownTentDistance() {
 
 function pitchCamp() {
   if (isSleeping) return;
+  standUp();
   walkingToTent = false;
   if (localCampState) {
     // Check distance before allowing pack-up (same distance as tent entry)
@@ -2824,6 +2827,12 @@ function buildCampModel(state, anchor) {
   fireAnchor.position.copy(fireOffset);
   campGroup.add(fireAnchor);
 
+  // A generous clickable area over the flames, independent of particle raycasting.
+  const fireClickTarget = new THREE.Mesh(new THREE.SphereGeometry(0.8, 12, 8),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  fireClickTarget.position.y = 0.4;
+  fireAnchor.add(fireClickTarget);
+
   for (let i = 0; i < 14; i++) {
     const size = 0.08 + rng() * 0.12;
     const segments = 3 + Math.floor(rng() * 4);
@@ -2976,7 +2985,7 @@ function buildCampModel(state, anchor) {
     groundCampObject(child, 0.01);
   }
 
-  return { group: campGroup, tent, fireAnchor, gearGroup, campCoals, campFireGeo, campFireAlphas,
+  return { group: campGroup, tent, fireAnchor, fireClickTarget, gearGroup, campCoals, campFireGeo, campFireAlphas,
     campFireLifespan, campSmokeGeo, campSmokeVelocities, campFireLight, campFireLight2,
     zTimer: 4.5, zSprites: [], sleeping: state.sleeping };
 }
@@ -2984,20 +2993,89 @@ function buildCampModel(state, anchor) {
 // Sleep state
 let isSleeping = false;
 let walkingToTent = false;
+let sittingFireId = null;
+let walkingToFire = null;
+
+function clearMovementInput() {
+  for (const key of Object.keys(keys)) delete keys[key];
+  leverActive = false;
+  leverTouchId = null;
+  leverX = leverY = 0;
+  leverZone.style.transform = '';
+  playerBounceState = null;
+}
+
+function standUp() {
+  if (sittingFireId !== null) {
+    for (const limb of ['leftLeg', 'rightLeg', 'leftArm', 'rightArm']) player.userData[limb].rotation.x = 0;
+    resetSwimLimbs(player);
+  }
+  sittingFireId = null;
+  walkingToFire = null;
+  document.getElementById('btn-stand').style.display = 'none';
+}
+document.getElementById('btn-stand').addEventListener('click', standUp);
+
+function fireDirection(id) {
+  const model = campModels.get(id);
+  if (!model?.fireAnchor.visible) return null;
+  model.group.updateMatrix();
+  return model.fireAnchor.position.clone().applyMatrix4(model.group.matrix).normalize();
+}
+
+function walkToCampfire(id) {
+  if (isSleeping) return;
+  if (sittingFireId !== null) { standUp(); return; }
+  const center = fireDirection(id);
+  if (!center) return;
+  const here = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert());
+  const basis = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), center);
+  const localHere = here.clone().applyQuaternion(basis.clone().invert());
+  const preferredAngle = Math.atan2(localHere.x, localHere.z);
+  // Pick a dry, clear seat around the nearest side of the fire.
+  for (const radius of [1.6, 2.1]) {
+    for (let i = 0; i < 24; i++) {
+      const angle = preferredAngle + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * Math.PI / 12;
+      const direction = new THREE.Vector3(Math.sin(angle) * radius, GLOBE_RADIUS, Math.cos(angle) * radius)
+        .applyQuaternion(basis).normalize();
+      const point = direction.clone().multiplyScalar(GLOBE_RADIUS);
+      if ([...collidables, ...tentColliders].some(c => point.distanceTo(latLonToWorld(c.lat, c.lon)) < c.radius + 0.65)) continue;
+      if (Object.values(otherPlayers).some(p => p.mesh.visible && point.distanceTo(
+        new THREE.Vector3(0, GLOBE_RADIUS, 0).applyQuaternion(p.currentGlobeRotation.clone().invert())) < 0.85)) continue;
+      globePivot.updateWorldMatrix(true, true);
+      const worldDir = direction.clone().applyQuaternion(globeRotation);
+      const ray = new THREE.Raycaster(worldDir.clone().multiplyScalar(GLOBE_RADIUS + 10), worldDir.clone().negate());
+      const hit = ray.intersectObject(globe, false)[0];
+      if (!hit || hit.point.length() < WATER_RADIUS + 0.05) continue;
+      walkingToTent = false;
+      clearMovementInput();
+      walkingToFire = { id, direction };
+      return;
+    }
+  }
+  showToast('No clear, dry seat here. Try another side of the fire.');
+}
+
+function applySitPose(mesh) {
+  mesh.position.addScaledVector(mesh.position.clone().normalize(), -0.28);
+  const s = mesh.userData;
+  s.leftLeg.rotation.set(-Math.PI / 2, 0, 0.22);
+  s.rightLeg.rotation.set(-Math.PI / 2, 0, -0.22);
+  s.leftArm.rotation.set(-0.75, 0, 0.2);
+  s.rightArm.rotation.set(-0.75, 0, -0.2);
+}
 const tapRaycaster = new THREE.Raycaster();
 const tapMouse = new THREE.Vector2();
 let lastMouseDownPos = null;
 let lastMouseDownTime = 0;
 
-renderer.domElement.addEventListener('mousedown', (e) => {
+renderer.domElement.addEventListener('pointerdown', (e) => {
   lastMouseDownPos = { x: e.clientX, y: e.clientY };
   lastMouseDownTime = performance.now();
 }, true);
 
 renderer.domElement.addEventListener('click', (e) => {
-  if (!campPitched) return;
   const ownModel = campModels.get(localPlayerId);
-  if (!ownModel) return;
   
   // Ignore if this was a drag (moved more than 10px or held longer than 300ms)
   if (lastMouseDownPos) {
@@ -3012,20 +3090,42 @@ renderer.domElement.addEventListener('click', (e) => {
   tapMouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
   tapRaycaster.setFromCamera(tapMouse, camera);
   
-  // Only raycast against the tent mesh itself, not the whole camp
-  const hits = tapRaycaster.intersectObject(ownModel.tent, true);
-  if (hits.length > 0) {
+  const targets = ownModel ? [ownModel.tent] : [];
+  const fires = new Map();
+  if (!isSleeping) {
+    for (const [id, model] of campModels) {
+      if (!model.fireAnchor.visible) continue;
+      targets.push(model.fireClickTarget);
+      fires.set(model.fireClickTarget, id);
+    }
+  }
+  const hits = tapRaycaster.intersectObjects(targets, false);
+  const hit = hits[0];
+  if (!hit) return;
+  // Ignore camps hidden behind terrain on the far side of the planet.
+  const terrainHit = tapRaycaster.intersectObject(globe, false)[0];
+  if (terrainHit && terrainHit.distance < hit.distance - 0.05) return;
+  if (fires.has(hit.object)) {
+    walkToCampfire(fires.get(hit.object));
+  } else {
     if (isSleeping) {
       wakeUp();
     } else {
+      standUp();
       walkingToTent = true;
     }
   }
 });
 
 function enterTent() {
+  standUp();
+  clearMovementInput();
   isSleeping = true;
   walkingToTent = false;
+  flashlightOn = false;
+  flashlight.intensity = 0;
+  player.userData.flashlightStick.visible = false;
+  document.getElementById('btn-flashlight').style.borderColor = 'rgba(255,255,255,0.3)';
   player.visible = false;
   document.getElementById('controls-row').style.opacity = '0.3';
   document.getElementById('controls-row').style.pointerEvents = 'none';
@@ -3051,6 +3151,7 @@ function makeZSprite(size, xOffset) {
 }
 
 function wakeUp() {
+  clearMovementInput();
   isSleeping = false;
   player.visible = true;
   document.getElementById('controls-row').style.opacity = '';
@@ -3135,10 +3236,11 @@ function updateDayNight() {
     scene.fog = null;
   }
 
-  flashlight.intensity = flashlightOn ? 15 : 0;
-  player.userData.flashlightStick.visible = flashlightOn;
-  player.userData.flashlightLens.material.color.setHex(flashlightOn ? 0xffffcc : 0x333333);
-  if (flashlightOn) {
+  const torchOn = flashlightOn && !isSleeping && player.visible;
+  flashlight.intensity = torchOn ? 15 : 0;
+  player.userData.flashlightStick.visible = torchOn;
+  player.userData.flashlightLens.material.color.setHex(torchOn ? 0xffffcc : 0x333333);
+  if (torchOn) {
     const stickWorld = new THREE.Vector3();
     player.userData.flashlightLens.getWorldPosition(stickWorld);
     flashlight.position.copy(stickWorld);
@@ -3306,9 +3408,12 @@ function animate() {
   if (gamepadY) {
     if (isSleeping) {
       wakeUp();
+    } else if (sittingFireId !== null || walkingToFire) {
+      standUp();
     } else if (campPitched) {
       // Check if near tent
       if (ownTentDistance() <= TENT_INTERACTION_DISTANCE) {
+        standUp();
         walkingToTent = true;
       }
     }
@@ -3319,7 +3424,7 @@ function animate() {
   if (keys['w'] || keys['arrowup']) moveInput = -1;
   if (keys['s'] || keys['arrowdown']) moveInput = 1;
   if (gamepadMoveY) moveInput = gamepadMoveY;
-  if (controlMode === 'joystick') {
+  if (controlMode === 'joystick' && !isSleeping && sittingFireId === null) {
     if (keys['a'] || keys['arrowleft']) playerFacing += 2.5 * delta;
     if (keys['d'] || keys['arrowright']) playerFacing -= 2.5 * delta;
     if (gamepadMoveX) playerFacing -= gamepadMoveX * 2.5 * delta;
@@ -3335,8 +3440,36 @@ function animate() {
     walkingToTent = false;
   }
 
+  const manualMovement = Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1 ||
+    (controlMode === 'joystick' && (Math.abs(gamepadMoveX) > 0.1 || Math.abs(leverX) > 0.1 ||
+      keys['a'] || keys['d'] || keys['arrowleft'] || keys['arrowright']));
+  if (manualMovement && (sittingFireId !== null || walkingToFire)) standUp();
+  if (sittingFireId !== null && !fireDirection(sittingFireId)) standUp();
+
+  if (walkingToFire && !isSleeping) {
+    const target = walkingToFire;
+    if (!fireDirection(target.id)) {
+      standUp();
+    } else {
+      moveInput = strafeInput = 0;
+      const up = new THREE.Vector3(0, 1, 0);
+      const towardSeat = target.direction.clone().applyQuaternion(globeRotation);
+      const angle = up.angleTo(towardSeat);
+      const correction = new THREE.Quaternion().setFromUnitVectors(towardSeat, up);
+      globeRotation.premultiply(new THREE.Quaternion().slerp(correction,
+        angle < 1e-6 ? 1 : Math.min(1, 0.2 * delta / angle))).normalize();
+      if (angle <= 0.2 * delta) {
+        sittingFireId = target.id;
+        walkingToFire = null;
+        clearMovementInput();
+        document.getElementById('btn-stand').style.display = 'block';
+        showToast('Sitting by the fire. Move, click the fire, or choose Stand up to get up.');
+      }
+    }
+  }
+
   // Auto-walk to tent
-  if (walkingToTent) {
+  if (walkingToTent && !isSleeping) {
     const tentDirection = ownTentDirection();
     if (!tentDirection) {
       walkingToTent = false;
@@ -3357,10 +3490,16 @@ function animate() {
     }
   }
 
-  if (isSleeping) { moveInput = 0; }
+  const movementLocked = isSleeping || sittingFireId !== null;
+  if (movementLocked) { moveInput = strafeInput = 0; playerBounceState = null; }
 
   // Control mode: pan = camera angle drives facing, joystick = leverX turns character
-  if (controlMode === 'pan') {
+  if (movementLocked) {
+    if (sittingFireId !== null) {
+      const towardFire = fireDirection(sittingFireId)?.applyQuaternion(globeRotation);
+      if (towardFire) playerFacing = Math.atan2(towardFire.x, towardFire.z);
+    }
+  } else if (controlMode === 'pan') {
     playerFacing = cameraAngle + Math.PI;
   } else {
     if (leverActive && Math.abs(leverX) > 0.1) {
@@ -3379,10 +3518,14 @@ function animate() {
     }
   }
 
-  const isWalking = Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1 || walkingToTent;
+  if (walkingToFire) {
+    const towardSeat = walkingToFire.direction.clone().applyQuaternion(globeRotation);
+    playerFacing = Math.atan2(towardSeat.x, towardSeat.z);
+  }
+  const isWalking = !movementLocked && (Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1 || walkingToTent || !!walkingToFire);
   const moveSpeed = (player.userData.swimming ? SWIM_SPEED : 0.2) * delta;
 
-  if (!playerBounceState && (Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1)) {
+  if (!movementLocked && !playerBounceState && (Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1)) {
     // Forward/back movement
     const step = moveSpeed * moveInput;
     // Strafe movement (perpendicular to facing, i.e. facing + 90 degrees)
@@ -3482,7 +3625,7 @@ function animate() {
     }
   }
 
-  if (playerBounceState) {
+  if (playerBounceState && !movementLocked) {
     const b = playerBounceState;
     const next = Math.min(BUMP_DURATION, b.elapsed + delta);
     const distance = BUMP_DISTANCE * (bumpTravel(next) - bumpTravel(b.elapsed));
@@ -3532,7 +3675,7 @@ function animate() {
 
   const isKeyTurning = keys['a'] || keys['d'] || keys['arrowleft'] || keys['arrowright'];
   const isCameraPanTurning = (isDragging || orbitTouchId !== null) && controlMode === 'pan';
-  const isTurning = isCameraPanTurning || isKeyTurning || (controlMode === 'joystick' && leverActive && Math.abs(leverX) > 0.1);
+  const isTurning = !movementLocked && (isCameraPanTurning || isKeyTurning || (controlMode === 'joystick' && leverActive && Math.abs(leverX) > 0.1));
 
   if (isWalking || isTurning) {
     walkCycle += delta * (isWalking ? 8 : 12);
@@ -3563,6 +3706,7 @@ function animate() {
       roll: Math.max(-0.1, Math.min(0.1, player.rotation.z)),
       flashlight: flashlightOn && !isSleeping,
       moving: isWalking && !isSleeping,
+      sitting: sittingFireId !== null,
     });
   }
   
@@ -3575,7 +3719,8 @@ function animate() {
   // Animate connected players.
   animateOtherPlayers(delta);
 
-  applySwimPose(player);
+  if (sittingFireId !== null) applySitPose(player);
+  else applySwimPose(player);
   applyBumpPose(player, playerBounceState, globeRotation);
 
   // Shared room clock continues through dropped frames and background tabs.
