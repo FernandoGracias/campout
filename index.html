@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v181</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v182</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -227,9 +227,9 @@ canvas { display: block; }
   </div>
 </div>
 <style>@media(pointer:coarse){#winter-actions{left:auto!important;right:12px;bottom:calc(110px + env(safe-area-inset-bottom,0px))!important;align-items:flex-end!important}.winter-action{min-height:48px;min-width:48px;touch-action:manipulation}#lever-zone{touch-action:none}} </style>
-<style>.winter-action{width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;padding:0}.winter-action:disabled{opacity:.45}.aim-panel-btn{padding:8px 12px;min-height:44px;border:1px solid rgba(255,255,255,0.3);border-radius:8px;background:rgba(255,255,255,0.1);color:white;cursor:pointer;font-size:13px}#snow-crosshair{position:fixed;display:none;width:24px;height:24px;border:4px solid #e32636;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:100}#snow-crosshair::before,#snow-crosshair::after{content:'';position:absolute;background:#e32636;border-radius:3px}#snow-crosshair::before{width:34px;height:4px;top:6px;left:-9px}#snow-crosshair::after{width:4px;height:34px;left:6px;top:-9px}</style>
+<style>.winter-action{width:48px;height:48px;border-radius:50%;background:rgba(30,50,70,0.7);border:2px solid rgba(100,140,180,0.4);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;padding:0}.winter-action:disabled{opacity:.45}.aim-panel-btn{padding:8px 12px;min-height:44px;border:1px solid rgba(255,255,255,0.3);border-radius:8px;background:rgba(255,255,255,0.1);color:white;cursor:pointer;font-size:13px}#snow-crosshair{position:fixed;display:none;width:24px;height:24px;border:4px solid #e32636;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:100}#snow-crosshair::before,#snow-crosshair::after{content:'';position:absolute;background:#e32636;border-radius:3px}#snow-crosshair::before{width:34px;height:4px;top:6px;left:-9px}#snow-crosshair::after{width:4px;height:34px;left:6px;top:-9px}</style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v181</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v182</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -243,7 +243,7 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=181';
+import { createWinter } from './winter.js?v=182';
 
 // --- SCREEN MANAGEMENT & NETWORKING ---
 const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
@@ -1617,12 +1617,13 @@ snowballBtn.addEventListener('touchmove', e => {
     if (touch.identifier !== targetingTouch.id) continue;
     const dx = touch.clientX - targetingTouch.lastX;
     const dy = touch.clientY - targetingTouch.lastY;
-    // Horizontal drag rotates player (invert direction for natural feel)
+    // Horizontal drag rotates player AND camera together (like pan mode)
+    // This changes aimYaw (which sets playerFacing) and cameraAngle in sync
     if (Math.abs(dx) > 1) {
       const turn = dx * 0.012 * (invertX ? -1 : 1);
-      cameraAngle += turn;
+      winter.turnAim(turn);  // Rotate the aim direction (and thus player)
+      cameraAngle += turn;   // Rotate camera to match
       cameraTargetAngle = cameraAngle;
-      // In pan mode, playerFacing follows cameraAngle automatically
     }
     // Vertical drag adjusts power (drag up = more power, drag down = less)
     if (Math.abs(dy) > 1) {
@@ -2400,7 +2401,8 @@ function updateLever(touch) {
   const cy = rect.top + rect.height / 2;
   let dy = touch.clientY - cy;
   let dx = touch.clientX - cx;
-  if (controlMode === 'pan' && !winter.aiming) {
+  // Walking lever is always vertical-only in pan mode (aiming doesn't change this)
+  if (controlMode === 'pan') {
     if (dy > leverRange) dy = leverRange;
     if (dy < -leverRange) dy = -leverRange;
     leverY = dy / leverRange;
