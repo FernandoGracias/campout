@@ -240,6 +240,9 @@ export function createWinter(THREE, world) {
   };
   const snowTime = { value: 0 }, snowView = { value: new THREE.Vector3(0, 1, 0) }, snowBrightness = { value: 1.0 };
   const snowVelocity = { value: new THREE.Vector3(0, 0, 0) };
+  const snowFlashPos = { value: new THREE.Vector3(0, 0, 0) };
+  const snowFlashDir = { value: new THREE.Vector3(0, 0, 1) };
+  const snowFlashOn = { value: 0.0 };
   const fallingMaterial = flakeMat.clone();
   fallingMaterial.onBeforeCompile = shader => {
     flakeMat.onBeforeCompile(shader);
@@ -247,23 +250,41 @@ export function createWinter(THREE, world) {
     shader.uniforms.snowView = snowView;
     shader.uniforms.snowBrightness = snowBrightness;
     shader.uniforms.snowVelocity = snowVelocity;
-    shader.vertexShader = 'attribute vec4 weather; uniform float snowTime; uniform vec3 snowView; uniform vec3 snowVelocity;\n' + shader.vertexShader;
+    shader.uniforms.snowFlashPos = snowFlashPos;
+    shader.uniforms.snowFlashDir = snowFlashDir;
+    shader.uniforms.snowFlashOn = snowFlashOn;
+    shader.vertexShader = 'attribute vec4 weather; uniform float snowTime; uniform vec3 snowView; uniform vec3 snowVelocity;\nuniform vec3 snowFlashPos; uniform vec3 snowFlashDir; uniform float snowFlashOn;\nvarying float vFlashLight;\n' + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
       // Base fall animation along spawn direction
       float fallProgress = mod(weather.w - snowTime * weather.z, max(weather.y, 1.0));
       vec3 transformed = position * (weather.x + fallProgress);
       // Velocity-relative offset: flakes appear to rush past when moving fast
-      // Scale effect by how much of the fall is left (more effect at start of fall)
       float velocityScale = 12.0 * (1.0 - fallProgress / max(weather.y, 1.0));
       transformed += snowVelocity * velocityScale;
+      // Calculate flashlight illumination per-flake
+      vFlashLight = 0.0;
+      if (snowFlashOn > 0.5) {
+        vec3 toFlake = transformed - snowFlashPos;
+        float dist = length(toFlake);
+        if (dist < 25.0 && dist > 0.1) {
+          vec3 toFlakeDir = toFlake / dist;
+          float cone = dot(toFlakeDir, snowFlashDir);
+          // Flashlight cone angle ~0.08 rad, so cos(0.08) ~ 0.997, widen to ~0.92 for visibility
+          if (cone > 0.92) {
+            float coneAttn = smoothstep(0.92, 0.98, cone);
+            float distAttn = 1.0 - dist / 25.0;
+            vFlashLight = coneAttn * distAttn * distAttn;
+          }
+        }
+      }
     `);
     shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
       // No rasterization for uninitialized flakes or the far side of the globe.
       if (weather.y < 0.5 || dot(position, snowView) < 0.12) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     `);
-    shader.fragmentShader = 'uniform float snowBrightness;\n' + shader.fragmentShader;
+    shader.fragmentShader = 'uniform float snowBrightness;\nvarying float vFlashLight;\n' + shader.fragmentShader;
     shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>',
-      '#include <color_fragment>\ndiffuseColor.rgb *= snowBrightness;');
+      '#include <color_fragment>\ndiffuseColor.rgb *= snowBrightness + vFlashLight * 0.8;');
   };
   const falling = new THREE.Points(flakeGeo, fallingMaterial);
   falling.visible = false; globePivot.add(falling);
@@ -833,14 +854,20 @@ export function createWinter(THREE, world) {
     } else {
       snowVelocity.value.set(0, 0, 0);
     }
-    // Snowflake brightness: dim at night, bright only in daylight or when lit by flashlight
+    // Snowflake brightness: dim at night, bright in daylight. Flashlight is per-flake in shader.
     if (world.getLighting) {
       const lighting = world.getLighting();
       // Base brightness from daylight (0.15 at night with moonlight, up to 1.0 in full day)
       const baseBrightness = 0.12 + lighting.daylight * 0.88 + (1 - lighting.daylight) * lighting.moonlight * 0.08;
-      // Flashlight adds significant brightness when on
-      const flashBoost = lighting.flashlightOn ? 0.6 : 0;
-      snowBrightness.value = Math.min(1.0, baseBrightness + flashBoost);
+      snowBrightness.value = baseBrightness;
+      // Pass flashlight position and direction for per-flake lighting
+      if (lighting.flashlightOn && lighting.flashlightPos && lighting.flashlightDir) {
+        snowFlashOn.value = 1.0;
+        snowFlashPos.value.copy(lighting.flashlightPos).applyQuaternion(inverse);
+        snowFlashDir.value.copy(lighting.flashlightDir).applyQuaternion(inverse);
+      } else {
+        snowFlashOn.value = 0.0;
+      }
     }
     const here = up.clone().applyQuaternion(inverse);
     let spawnBudget = mobile ? 48 : 192, changed = false;
