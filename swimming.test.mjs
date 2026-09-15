@@ -31,6 +31,9 @@ test('winter supports all campers on lake and river ice, then restores swimming 
     assert.equal(mesh.userData.onIce, true);
     assert.equal(mesh.userData.swimming, false);
     assert.equal(mesh.userData.swimBlend, 0);
+    mesh.userData.skating = true;
+    assert.equal(context.updateSwimming(mesh, bottom, true, 1 / 30, winter), winter.iceRadius + 0.07);
+    mesh.userData.skating = false;
     assert.equal(context.updateSwimming(mesh, 21, true, 1 / 30, winter), 21);
     assert.equal(mesh.userData.onIce, false);
     winter.enabled = false;

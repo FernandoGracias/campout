@@ -151,7 +151,8 @@ canvas { display: block; }
     <input type="range" id="snow-cover" min="0" max="100" value="75">
     <label for="snow-fall">Falling snow <output id="snow-fall-value">40%</output></label>
     <input type="range" id="snow-fall" min="0" max="100" value="40">
-    <p style="font-size:11px;line-height:1.5;color:#bcd;">Winter freezes every lake and river with 25 cm of ice. Coast to slide; steer to turn or brake. Q / controller RB: pack a snowball, then throw. Aim by facing a camper.</p>
+    <p style="font-size:11px;line-height:1.5;color:#bcd;">Winter freezes every lake and river with 25 cm of ice. Coast to slide; equip skates for traction.</p>
+    <p id="winter-input-help" style="font-size:11px;line-height:1.5;color:#bcd;"></p>
   </div>
   <div id="room-code-display" style="display:none;margin-bottom:12px;padding:8px;background:rgba(255,255,255,0.08);border-radius:6px;text-align:center;">
     <div style="font-size:10px;color:#888;margin-bottom:2px;">WORLD CODE</div>
@@ -214,8 +215,14 @@ canvas { display: block; }
 
 <button id="btn-stand" style="display:none;position:fixed;bottom:100px;left:30px;z-index:101;padding:10px 16px;border:1px solid #f0c040;border-radius:8px;background:#252535;color:#fff;cursor:pointer;">Stand up</button>
 <button id="camp-interaction" style="display:none;position:fixed;z-index:150;transform:translate(-50%,-100%);padding:6px 10px;border:1px solid #f0c040;border-radius:7px;background:rgba(25,25,40,0.95);color:#fff;font:14px system-ui,sans-serif;white-space:nowrap;cursor:pointer;"></button>
-<button id="btn-snowball" style="display:none;position:fixed;bottom:160px;left:24px;z-index:101;padding:10px 14px;border:1px solid #cde;border-radius:20px;background:#243848;color:white;cursor:pointer;">❄ Pack snowball · Q / RB</button>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v173</div>
+<div style="position:fixed;bottom:160px;left:24px;z-index:101;display:flex;flex-direction:column;align-items:flex-start;gap:8px;">
+  <button id="btn-skates" class="winter-action" style="display:none;"></button>
+  <button id="btn-aim" class="winter-action" style="display:none;"></button>
+  <button id="btn-snowball" class="winter-action" style="display:none;">❄ Pack snowball</button>
+</div>
+<style>.winter-action{padding:10px 14px;border:1px solid #cde;border-radius:20px;background:#243848;color:white;cursor:pointer}.winter-action:disabled{opacity:.45}#snow-crosshair{position:fixed;display:none;width:24px;height:24px;border:2px solid white;border-radius:50%;transform:translate(-50%,-50%);filter:drop-shadow(0 1px 2px black);pointer-events:none;z-index:100}#snow-crosshair::before,#snow-crosshair::after{content:'';position:absolute;background:white}#snow-crosshair::before{width:34px;height:2px;top:9px;left:-7px}#snow-crosshair::after{width:2px;height:34px;left:9px;top:-7px}</style>
+<div id="snow-crosshair" aria-hidden="true"></div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v174</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -229,7 +236,7 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=173';
+import { createWinter } from './winter.js?v=174';
 
 // --- SCREEN MANAGEMENT & NETWORKING ---
 const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
@@ -857,7 +864,8 @@ function setupDataChannel(peerId, channel) {
       if (!m || typeof m !== 'object' || !Number.isFinite(m.phase) || m.phase < 0 || m.phase > Math.PI * 2 ||
           ![0, 8, 12].includes(m.rate) || ![0.35, 0.5].includes(m.amplitude) || ![0.03, 0.04].includes(m.waddle) ||
           !Number.isFinite(m.swing) || Math.abs(m.swing) > 0.5 || !Number.isFinite(m.roll) || Math.abs(m.roll) > 0.1 ||
-          typeof m.flashlight !== 'boolean') {
+          typeof m.flashlight !== 'boolean' ||
+          ['snowball', 'skating'].some(key => m[key] !== undefined && typeof m[key] !== 'boolean')) {
         console.warn('Ignoring bad motion data:', m);
         data.motion = undefined;  // Strip bad motion, don't disconnect
       }
@@ -1529,7 +1537,7 @@ const waterSphere = new THREE.Mesh(
 globePivot.add(waterSphere);
 
 const winter = createWinter(THREE, {
-  scene, globePivot, globe, trees, waterSphere, radius: GLOBE_RADIUS, waterRadius: WATER_RADIUS,
+  scene, camera, globePivot, globe, trees, waterSphere, radius: GLOBE_RADIUS, waterRadius: WATER_RADIUS,
   localId: localPlayerId, getPlayer: () => player, getPeers: () => otherPlayers,
   getRotation: () => globeRotation, getFacing: () => playerFacing,
   canAct: () => !isSleeping && sittingFireId === null && !walkingToTent && !walkingToFire && !minigamesOpen,
@@ -1541,11 +1549,22 @@ const winter = createWinter(THREE, {
 });
 window.receiveSnowball = winter.receive;
 document.getElementById('btn-snowball').addEventListener('click', winter.action);
+document.getElementById('btn-skates').addEventListener('click', winter.toggleSkates);
+document.getElementById('btn-aim').addEventListener('click', () => winter.setAim(!winter.aiming));
 document.addEventListener('keydown', e => {
-  if (e.key.toLowerCase() === 'q' && !e.repeat && !e.target.closest('input, select, textarea, [contenteditable]')) {
-    e.preventDefault(); winter.action();
+  if (!e.repeat && !e.target.closest('input, select, textarea, [contenteditable]')) {
+    if (e.key.toLowerCase() === 'q') { e.preventDefault(); winter.action(); }
+    if (e.key.toLowerCase() === 'c') { e.preventDefault(); winter.toggleSkates(); }
   }
 });
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse') setInputMode('keyboard');
+  if (e.pointerType === 'mouse' && e.button === 2) winter.setAim(true);
+  if (e.pointerType === 'mouse' && e.button === 0 && winter.aiming) winter.action();
+});
+window.addEventListener('pointerup', e => { if (e.pointerType === 'mouse' && e.button === 2) winter.setAim(false); });
+window.addEventListener('blur', () => winter.setAim(false));
+document.addEventListener('visibilitychange', () => { if (document.hidden) winter.setAim(false); });
 
 // --- PLAYER TERRAIN FOLLOWING ---
 const raycaster = new THREE.Raycaster();
@@ -1557,7 +1576,7 @@ function updateSwimming(mesh, terrainRadius, moving, delta, winterSurface = null
     state.swimming = false;
     state.swimBlend = 0;
     state.onIce = terrainRadius < winterSurface.iceRadius;
-    return Math.max(terrainRadius, winterSurface.iceRadius);
+    return Math.max(terrainRadius, winterSurface.iceRadius) + (state.onIce && state.skating ? 0.07 : 0);
   }
   state.onIce = false;
   const depth = WATER_RADIUS - terrainRadius;
@@ -1976,6 +1995,7 @@ function animateOtherPlayers(delta) {
     m.rotateY(fAngle);
 
     const motionAge = (performance.now() - p.motionReceivedAt) / 1000;
+    m.userData.skating = winter.enabled && !!p.motion?.skating && motionAge < 2;
     const swimmingMoving = motionAge < 0.5 && p.motion
       ? (p.motion.moving ?? p.motion.rate > 0)
       : p.isWalking && p.interpT < 1;
@@ -2180,6 +2200,7 @@ document.querySelectorAll('.minigame-item').forEach((item, i) => {
 
 // Detect input mode and show appropriate hints
 function updateControlHints() {
+  winter.updateHints(lastInputMode);
   const isMobile = lastInputMode === 'touch';
   const hintPitch = document.getElementById('hint-pitch');
   const hintFlashlight = document.getElementById('hint-flashlight');
@@ -2315,6 +2336,7 @@ let dragStartHeight = 0;
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('mousedown', (e) => {
   if (e.target !== renderer.domElement) return;
+  if (winter.aiming) return;
   isDragging = true;
   dragStartX = e.clientX;
   dragStartAngle = cameraAngle;
@@ -2322,6 +2344,11 @@ renderer.domElement.addEventListener('mousedown', (e) => {
   dragStartHeight = cameraHeight;
 });
 window.addEventListener('mousemove', (e) => {
+  if (winter.aiming && lastInputMode === 'keyboard') {
+    cameraAngle += e.movementX * 0.006 * (invertX ? -1 : 1);
+    winter.adjustAim(-e.movementY * 0.004);
+    return;
+  }
   if (!isDragging) return;
   const dx = e.clientX - dragStartX;
   const dy = e.clientY - dragStartY;
@@ -2396,6 +2423,7 @@ renderer.domElement.addEventListener('touchmove', (e) => {
   }
   for (const touch of e.changedTouches) {
     if (touch.identifier === orbitTouchId) {
+      if (winter.aiming) { winter.adjustAim((orbitStartY - touch.clientY) * 0.004); orbitStartY = touch.clientY; }
       const dx = touch.clientX - orbitStartX;
       cameraAngle = orbitStartAngle + dx * 0.01 * (invertX ? -1 : 1);
       cameraTargetAngle = cameraAngle;
@@ -2413,6 +2441,7 @@ renderer.domElement.addEventListener('touchend', (e) => {
       const remaining = e.touches[0];
       orbitTouchId = remaining.identifier;
       orbitStartX = remaining.clientX;
+      orbitStartY = remaining.clientY;
       orbitStartAngle = cameraAngle;
       orbitStartHeight = cameraHeight;
     }
@@ -3215,6 +3244,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
 }, true);
 
 renderer.domElement.addEventListener('click', (e) => {
+  if (winter.aiming) return;
   const ownModel = campModels.get(localPlayerId);
   
   // Ignore if this was a drag (moved more than 10px or held longer than 300ms)
@@ -3481,8 +3511,12 @@ function animate() {
     gamepadMoveX = lx;
     gamepadLookX = rx;
     gamepadLookY = ry;
-    if (gp.buttons[5]?.pressed && !gamepadState.snowWasPressed) winter.action();
-    gamepadState.snowWasPressed = !!gp.buttons[5]?.pressed;
+    if (lastInputMode === 'gamepad') winter.setAim(!!gp.buttons[6]?.pressed);
+    const snowPressed = !!gp.buttons[5]?.pressed || !!gp.buttons[7]?.pressed;
+    if (snowPressed && !gamepadState.snowWasPressed) winter.action();
+    gamepadState.snowWasPressed = snowPressed;
+    if (gp.buttons[4]?.pressed && !gamepadState.skatesWasPressed) winter.toggleSkates();
+    gamepadState.skatesWasPressed = !!gp.buttons[4]?.pressed;
     // A=buttons[0], B=buttons[1], X=buttons[2], Y=buttons[3]
     if (gp.buttons[0]?.pressed && !gamepadState.aWasPressed) { gamepadA = true; gamepadState.aWasPressed = true; }
     else if (!gp.buttons[0]?.pressed) gamepadState.aWasPressed = false;
@@ -3496,6 +3530,7 @@ function animate() {
     else if (!gp.buttons[3]?.pressed) gamepadState.yWasPressed = false;
     break; // Use first connected gamepad
   }
+  if (lastInputMode === 'gamepad' && !gamepads.some(gp => gp)) winter.setAim(false);
   
   // If minigames modal is open, handle navigation there instead
   if (minigamesOpen) {
@@ -3545,7 +3580,10 @@ function animate() {
     if (gamepadDpadUp) cameraDistance = Math.max(4, cameraDistance - delta * 15);
     if (gamepadDpadDown) cameraDistance = Math.min(60, cameraDistance + delta * 15);
     // Right stick Y = tilt camera
-    if (gamepadLookY) cameraHeight = Math.max(1, Math.min(12, cameraHeight + gamepadLookY * delta * 8));
+    if (gamepadLookY) {
+      if (winter.aiming) winter.adjustAim(-gamepadLookY * delta * 1.3);
+      else cameraHeight = Math.max(1, Math.min(12, cameraHeight + gamepadLookY * delta * 8));
+    }
   }
   
   if (gamepadA && !minigamesOpen) interactWithCamp(false);
@@ -3648,7 +3686,7 @@ function animate() {
       const towardFire = fireDirection(sittingFireId)?.applyQuaternion(globeRotation);
       if (towardFire) playerFacing = Math.atan2(towardFire.x, towardFire.z);
     }
-  } else if (controlMode === 'pan') {
+  } else if (controlMode === 'pan' || winter.aiming) {
     playerFacing = cameraAngle + Math.PI;
   } else {
     if (leverActive && Math.abs(leverX) > 0.1) {
@@ -3860,6 +3898,8 @@ function animate() {
       flashlight: flashlightOn && !isSleeping,
       moving: isWalking && !isSleeping,
       sitting: sittingFireId !== null,
+      snowball: winter.holding,
+      skating: winter.skating,
     });
   }
   
@@ -3884,6 +3924,8 @@ function animate() {
     const m = Math.floor((timeOfDay - h) * 60);
     document.getElementById('time-display').textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
   }
+  winter.update(delta);
+  atmosMat.uniforms.viewVector.value.copy(camera.position);
   updateDayNight();
 
   // Animate fireflies
@@ -4030,7 +4072,6 @@ function animate() {
   }
 
   updateCampInteraction();
-  winter.update(delta);
   renderer.render(scene, camera);
 }
 window.syncCamps = syncCamps;
