@@ -583,11 +583,11 @@ export function createWinter(THREE, world) {
     flightRay.set(from, travel.clone().normalize());
     flightRay.far = length + BALL_RADIUS;
     const terrainHit = flightRay.intersectObjects(terrainPatches, false)[0];
-    let nearest = terrainHit ? { distance: terrainHit.distance, point: terrainHit.point, mesh: null } : null;
-    const accept = (point, mesh = null) => {
+    let nearest = terrainHit ? { distance: terrainHit.distance, point: terrainHit.point, mesh: null, tent: null } : null;
+    const accept = (point, mesh = null, tent = null) => {
       if (!point) return;
       const distance = from.distanceTo(point);
-      if (distance <= length + BALL_RADIUS && (!nearest || distance < nearest.distance)) nearest = { distance, point, mesh };
+      if (distance <= length + BALL_RADIUS && (!nearest || distance < nearest.distance)) nearest = { distance, point, mesh, tent };
     };
     iceBounds.radius = enabled ? iceRadius : waterRadius;
     accept(flightRay.ray.intersectSphere(iceBounds, new THREE.Vector3()));
@@ -607,10 +607,25 @@ export function createWinter(THREE, world) {
     const nearby = treeColumns.filter(t => t.direction.distanceTo(direction) * radius < 2.5);
     if (nearby.length || flightObstacles.length) {
       flightRay.set(from.clone().applyQuaternion(world.getRotation()), travel.normalize().applyQuaternion(world.getRotation()));
-      const hit = flightRay.intersectObjects([...nearby.map(t => t.object), ...flightObstacles], true)[0];
-      if (hit) accept(hit.point.applyQuaternion(inverse));
+      // Check trees first
+      const treeHit = flightRay.intersectObjects(nearby.map(t => t.object), true)[0];
+      if (treeHit) accept(treeHit.point.applyQuaternion(inverse));
+      // Check obstacles (tents, rocks) - track which tent was hit
+      const obstacleHit = flightRay.intersectObjects(flightObstacles, true)[0];
+      if (obstacleHit) {
+        // Find which tent this obstacle belongs to
+        let hitTent = null;
+        for (const obs of flightObstacles) {
+          if (obstacleHit.object === obs || obstacleHit.object.parent === obs) {
+            const tentOwner = world.getTentOwner?.(obs);
+            if (tentOwner) hitTent = { mesh: obs, owner: tentOwner };
+            break;
+          }
+        }
+        accept(obstacleHit.point.applyQuaternion(inverse), null, hitTent);
+      }
     }
-    if (!nearest && to.length() < iceBounds.radius) nearest = { point: to.clone().normalize().multiplyScalar(iceBounds.radius), mesh: null };
+    if (!nearest && to.length() < iceBounds.radius) nearest = { point: to.clone().normalize().multiplyScalar(iceBounds.radius), mesh: null, tent: null };
     return nearest;
   }
   function advanceFlight(position, speed) {
@@ -646,11 +661,41 @@ export function createWinter(THREE, world) {
     sprite.position.copy(mesh.position).addScaledVector(mesh.position.clone().normalize(), 1.65);
     scene.add(sprite); scoreFloats.push({ sprite, mesh, age: 0 });
   }
+  function floatScoreAt(position, amount) {
+    if (!scoreTextures.has(amount)) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128; canvas.height = 96;
+      const ctx = canvas.getContext('2d');
+      ctx.font = 'bold 64px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.lineWidth = 5;
+      ctx.fillStyle = amount > 0 ? '#62ef88' : '#ff6969';
+      const text = amount > 0 ? '+1' : '−1';
+      ctx.strokeText(text, 64, 48); ctx.fillText(text, 64, 48);
+      scoreTextures.set(amount, new THREE.CanvasTexture(canvas));
+    }
+    if (scoreFloats.length >= 24) removeScore(0);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: scoreTextures.get(amount),
+      transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+    sprite.name = amount > 0 ? 'projectile-score-plus' : 'projectile-score-minus';
+    sprite.scale.set(0.85, 0.64, 1); sprite.renderOrder = 1001;
+    const startPos = position.clone().addScaledVector(position.clone().normalize(), 1.65);
+    sprite.position.copy(startPos);
+    scene.add(sprite);
+    // Static position score - use null mesh and store basePosition
+    scoreFloats.push({ sprite, mesh: null, basePosition: startPos.clone(), age: 0 });
+  }
   function updateScores(delta) {
     for (let i = scoreFloats.length - 1; i >= 0; i--) {
       const score = scoreFloats[i]; score.age += delta;
-      if (score.age >= 1.6 || !score.mesh.visible || !score.mesh.parent) { removeScore(i); continue; }
-      score.sprite.position.copy(score.mesh.position).addScaledVector(score.mesh.position.clone().normalize(), 1.65 + score.age * 0.7);
+      if (score.age >= 1.6) { removeScore(i); continue; }
+      if (score.mesh) {
+        // Mesh-attached score
+        if (!score.mesh.visible || !score.mesh.parent) { removeScore(i); continue; }
+        score.sprite.position.copy(score.mesh.position).addScaledVector(score.mesh.position.clone().normalize(), 1.65 + score.age * 0.7);
+      } else if (score.basePosition) {
+        // Position-based score (for tents)
+        score.sprite.position.copy(score.basePosition).addScaledVector(score.basePosition.clone().normalize(), score.age * 0.7);
+      }
       score.sprite.material.opacity = Math.min(1, (1.6 - score.age) / 0.8);
     }
   }
@@ -678,9 +723,30 @@ export function createWinter(THREE, world) {
         if (hit) {
           to.copy(hit.point); impact = true;
           if (hit.mesh) {
+            // Hit a player
             hit.mesh.userData.snowHitUntil = elapsed + 0.45;
-            if (hit.mesh === world.getPlayer()) floatScore(hit.mesh, -1);
-            else if (ball.owner === world.localId) floatScore(hit.mesh, 1);
+            if (hit.mesh === world.getPlayer()) {
+              floatScore(hit.mesh, -1);
+              // Team scoring: other team gets a point
+              const myTeam = world.getPlayerTeam?.(world.localId);
+              if (myTeam) world.addTeamScore?.(myTeam === 'red' ? 'blue' : 'red', 1);
+            } else if (ball.owner === world.localId) {
+              floatScore(hit.mesh, 1);
+              // Team scoring: my team gets a point
+              const myTeam = world.getPlayerTeam?.(world.localId);
+              if (myTeam) world.addTeamScore?.(myTeam, 1);
+            }
+          } else if (hit.tent && ball.owner === world.localId) {
+            // Hit a tent - check if occupied
+            const tentOwner = hit.tent.owner;
+            if (world.isTentOccupied?.(tentOwner)) {
+              // Show +1/-1 animation at tent position
+              const tentPos = hit.tent.mesh.position.clone();
+              floatScoreAt(tentPos, 1);
+              // Team scoring
+              const myTeam = world.getPlayerTeam?.(world.localId);
+              if (myTeam) world.addTeamScore?.(myTeam, 1);
+            }
           }
           if (ball.kind === 'pinecone') {
             const base = hit.mesh ? hit.mesh.position.clone().applyQuaternion(inverse) : to.clone();
