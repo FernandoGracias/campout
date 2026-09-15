@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v179</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v180</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -214,9 +214,9 @@ canvas { display: block; }
 <button id="btn-stand" style="display:none;position:fixed;bottom:100px;left:30px;z-index:101;padding:10px 16px;border:1px solid #f0c040;border-radius:8px;background:#252535;color:#fff;cursor:pointer;">Stand up</button>
 <button id="camp-interaction" style="display:none;position:fixed;z-index:150;transform:translate(-50%,-100%);padding:6px 10px;border:1px solid #f0c040;border-radius:7px;background:rgba(25,25,40,0.95);color:#fff;font:14px system-ui,sans-serif;white-space:nowrap;cursor:pointer;"></button>
 <div id="winter-actions" style="position:fixed;bottom:160px;left:24px;z-index:101;display:flex;flex-direction:column;align-items:flex-start;gap:8px;">
-  <button id="btn-skates" class="winter-action" style="display:none;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round"><path d="M4 18h12c2 0 4-1.5 4-4v-1"/><path d="M4 18v-4c0-1 .5-2 2-2h6"/><ellipse cx="8" cy="18" rx="2" ry="1"/><ellipse cx="14" cy="18" rx="2" ry="1"/><line x1="16" y1="12" x2="16" y2="9"/><circle cx="16" cy="7" r="2"/></svg></button>
+  <button id="btn-skates" class="winter-action" style="display:none;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 19h14"/><path d="M2 19c0-3 2-5 6-5h4c2 0 4 1 4 3"/><path d="M16 17v-7c0-1-1-2-2-2h-1"/><path d="M10 8v2"/><path d="M6 10c0-2 2-4 4-4"/></svg></button>
   <button id="btn-aim" class="winter-action" style="display:none;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg></button>
-  <button id="btn-snowball" class="winter-action" style="display:none;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round"><path d="M12 2a10 10 0 0 1 0 20" fill="rgba(255,255,255,0.2)"/><path d="M12 2v20"/><path d="M12 6l-4-2m4 2l4-2"/><path d="M12 12l-5-2m5 2l5-2"/><path d="M12 18l-4-2m4 2l4-2"/></svg></button>
+  <button id="btn-snowball" class="winter-action" style="display:none;position:relative;"><svg id="snowball-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="10" fill="rgba(255,255,255,0.15)"/><path d="M12 2a10 10 0 0 1 0 20" fill="rgba(220,235,255,0.4)" stroke="none"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="12" y1="12" x2="4" y2="8"/><line x1="12" y1="12" x2="4" y2="16"/><line x1="5.5" y1="6.5" x2="8" y2="10"/><line x1="5.5" y1="17.5" x2="8" y2="14"/><line x1="4" y1="12" x2="8" y2="12"/></svg><div id="snowball-ring" style="display:none;position:absolute;inset:-12px;border-radius:50%;border:2px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.04);pointer-events:none;"></div></button>
 </div>
 <div id="aim-distance" style="display:none;position:fixed;top:70px;left:50%;transform:translateX(-50%);width:min(310px,calc(100vw - 24px));padding:8px 10px;background:rgba(25,35,45,.9);border-radius:12px;color:white;z-index:102;">
   <label for="throw-power" style="display:block;text-align:center;font-size:13px;">Throw distance <output id="throw-power-value">38%</output></label>
@@ -229,7 +229,7 @@ canvas { display: block; }
 <style>@media(pointer:coarse){#winter-actions{left:auto!important;right:12px;bottom:calc(110px + env(safe-area-inset-bottom,0px))!important;align-items:flex-end!important}.winter-action{min-height:48px;min-width:48px;touch-action:manipulation}#lever-zone{touch-action:none}} </style>
 <style>.winter-action{width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;padding:0}.winter-action:disabled{opacity:.45}.aim-panel-btn{padding:8px 12px;min-height:44px;border:1px solid rgba(255,255,255,0.3);border-radius:8px;background:rgba(255,255,255,0.1);color:white;cursor:pointer;font-size:13px}#snow-crosshair{position:fixed;display:none;width:24px;height:24px;border:4px solid #e32636;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:100}#snow-crosshair::before,#snow-crosshair::after{content:'';position:absolute;background:#e32636;border-radius:3px}#snow-crosshair::before{width:34px;height:4px;top:6px;left:-9px}#snow-crosshair::after{width:4px;height:34px;left:6px;top:-9px}</style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v179</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v180</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -243,7 +243,7 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=179';
+import { createWinter } from './winter.js?v=180';
 
 // --- SCREEN MANAGEMENT & NETWORKING ---
 const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
@@ -3733,7 +3733,7 @@ function animate() {
   }
   if (leverActive) {
     moveInput = leverY;
-    if (winter.aiming) strafeInput = -leverX;
+    // Walking joystick does NOT strafe in aim mode - that's controlled by the targeting joystick
     walkingToTent = false;
   }
 

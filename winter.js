@@ -662,11 +662,9 @@ export function createWinter(THREE, world) {
     skates = !skates; world.getPlayer().userData.skating = skates;
     refreshHints();
   }
-  // SVG icon definitions
-  const snowballIcon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round"><path d="M12 2a10 10 0 0 1 0 20" fill="rgba(255,255,255,0.2)"/><path d="M12 2v20"/><path d="M12 6l-4-2m4 2l4-2"/><path d="M12 12l-5-2m5 2l5-2"/><path d="M12 18l-4-2m4 2l4-2"/></svg>';
-  const crosshairIcon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>';
-  const skateIcon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round"><path d="M4 18h12c2 0 4-1.5 4-4v-1"/><path d="M4 18v-4c0-1 .5-2 2-2h6"/><ellipse cx="8" cy="18" rx="2" ry="1"/><ellipse cx="14" cy="18" rx="2" ry="1"/><line x1="16" y1="12" x2="16" y2="9"/><circle cx="16" cy="7" r="2"/></svg>';
-  const skateNoIcon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round"><path d="M4 18h12c2 0 4-1.5 4-4v-1"/><path d="M4 18v-4c0-1 .5-2 2-2h6"/><ellipse cx="8" cy="18" rx="2" ry="1"/><ellipse cx="14" cy="18" rx="2" ry="1"/><line x1="16" y1="12" x2="16" y2="9"/><circle cx="16" cy="7" r="2"/><line x1="4" y1="4" x2="20" y2="20" stroke="#e32636" stroke-width="2.5"/></svg>';
+  // SVG icon definitions - proper ice skate (boot with blade underneath)
+  const skateIcon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 19h14"/><path d="M2 19c0-3 2-5 6-5h4c2 0 4 1 4 3"/><path d="M16 17v-7c0-1-1-2-2-2h-1"/><path d="M10 8v2"/><path d="M6 10c0-2 2-4 4-4"/></svg>';
+  const skateNoIcon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 19h14"/><path d="M2 19c0-3 2-5 6-5h4c2 0 4 1 4 3"/><path d="M16 17v-7c0-1-1-2-2-2h-1"/><path d="M10 8v2"/><path d="M6 10c0-2 2-4 4-4"/><line x1="4" y1="4" x2="20" y2="20" stroke="#e32636" stroke-width="2.5"/></svg>';
   function refreshHints() {
     const next = [packing > 0, held, aiming, skates, inputMode].join(':');
     if (hintState === next) return;
@@ -803,11 +801,16 @@ export function createWinter(THREE, world) {
         enabled && peer.mesh.userData.skating, peer.isWalking && peer.interpT < 1);
       if (peer.torch?.visible) peer.mesh.userData.flashlightLens.getWorldPosition(peer.torch.position);
     }
-    aimButton.style.display = enabled && (inputMode !== 'touch' || held) ? 'flex' : 'none';
-    distancePanel.style.display = enabled && aiming && canAct ? 'block' : 'none';
+    // On mobile: no separate aim button, no distance slider - all controlled via snowball button joystick
+    const isMobile = inputMode === 'touch';
+    aimButton.style.display = enabled && !isMobile ? 'flex' : 'none';
+    distancePanel.style.display = enabled && aiming && canAct && !isMobile ? 'block' : 'none';
     skatesButton.style.display = enabled && (skates || player.userData.onIce) ? 'flex' : 'none';
     aimButton.disabled = !canAct;
     skatesButton.disabled = !canAct;
+    // Show joystick ring on snowball button when holding a snowball (mobile only)
+    const snowballRing = document.getElementById('snowball-ring');
+    if (snowballRing) snowballRing.style.display = isMobile && held && canAct ? 'block' : 'none';
     if (!enabled) return;
     const inverse = world.getRotation().clone().invert();
     flightObstacles = world.getObstacles();
