@@ -62,7 +62,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v188</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v189</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -218,19 +218,20 @@ canvas { display: block; }
 <div id="winter-actions" style="position:fixed;bottom:160px;left:24px;z-index:101;display:flex;flex-direction:column;align-items:flex-start;gap:8px;">
   <!-- Winter supplies shared SVG icons when the game initializes. -->
   <button id="btn-skates" class="winter-action" style="display:none;"></button>
-  <button id="btn-aim" class="winter-action" style="display:none;"></button>
-  <div id="snowball-ring" style="display:none;position:relative;width:80px;height:80px;border-radius:50%;border:2px solid rgba(100,140,180,0.4);background:rgba(30,50,70,0.5);"><button id="btn-snowball" class="winter-action" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);"></button></div>
+  <button id="btn-snowball" class="winter-action" style="display:none;"></button>
 </div>
 <style>@media(pointer:coarse){#winter-actions{left:auto!important;right:12px;bottom:calc(110px + env(safe-area-inset-bottom,0px))!important;align-items:flex-end!important}.winter-action{min-height:48px;min-width:48px;touch-action:manipulation}#lever-zone{touch-action:none}} </style>
 <style>.winter-action{width:48px;height:48px;border-radius:50%;background:rgba(30,50,70,0.7);border:2px solid rgba(100,140,180,0.4);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;padding:0;color:#ddd}.winter-action:disabled{opacity:.45}#snow-crosshair{position:fixed;display:none;width:34px;height:34px;color:#e32636;transform:translate(-50%,-50%);pointer-events:none;z-index:100}
 .winter-mode #btn-exit-world,.winter-mode #sidebar-toggle,.winter-mode #btn-pitch,.winter-mode #btn-flashlight,.winter-mode #btn-minigames,.winter-mode #lever-zone,.winter-mode #joystick-base{background:rgba(30,50,70,0.7)!important;border-color:rgba(100,140,180,0.4)!important}</style>
 <style>
-  #snowball-ring{box-sizing:border-box;flex-shrink:0;touch-action:none}
-  #btn-snowball{touch-action:none}
+  #btn-snowball{touch-action:manipulation}
+  #snow-crosshair{left:50%;top:50%}
+  .winter-mode #lever-track{display:none}
+  .winter-mode #joystick-base{display:block!important}
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v188</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v189</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -244,8 +245,7 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=188';
-import { createSnowballPointer } from './winter-input.js?v=186';
+import { createWinter } from './winter.js?v=189';
 
 // --- SCREEN MANAGEMENT & NETWORKING ---
 const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
@@ -1591,94 +1591,16 @@ window.receiveSnowball = winter.receive;
 window.receiveIceContact = winter.receiveIceContact;
 document.getElementById('btn-snowball').addEventListener('click', winter.action);
 document.getElementById('btn-skates').addEventListener('click', winter.toggleSkates);
-document.getElementById('btn-aim').addEventListener('click', () => winter.setAim(!winter.aimSelected));
-const snowballPointer = createSnowballPointer(winter);
-
-// Mobile targeting joystick - snowball button becomes a joystick when holding a snowball
-let targetingTouch = null;
-const snowballBtn = document.getElementById('btn-snowball');
-const targetingJoystickRange = 16; // How far the knob can move from center (ring is 80px, button is 48px)
-snowballBtn.addEventListener('touchstart', e => {
-  if (!winter.holding || targetingTouch) return;
-  e.preventDefault();
-  e.stopPropagation();
-  const touch = e.changedTouches[0];
-  targetingTouch = {
-    id: touch.identifier,
-    startX: touch.clientX,
-    startY: touch.clientY,
-    lastX: touch.clientX,
-    startPower: winter.power
-  };
-  winter.setAim(true);
-}, { passive: false });
-snowballBtn.addEventListener('touchmove', e => {
-  if (!targetingTouch) return;
-  e.preventDefault();
-  for (const touch of e.changedTouches) {
-    if (touch.identifier !== targetingTouch.id) continue;
-    // Calculate offset from start position
-    let dx = touch.clientX - targetingTouch.startX;
-    let dy = touch.clientY - targetingTouch.startY;
-    // Clamp to joystick range
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist > targetingJoystickRange) {
-      dx = dx / dist * targetingJoystickRange;
-      dy = dy / dist * targetingJoystickRange;
-    }
-    // Move the button visually inside its ring (keep base centering transform)
-    snowballBtn.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-    // Smooth continuous rotation - drag left turns left, drag right turns right
-    // invertX setting applies to camera panning, not aiming (user expects direct control)
-    const deltaX = touch.clientX - targetingTouch.lastX;
-    const turn = -deltaX * 0.006;  // Negative because positive deltaX = drag right = turn right = negative yaw
-    winter.turnAim(turn);
-    cameraAngle += turn;
-    cameraTargetAngle = cameraAngle;
-    // Smooth continuous power adjustment based on total Y offset
-    const powerRange = winter.powerMax - winter.powerMin;
-    // Raw vertical travel is independent of the knob's circular visual clamp.
-    // Preserve the starting strength; even a tiny sideways drag must not reset it.
-    const newPower = targetingTouch.startPower - (touch.clientY - targetingTouch.startY) * powerRange / 160;
-    winter.setPower(newPower);
-    targetingTouch.lastX = touch.clientX;
-  }
-}, { passive: false });
-snowballBtn.addEventListener('touchend', e => {
-  if (!targetingTouch) return;
-  for (const touch of e.changedTouches) {
-    if (touch.identifier !== targetingTouch.id) continue;
-    e.preventDefault();
-    // Throw the snowball
-    winter.action();
-    winter.setAim(false);
-    targetingTouch = null;
-    snowballBtn.style.transform = 'translate(-50%, -50%)';
-  }
-});
-snowballBtn.addEventListener('touchcancel', () => {
-  if (targetingTouch) {
-    winter.setAim(false);
-    targetingTouch = null;
-    snowballBtn.style.transform = 'translate(-50%, -50%)';
-  }
-});
 
 document.addEventListener('keydown', e => {
   if (!e.repeat && !e.target.closest('input, select, textarea, [contenteditable]')) {
-    if (['q', 'r'].includes(e.key.toLowerCase())) { e.preventDefault(); winter.action(); }
-    if (e.key === 'Escape') snowballPointer.cancel();
+    if (e.key.toLowerCase() === 'q') { e.preventDefault(); winter.action(); }
     if (e.key.toLowerCase() === 'c') { e.preventDefault(); winter.toggleSkates(); }
   }
 });
 renderer.domElement.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse') setInputMode('keyboard');
-  if (snowballPointer.down(e)) e.preventDefault();
 });
-window.addEventListener('pointermove', e => snowballPointer.move(e));
-window.addEventListener('pointerup', e => snowballPointer.up(e));
-window.addEventListener('pointercancel', () => snowballPointer.cancel());
-window.addEventListener('blur', () => snowballPointer.cancel());
 window.addEventListener('blur', () => {
   if (!winter.enabled) return;
   clearMovementInput(); isDragging = false; orbitTouchId = null; pinchStartDist = null;
@@ -1687,7 +1609,6 @@ window.addEventListener('touchcancel', () => {
   if (!winter.enabled) return;
   clearMovementInput(); orbitTouchId = null; pinchStartDist = null;
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden) snowballPointer.cancel(); });
 
 // --- PLAYER TERRAIN FOLLOWING ---
 const raycaster = new THREE.Raycaster();
@@ -2413,8 +2334,8 @@ function updateLever(touch) {
   const cy = rect.top + rect.height / 2;
   let dy = touch.clientY - cy;
   let dx = touch.clientX - cx;
-  // Walking lever is always vertical-only in pan mode (aiming doesn't change this)
-  if (controlMode === 'pan') {
+  // Winter uses a conventional movement stick: forward/back and strafe.
+  if (controlMode === 'pan' && !winter.enabled) {
     if (dy > leverRange) dy = leverRange;
     if (dy < -leverRange) dy = -leverRange;
     leverY = dy / leverRange;
@@ -2444,7 +2365,7 @@ Object.defineProperty(window, 'cameraAngle', { get: () => cameraAngle });
 let cameraDistance = 6;
 let cameraHeight = 6;
 let cameraManual = false;
-let aimViewBlend = 0, cameraGroundY = null, aimCameraPitch = 0.3, aimPointerY = null;
+let cameraGroundY = null, cameraLookPitch = 0;
 let lastTouchAngle = null;
 let pinchStartDist = null;
 let pinchStartZoom = null;
@@ -2469,24 +2390,24 @@ window.addEventListener('blur', () => { aimPointerPosition = null; });
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('mousedown', (e) => {
   if (e.target !== renderer.domElement) return;
-  if (winter.aimSelected || (winter.enabled && e.button === 2)) return;
+  if (winter.enabled && lastInputMode === 'keyboard') return;
   isDragging = true;
   dragStartX = e.clientX;
   dragStartAngle = cameraAngle;
   dragStartY = e.clientY;
   dragStartHeight = cameraHeight;
 });
-// Cancelling secondary pointerdown can suppress compatibility mouse events.
-// Pointer movement still arrives while right-click is held, including trackpads.
+// Pointer events support mouse and trackpad look, including right-button drags.
 window.addEventListener('pointermove', (e) => {
   if (e.pointerType !== 'mouse') return;
   const dxAim = aimPointerPosition ? e.clientX - aimPointerPosition.x : 0;
   const dyAim = aimPointerPosition ? e.clientY - aimPointerPosition.y : 0;
   aimPointerPosition = { x: e.clientX, y: e.clientY };
-  if (winter.aimSelected && lastInputMode === 'keyboard') {
-    aimPointerY = e.clientY;
-    winter.turnAim(dxAim * 0.006 * (invertX ? -1 : 1));
-    winter.adjustAim(-dyAim * 0.004);
+  if (winter.enabled && lastInputMode === 'keyboard' && e.target === renderer.domElement &&
+      !isSleeping && sittingFireId === null && !minigamesOpen) {
+    cameraAngle += dxAim * 0.006 * (invertX ? -1 : 1);
+    cameraTargetAngle = cameraAngle;
+    cameraLookPitch = THREE.MathUtils.clamp(cameraLookPitch - dyAim * 0.004, -0.65, 1.35);
     return;
   }
   if (!isDragging) return;
@@ -2563,9 +2484,10 @@ renderer.domElement.addEventListener('touchmove', (e) => {
   }
   for (const touch of e.changedTouches) {
     if (touch.identifier === orbitTouchId) {
-      if (winter.aimSelected) {
-        winter.turnAim((touch.clientX - orbitStartX) * 0.006 * (invertX ? -1 : 1));
-        winter.adjustAim((orbitStartY - touch.clientY) * 0.004);
+      if (winter.enabled) {
+        cameraAngle += (touch.clientX - orbitStartX) * 0.006 * (invertX ? -1 : 1);
+        cameraTargetAngle = cameraAngle;
+        cameraLookPitch = THREE.MathUtils.clamp(cameraLookPitch + (orbitStartY - touch.clientY) * 0.004, -0.65, 1.35);
         orbitStartX = touch.clientX; orbitStartY = touch.clientY;
         continue;
       }
@@ -3397,7 +3319,7 @@ renderer.domElement.addEventListener('pointermove', e => {
 renderer.domElement.addEventListener('pointercancel', () => { if (lastMouseDownPos) lastMouseDownPos.dragged = true; });
 
 renderer.domElement.addEventListener('click', (e) => {
-  if (e.button !== 0 || targetingTouch) return;
+  if (e.button !== 0) return;
   const ownModel = campModels.get(localPlayerId);
   
   // Ignore if this was a drag (moved more than 10px or held longer than 300ms)
@@ -3408,14 +3330,12 @@ renderer.domElement.addEventListener('click', (e) => {
     const duration = performance.now() - lastMouseDownTime;
     if (lastMouseDownPos.dragged || dist > 10 || duration > 500) return;
   }
-  // A click is a shot/reload only after release: trackpad taps work and a
-  // camera drag cannot accidentally fire. Manual aim keeps its exact direction.
-  if (winter.aimSelected) { winter.action(); return; }
+  // Clicks and taps fire through the center crosshair, never toward the pointer.
+  if (winter.holding) { winter.action(); return; }
   
   tapMouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   tapMouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
   tapRaycaster.setFromCamera(tapMouse, camera);
-  if (winter.holding && winter.interact(tapRaycaster)) return;
   
   const targets = ownModel ? [ownModel.tent] : [];
   const fires = new Map();
@@ -3681,7 +3601,6 @@ function animate() {
     gamepadMoveX = lx;
     gamepadLookX = rx;
     gamepadLookY = ry;
-    if (lastInputMode === 'gamepad') winter.setAim(!!gp.buttons[6]?.pressed);
     const snowPressed = !!gp.buttons[7]?.pressed;
     if (snowPressed && !gamepadState.snowWasPressed) winter.action();
     gamepadState.snowWasPressed = snowPressed;
@@ -3700,7 +3619,6 @@ function animate() {
     else if (!gp.buttons[3]?.pressed) gamepadState.yWasPressed = false;
     break; // Use first connected gamepad
   }
-  if (lastInputMode === 'gamepad' && !gamepads.some(gp => gp)) winter.setAim(false);
   
   // If minigames modal is open, handle navigation there instead
   if (minigamesOpen) {
@@ -3751,7 +3669,7 @@ function animate() {
     if (gamepadDpadDown) cameraDistance = Math.min(60, cameraDistance + delta * 15);
     // Right stick Y = tilt camera
     if (gamepadLookY) {
-      if (winter.aimSelected) winter.adjustAim(-gamepadLookY * delta * 1.3);
+      if (winter.enabled) cameraLookPitch = THREE.MathUtils.clamp(cameraLookPitch - gamepadLookY * delta * 1.3, -0.65, 1.35);
       else cameraHeight = Math.max(1, Math.min(12, cameraHeight + gamepadLookY * delta * 8));
     }
   }
@@ -3772,7 +3690,7 @@ function animate() {
   // A/D always strafe (keyboard); arrows turn camera in pan mode
   if (keys['a']) strafeInput = -1;
   if (keys['d']) strafeInput = 1;
-  if (winter.aimSelected) {
+  if (winter.enabled) {
     if (gamepadMoveX) strafeInput = gamepadMoveX;
     if (keys['arrowleft']) strafeInput = -1;
     if (keys['arrowright']) strafeInput = 1;
@@ -3788,12 +3706,11 @@ function animate() {
   }
   if (gamepadLookX) {
     const turn = gamepadLookX * 2.5 * delta * (invertX ? -1 : 1);
-    if (winter.aimSelected) winter.turnAim(turn);
-    else cameraAngle += turn;
+    cameraAngle += turn;
   }
   if (leverActive) {
     moveInput = leverY;
-    // Walking joystick does NOT strafe in aim mode - that's controlled by the targeting joystick
+    strafeInput = leverX;  // Virtual joystick X always strafes
     walkingToTent = false;
   }
 
@@ -3850,23 +3767,19 @@ function animate() {
   const movementLocked = isSleeping || sittingFireId !== null;
   if (movementLocked) { moveInput = strafeInput = 0; playerBounceState = null; }
 
-  // Control mode: pan = camera angle drives facing, joystick = leverX turns character
+  // Control mode: pan = camera angle drives facing, joystick = camera follows player
   if (movementLocked) {
     if (sittingFireId !== null) {
       const towardFire = fireDirection(sittingFireId)?.applyQuaternion(globeRotation);
       if (towardFire) playerFacing = Math.atan2(towardFire.x, towardFire.z);
     }
-  } else if (winter.aimSelected) {
-    playerFacing = winter.facing;
-    cameraAngle = playerFacing - Math.PI;
-    cameraTargetAngle = cameraAngle;
+  } else if (winter.enabled) {
+    playerFacing = cameraAngle + Math.PI;
   } else if (controlMode === 'pan') {
     playerFacing = cameraAngle + Math.PI;
   } else {
-    if (leverActive && Math.abs(leverX) > 0.1) {
-      playerFacing -= leverX * 2.5 * delta;
-    }
-    // Camera follows behind player in joystick mode (unless free-looking)
+    // Joystick mode: camera follows behind player (unless free-looking)
+    // Player turns via arrow keys, not leverX (leverX now strafes)
     const isFreeLooking = isDragging || orbitTouchId !== null;
     if (!isFreeLooking) {
       const targetCamAngle = playerFacing - Math.PI;
@@ -3886,7 +3799,7 @@ function animate() {
   const isWalking = !movementLocked && (Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1 || walkingToTent || !!walkingToFire);
   const moveSpeed = (player.userData.swimming ? SWIM_SPEED : 0.2) * delta;
 
-  const moveFacing = winter.aimSelected ? winter.moveFacing() : playerFacing;
+  const moveFacing = playerFacing;
   const iceMotion = winter.movement(moveInput, strafeInput, moveFacing, delta,
     movementLocked || !!playerBounceState || walkingToTent || !!walkingToFire || minigamesOpen);
   if (!movementLocked && !playerBounceState && (Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1 || iceMotion.lengthSq() > 0.000001)) {
@@ -4028,30 +3941,27 @@ function animate() {
   resetSwimLimbs(player);
 
   // Camera: cameraHeight is tilt (1=ground level, 12=overhead), cameraDistance is total distance
-  if (!winter.aimSelected || lastInputMode !== 'keyboard') aimPointerY = null;
-  if (aimPointerY !== null && aimPointerY < 24) winter.adjustAim((1 - Math.max(0, aimPointerY) / 24) * delta * 0.25);
-  aimViewBlend = THREE.MathUtils.lerp(aimViewBlend, winter.aimSelected && !movementLocked ? 1 : 0, 1 - Math.exp(-8 * delta));
-  aimCameraPitch = THREE.MathUtils.lerp(aimCameraPitch, winter.pitch, 1 - Math.exp(-10 * delta));
-  const tiltFraction = THREE.MathUtils.lerp(cameraHeight / 12, Math.max(cameraHeight / 12, 0.65), aimViewBlend);
-  const viewDistance = cameraDistance + 2 * aimViewBlend;
+  const tiltFraction = cameraHeight / 12;
+  const viewDistance = cameraDistance + 1;
   const playerY = player.userData.groundY ?? player.position.y;
   cameraGroundY = cameraGroundY === null || !winter.enabled ? playerY
     : THREE.MathUtils.lerp(cameraGroundY, playerY, 1 - Math.exp(-10 * delta));
   const camY = cameraGroundY + tiltFraction * viewDistance;
   const camHorizDist = viewDistance * (1 - tiltFraction * 0.85);
-  const camX = Math.sin(cameraAngle) * camHorizDist + Math.cos(cameraAngle) * 0.7 * aimViewBlend;
-  const camZ = Math.cos(cameraAngle) * camHorizDist - Math.sin(cameraAngle) * 0.7 * aimViewBlend;
+  const shoulderOffset = winter.enabled && !movementLocked ? 0.65 : 0;
+  const camX = Math.sin(cameraAngle) * camHorizDist + Math.cos(cameraAngle) * shoulderOffset;
+  const camZ = Math.cos(cameraAngle) * camHorizDist - Math.sin(cameraAngle) * shoulderOffset;
   camera.position.set(camX, camY, camZ);
-  camera.lookAt(-Math.sin(cameraAngle) * aimViewBlend, cameraGroundY + 1, -Math.cos(cameraAngle) * aimViewBlend);
-  // Keep ordinary distance throws in view; gently lift the camera only for
-  // steeper uphill shots. Cap the lift so it cannot swing away from the ground.
-  camera.rotateX(THREE.MathUtils.clamp((aimCameraPitch - 0.55) * 0.55, 0, 0.4) * aimViewBlend);
+  // Frame above the camper's head and slightly farther back. Looking up/down
+  // directly rotates the camera; there is no independent snowball aim angle.
+  camera.lookAt(0, cameraGroundY + 2.1, 0);
+  if (winter.enabled && !movementLocked) camera.rotateX(cameraLookPitch);
   camera.updateMatrixWorld(true);
   atmosMat.uniforms.viewVector.value.copy(camera.position);
 
-  const isKeyTurning = keys['a'] || keys['d'] || keys['arrowleft'] || keys['arrowright'];
+  const isKeyTurning = keys['arrowleft'] || keys['arrowright'];  // A/D now strafe, arrows turn
   const isCameraPanTurning = (isDragging || orbitTouchId !== null) && controlMode === 'pan';
-  const isTurning = !movementLocked && (isCameraPanTurning || isKeyTurning || (controlMode === 'joystick' && leverActive && Math.abs(leverX) > 0.1));
+  const isTurning = !movementLocked && (isCameraPanTurning || isKeyTurning);
 
   if (isWalking || isTurning) {
     walkCycle += delta * (isWalking ? 8 : 12);

@@ -1,7 +1,4 @@
-import { Line2 } from 'three/addons/lines/Line2.js';
-import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
-import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
-import { iceImpulse, advanceOrbit, targetThrows } from './winter-physics.js?v=186';
+import { iceImpulse, advanceOrbit } from './winter-physics.js?v=189';
 
 // Winter coordinates are planet-local: tracks and projectiles stay put as campers walk.
 export function createWinter(THREE, world) {
@@ -11,18 +8,14 @@ export function createWinter(THREE, world) {
   const iceRadius = waterRadius + 0.05; // 25 cm shell: 5 cm above water, 20 cm below.
   let enabled = false, cover = 0.75, snowfall = 0.4, elapsed = 0;
   let held = false, packing = 0, lastAction = -10, throwPose = 0;
-  let aiming = false, aimSelected = false, aimPitch = 0.3, aimYaw = 0, inputMode = 'keyboard', skates = false;
+  let inputMode = 'keyboard', skates = false;
   let hintState = '';
   const BALL_RADIUS = 0.08, FLIGHT_STEP = 1 / 60, GRAVITY_MU = 12 * radius * radius;
-  let throwPower = 9.5;
+  const throwPower = 20;
   const velocity = new THREE.Vector2();
   const button = document.getElementById('btn-snowball');
-  const aimButton = document.getElementById('btn-aim');
   const skatesButton = document.getElementById('btn-skates');
   const crosshair = document.getElementById('snow-crosshair');
-  function setPower(value) {
-    throwPower = THREE.MathUtils.clamp(value, 3, 20);
-  }
   const snowAmount = { value: 0 };
   // Small static terrain patches let raycasts reject most of the globe cheaply.
   // This matters for dense snowfall and full-orbit previews; triangles stay exact.
@@ -407,18 +400,22 @@ export function createWinter(THREE, world) {
   }
   function throwState() {
     const inverse = world.getRotation().clone().invert();
-    const facing = aimSelected ? aimYaw : world.getFacing();
-    const forward = new THREE.Vector3(Math.sin(facing), 0, Math.cos(facing));
-    const pitch = aimSelected ? aimPitch : 0.3;
+    const facing = world.getFacing();
     const player = world.getPlayer(), ball = player.userData.winterEquipment?.ball;
     const hand = ball ? ball.getWorldPosition(new THREE.Vector3())
       : new THREE.Vector3(-0.25, 0.7, 0.3).applyAxisAngle(up, facing).add(player.position);
-    return {
-      position: hand.applyQuaternion(inverse),
-      velocity: forward.multiplyScalar(Math.cos(pitch) * throwPower).addScaledVector(up, Math.sin(pitch) * throwPower).applyQuaternion(inverse),
-    };
+    // Converge the hand's launch direction on the camera's center ray, never
+    // on a clicked player or a predicted impact. Gravity still affects flight.
+    const centerRay = new THREE.Raycaster();
+    centerRay.setFromCamera(new THREE.Vector2(0, 0), world.camera);
+    const hit = pointerHit(centerRay);
+    const viewDirection = world.camera.getWorldDirection(new THREE.Vector3());
+    const target = hit && hit.point.clone().sub(hand).dot(viewDirection) > 0.2
+      ? hit.point : hand.clone().addScaledVector(viewDirection, 30);
+    return { position: hand.clone().applyQuaternion(inverse),
+      velocity: target.clone().sub(hand).normalize().multiplyScalar(throwPower).applyQuaternion(inverse) };
   }
-  function action(targetPoint) {
+  function action() {
     if (!enabled || !world.canAct() || elapsed - lastAction < 0.3 || packing > 0) return;
     const player = world.getPlayer();
     if (!held) {
@@ -428,61 +425,26 @@ export function createWinter(THREE, world) {
       }
       packing = 0.55; lastAction = elapsed; return;
     }
-    const shot = targetPoint?.isVector3 ? targetedShot(targetPoint) : throwState();
+    const shot = throwState();
     held = false; lastAction = elapsed; throwPose = 0.3;
-    syncAim();
+    updateCrosshair();
     launch(world.localId, shot.position, shot.velocity);
     world.send({ type: 'snowball', position: shot.position.toArray(), velocity: shot.velocity.toArray() });
   }
-  function targetedShot(worldTarget) {
-    const shot = throwState(), inverse = world.getRotation().clone().invert();
-    const target = worldTarget.clone().applyQuaternion(inverse);
-    const solutions = targetThrows(shot.position, target, GRAVITY_MU);
-    flightObstacles = world.getObstacles();
-    for (const solution of solutions) {
-      const speed = new THREE.Vector3(solution.velocity.x, solution.velocity.y, solution.velocity.z);
-      let position = shot.position.clone(), blocked = false;
-      for (let i = 0; i < solution.steps; i++) {
-        const next = advanceFlight(position, speed);
-        const hit = flightHit(position, next, i < 24 ? world.localId : null, inverse);
-        if (hit) {
-          blocked = hit.point.distanceTo(target) > 0.5;
-          break;
-        }
-        position = next;
-      }
-      if (!blocked) {
-        shot.velocity.set(solution.velocity.x, solution.velocity.y, solution.velocity.z);
-        return shot;
-      }
-    }
-    // If cover blocks every arc, still throw toward the chosen point. No
-    // homing, wall penetration, or alteration of normal projectile collisions.
-    if (solutions.length) {
-      const v = solutions[0].velocity;
-      shot.velocity.set(v.x, v.y, v.z);
-    } else {
-      shot.velocity.copy(target).sub(shot.position).normalize().multiplyScalar(20);
-    }
-    return shot;
-  }
-  function interact(pointerRay) {
-    if (!enabled || !world.canAct()) return false;
+  function pointerHit(pointerRay) {
     const campers = Object.values(world.getPeers()).map(peer => peer.mesh).filter(mesh => mesh.visible);
     const roots = [globe, ice, ...trees.map(tree => tree.obj), ...world.getObstacles(), ...campers].filter(mesh => mesh.visible);
-    const hit = pointerRay.intersectObjects(roots, true).find(hit => {
+    return pointerRay.intersectObjects(roots, true).find(hit => {
       if (hit.object.isSprite) return false;
       for (let mesh = hit.object; mesh; mesh = mesh.parent) if (!mesh.visible) return false;
       return true;
     });
+  }
+  function interact(pointerRay) {
+    if (!enabled || !world.canAct()) return false;
+    if (held) { action(); return true; }
+    const hit = pointerHit(pointerRay);
     if (!hit) return false;
-    if (held) {
-      let camper = hit.object;
-      while (camper && !campers.includes(camper)) camper = camper.parent;
-      const target = camper ? camper.position.clone().addScaledVector(camper.position.clone().normalize(), 0.65) : hit.point;
-      action(target);
-      return true;
-    }
     const direction = hit.point.clone().applyQuaternion(world.getRotation().clone().invert()).normalize();
     if (hit.object !== globe || cover * exposureAt(direction) < 0.08) return false;
     action();
@@ -501,7 +463,7 @@ export function createWinter(THREE, world) {
   const flightRay = new THREE.Raycaster();
   const iceBounds = new THREE.Sphere(new THREE.Vector3(), iceRadius);
   let flightObstacles = [];
-  // Preview and real throws use this same swept collision and fixed timestep.
+  // Swept collisions and a fixed timestep keep fast throws from tunneling.
   function flightHit(from, to, owner, inverse) {
     if (Math.min(from.length(), to.length()) > radius + 12) return null;
     const travel = to.clone().sub(from), length = travel.length();
@@ -537,82 +499,9 @@ export function createWinter(THREE, world) {
     advanceOrbit(next, speed, FLIGHT_STEP, GRAVITY_MU);
     return next;
   }
-  const PREVIEW_STEPS = 240;
-  const arcGeo = new LineGeometry().setPositions(new Float32Array((PREVIEW_STEPS + 1) * 3));
-  const arc = new Line2(arcGeo, new LineMaterial({ color: 0xe32636, linewidth: 5, dashed: true,
-    dashSize: 0.24, gapSize: 0.16, alphaToCoverage: true, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
-  arc.renderOrder = 1000;
-  arc.computeLineDistances();
-  arcGeo.instanceCount = 0;
-  arc.frustumCulled = false; arc.visible = false; globePivot.add(arc);
-  let impactPoint = null;
-  let preview = null;
-  const previewPoints = new Float32Array((PREVIEW_STEPS + 1) * 3);
-  const previewDistances = new Float32Array(PREVIEW_STEPS + 1);
-  function updateAim(inverse) {
-    arc.visible = enabled && aiming && held && world.canAct();
-    arc.material.resolution.set(innerWidth, innerHeight);
-    crosshair.style.display = 'none';
-    if (!arc.visible) return;
-    {
-      const shot = throwState();
-      preview = { position: shot.position, velocity: shot.velocity, count: 0, distance: 0 };
-      previewPoints.set(shot.position.toArray(), 0); previewDistances[0] = 0;
-    }
-    if (preview) {
-      // A bounded, complete forecast of this frame's exact input. Delaying or
-      // spreading it over frames makes precise drags look like snapped aim.
-      for (let work = 0; work < PREVIEW_STEPS; work++) {
-        const i = preview.count, next = advanceFlight(preview.position, preview.velocity);
-        const hit = flightHit(preview.position, next, i < 24 ? world.localId : null, inverse);
-        if (hit) next.copy(hit.point);
-        preview.distance += next.distanceTo(preview.position);
-        preview.count++; preview.position = next;
-        previewPoints.set(next.toArray(), preview.count * 3);
-        previewDistances[preview.count] = preview.distance;
-        if (hit || preview.count === PREVIEW_STEPS) {
-          const { instanceStart: starts, instanceEnd: ends, instanceDistanceStart: distances, instanceDistanceEnd: endDistances } = arcGeo.attributes;
-          for (let j = 0; j < preview.count; j++) {
-            starts.setXYZ(j, previewPoints[j * 3], previewPoints[j * 3 + 1], previewPoints[j * 3 + 2]);
-            ends.setXYZ(j, previewPoints[j * 3 + 3], previewPoints[j * 3 + 4], previewPoints[j * 3 + 5]);
-            distances.setX(j, previewDistances[j]); endDistances.setX(j, previewDistances[j + 1]);
-          }
-          arcGeo.instanceCount = preview.count;
-          starts.data.needsUpdate = distances.data.needsUpdate = true;
-          impactPoint = hit ? next.clone() : null;
-          preview = null;
-          break;
-        }
-      }
-    }
-    {
-      // The forecast never controls the camera or the movement basis.
-      const shot = throwState();
-      const target = impactPoint ?? shot.position.addScaledVector(shot.velocity.normalize(), 4);
-      const screen = target.clone().applyQuaternion(world.getRotation()).project(world.camera);
-      if (screen.z >= -1 && screen.z <= 1 && Math.abs(screen.x) < 1 && Math.abs(screen.y) < 1) {
-        crosshair.style.display = 'block';
-        crosshair.style.left = `${(screen.x * 0.5 + 0.5) * innerWidth}px`;
-        crosshair.style.top = `${(-screen.y * 0.5 + 0.5) * innerHeight}px`;
-      }
-    }
+  function updateCrosshair() {
+    crosshair.style.display = enabled && held && world.canAct() ? 'block' : 'none';
   }
-  function setAim(value) {
-    const next = !!value && enabled && world.canAct() && (held || aimSelected);
-    if (next && !aimSelected) aimYaw = world.getCameraAngle() + Math.PI;
-    aimSelected = next;
-    syncAim();
-  }
-  function syncAim() {
-    const next = aimSelected && held;
-    if (next !== aiming) {
-      aiming = next; preview = null; impactPoint = null;
-      arcGeo.instanceCount = 0; refreshHints();
-    }
-    if (!aiming) { arc.visible = false; crosshair.style.display = 'none'; }
-  }
-  function adjustAim(change) { aimPitch = THREE.MathUtils.clamp(aimPitch + change, -0.65, 1.4); }
-  function turnAim(change) { aimYaw = THREE.MathUtils.euclideanModulo(aimYaw + change + Math.PI, Math.PI * 2) - Math.PI; }
   const scoreTextures = new Map(), scoreFloats = [];
   function removeScore(index) {
     const { sprite } = scoreFloats[index];
@@ -777,33 +666,28 @@ export function createWinter(THREE, world) {
   // Only the solid half has an arc; the flake half has three branching arms.
   button.innerHTML = icon('<path d="M12 2a10 10 0 0 1 0 20Z" fill="currentColor" fill-opacity=".3"/><path d="M12 2v20M12 12L3.34 7M12 12l-8.66 5M12 6l-3-2M12 18l-3 2M6.8 9l-.2-3.5M6.8 9l-3.2 1.5M6.8 15l-3.2-1.5M6.8 15l-.2 3.5"/>');
   const targetIcon = icon('<circle cx="12" cy="12" r="7"/><path d="M12 1v22M1 12h22"/>');
-  aimButton.innerHTML = crosshair.innerHTML = targetIcon;
-  const aimHint = document.createElement('span'), actionHint = document.createElement('span');
-  aimHint.className = actionHint.className = 'winter-hint';
-  aimButton.append(aimHint); button.append(actionHint);
-  button.setAttribute('aria-label', 'Pack snowball; drag to aim and release to throw');
-  aimButton.setAttribute('aria-label', 'Aim snowball');
+  crosshair.innerHTML = targetIcon;
+  const actionHint = document.createElement('span');
+  actionHint.className = 'winter-hint';
+  button.append(actionHint);
+  button.setAttribute('aria-label', 'Load or throw snowball');
   skatesButton.setAttribute('aria-label', 'Toggle ice skates');
   function refreshHints() {
-    const next = [packing > 0, held, aimSelected, skates, inputMode].join(':');
+    const next = [packing > 0, held, skates, inputMode].join(':');
     if (hintState === next) return;
     hintState = next;
     // Update button icons - only skates changes based on state
     skatesButton.innerHTML = skates ? skateNoIcon : skateIcon;
     // Update border colors to indicate active states
     button.style.borderColor = packing > 0 ? '#f0c040' : 'rgba(255,255,255,0.15)';
-    aimButton.style.borderColor = aimSelected ? '#f0c040' : 'rgba(255,255,255,0.15)';
     skatesButton.style.borderColor = skates ? '#f0c040' : 'rgba(255,255,255,0.15)';
-    aimHint.textContent = 'L';
-    actionHint.textContent = inputMode === 'keyboard' && aimSelected ? 'L/R' : 'R';
-    aimHint.style.display = actionHint.style.display = inputMode === 'touch' ? 'none' : 'block';
-    aimButton.title = inputMode === 'gamepad' ? 'Left trigger: hold to aim' : 'Left-click: toggle aim. Right-click also enters aim. Esc: exit.';
-    button.title = inputMode === 'gamepad' ? 'Right trigger: load / throw' : 'Right-click or R: load / throw. In manual aim, left-click also loads / throws.';
-    aimButton.setAttribute('aria-pressed', String(aimSelected));
+    actionHint.textContent = inputMode === 'gamepad' ? 'RT' : 'L';
+    actionHint.style.display = inputMode === 'touch' ? 'none' : 'block';
+    button.title = inputMode === 'gamepad' ? 'Right trigger: load / throw. Right stick: look.' : 'Left-click: load / throw. Move the camera to aim at the center crosshair.';
     skatesButton.setAttribute('aria-pressed', String(skates));
   }
   function updateHints(mode) {
-    if (inputMode !== mode) { inputMode = mode; setAim(false); }
+    inputMode = mode;
     refreshHints();
   }
   function configure(state) {
@@ -823,7 +707,7 @@ export function createWinter(THREE, world) {
     if (wasEnabled !== enabled) {
       clearTracks(); velocity.set(0, 0); held = false; packing = 0;
       for (const id of skateTracks.keys()) disposeCuts(id);
-      if (!enabled) { skates = false; world.getPlayer().userData.skating = false; setAim(false); }
+      if (!enabled) { skates = false; world.getPlayer().userData.skating = false; }
       for (const flake of flakes) flake.live = false;
       flakeWeather.fill(0); flakePositions.fill(0); floorCache.clear(); flakeCursor = 0;
       flakeGeo.attributes.position.needsUpdate = flakeGeo.attributes.weather.needsUpdate = true;
@@ -832,9 +716,8 @@ export function createWinter(THREE, world) {
       while (scoreFloats.length) removeScore(0);
     }
     if (cover === 0 && wasCover > 0) clearTracks();
-    // Ring container shows when winter enabled (it contains the snowball button)
-    const snowballRing = document.getElementById('snowball-ring');
-    snowballRing.style.display = enabled ? 'flex' : 'none';
+    button.style.display = enabled ? 'flex' : 'none';
+    updateCrosshair();
     refreshHints();
   }
   const iceContacts = new Map();
@@ -915,7 +798,7 @@ export function createWinter(THREE, world) {
     spray.visible = enabled;
     const player = world.getPlayer();
     const canAct = world.canAct();
-    if (!canAct) { packing = 0; setAim(false); }
+    if (!canAct) packing = 0;
     equip(player, enabled && held && canAct, enabled && skates, velocity.lengthSq() > 0.0001);
     for (const peer of Object.values(world.getPeers())) {
       const fresh = performance.now() - peer.motionReceivedAt < 2000;
@@ -923,19 +806,8 @@ export function createWinter(THREE, world) {
         enabled && peer.mesh.userData.skating, peer.isWalking && peer.interpT < 1);
       if (peer.torch?.visible) peer.mesh.userData.flashlightLens.getWorldPosition(peer.torch.position);
     }
-    // Touch aiming lives in the snowball joystick.
-    const isMobile = inputMode === 'touch';
-    aimButton.style.display = enabled && !isMobile ? 'flex' : 'none';
     skatesButton.style.display = enabled && (skates || player.userData.onIce) ? 'flex' : 'none';
-    aimButton.disabled = !canAct || (!held && !aimSelected);
     skatesButton.disabled = !canAct;
-    // Reserve a fixed touch footprint so state changes cannot move the base.
-    const snowballRing = document.getElementById('snowball-ring');
-    const showJoystick = isMobile && held && canAct;
-    snowballRing.style.width = isMobile ? '80px' : '48px';
-    snowballRing.style.height = isMobile ? '80px' : '48px';
-    snowballRing.style.background = showJoystick ? 'rgba(30,50,70,0.5)' : 'transparent';
-    snowballRing.style.border = `2px solid ${showJoystick ? 'rgba(100,140,180,0.4)' : 'transparent'}`;
     if (!enabled) return;
     const inverse = world.getRotation().clone().invert();
     flightObstacles = world.getObstacles();
@@ -988,7 +860,7 @@ export function createWinter(THREE, world) {
     if (packing > 0) {
       packing -= delta;
       player.userData.leftArm.rotation.x = player.userData.rightArm.rotation.x = -1.1;
-      if (packing <= 0) { held = true; syncAim(); }
+      if (packing <= 0) held = true;
     }
     if (throwPose > 0) { throwPose -= delta; player.userData.rightArm.rotation.x = -2.2 * Math.max(0, throwPose / 0.3); }
     refreshHints();
@@ -1005,23 +877,15 @@ export function createWinter(THREE, world) {
       disposeCuts(id);
       iceContacts.delete(id);
     }
-    updateAim(inverse);
+    updateCrosshair();
     updateBalls(delta, inverse);
     updateScores(delta);
   }
-  return { configure, movement, update, action, interact, receive, setAim, adjustAim, turnAim, updateHints, toggleSkates,
-    collide, receiveIceContact, sharedVelocity, setPower,
-    moveFacing() {
-      return world.getCameraAngle() + Math.PI;
-    },
-    get facing() { return aimYaw; },
-    get pitch() { return aimPitch; },
-    get aimSelected() { return aimSelected; },
+  return { configure, movement, update, action, interact, receive, updateHints, toggleSkates,
+    collide, receiveIceContact, sharedVelocity,
     get snowy() { return enabled && (cover > 0 || snowfall > 0); },
-    stop: () => velocity.set(0, 0), get aiming() { return aiming; },
+    stop: () => velocity.set(0, 0),
     get holding() { return enabled && held && world.canAct(); },
     get skating() { return enabled && skates; },
-    get enabled() { return enabled; }, iceRadius,
-    get power() { return throwPower; },
-    powerMin: 3, powerMax: 20 };
+    get enabled() { return enabled; }, iceRadius };
 }
