@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v158</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v159</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -131,10 +131,6 @@ canvas { display: block; }
         <div style="color:#888;font-size:12px;margin-top:4px;font-family:system-ui,sans-serif;">Mini games will be added here</div>
       </div>
     </div>
-    <div style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.1);color:#666;font-size:11px;font-family:system-ui,sans-serif;text-align:center;">
-      <span id="minigames-hint-gamepad" style="display:none;">D-pad to navigate • A to select • B to close</span>
-      <span id="minigames-hint-keyboard">Arrow keys to navigate • Enter to select • Esc to close</span>
-    </div>
   </div>
 </div>
 
@@ -201,7 +197,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v158</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v159</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -271,13 +267,14 @@ function clearSession() {
 const mpLogs = [];
 function mpLog(msg, debugOnly = false) {
   if (debugOnly && !DEBUG_MODE) return;
+  console.log('[MP]', msg);
+  if (!DEBUG_MODE) return;
   mpLogs.push(msg);
   if (mpLogs.length > 20) mpLogs.shift();
   const el = document.getElementById('mp-status');
   if (el) {
-    const visibleLogs = DEBUG_MODE ? mpLogs.slice(-5) : mpLogs.filter((_, i) => i >= mpLogs.length - 5);
-    el.textContent = visibleLogs.join('\n');
-    el.style.display = visibleLogs.length > 0 ? 'block' : 'none';
+    el.textContent = mpLogs.slice(-5).join('\n');
+    el.style.display = mpLogs.length > 0 ? 'block' : 'none';
   }
 }
 let roomId = null;
@@ -348,7 +345,7 @@ window.__mp = { peerConnections, dataChannels, pendingCandidates, get signalingW
 
 function networkError(error) {
   console.error(error);
-  mpLog(error.message);
+  showToast(error.message);
 }
 
 async function createRoom() {
@@ -372,7 +369,7 @@ document.getElementById('btn-create-room').addEventListener('click', () => creat
 document.getElementById('btn-join-room').addEventListener('click', async () => {
   const code = document.getElementById('input-room-code').value.trim().toLowerCase();
   if (!/^[a-f0-9]{12}$/.test(code)) {
-    mpLog('Enter the 12-character world code.');
+    showToast('Enter the 12-character world code.');
     return;
   }
   const button = document.getElementById('btn-join-room');
@@ -382,7 +379,7 @@ document.getElementById('btn-join-room').addEventListener('click', async () => {
   button.disabled = false;
   button.textContent = 'Join';
   if (!resp || !resp.ok) {
-    mpLog('World not found. Check the code and try again.');
+    showToast('World not found. Check the code and try again.');
     return;
   }
   roomId = code;
@@ -399,7 +396,7 @@ if (URL_WORLD && /^[a-f0-9]{12}$/.test(URL_WORLD)) {
   (async () => {
     const resp = await fetch(`${SIGNAL_SERVER}/api/room/${URL_WORLD}/exists`).catch(() => null);
     if (!resp || !resp.ok) {
-      mpLog('World from URL not found. It may have expired.');
+      showToast('World from URL not found. It may have expired.');
       return;
     }
     roomId = URL_WORLD;
@@ -536,7 +533,7 @@ function connectSignaling() {
       signalingWs.close(1000, 'Signaling processing failed');
     });
   });
-  signalingWs.addEventListener('error', () => mpLog('World connection failed. Check the code or wait a minute, then reload.'));
+  signalingWs.addEventListener('error', () => showToast('World connection failed. Check the code or wait a minute, then reload.'));
   signalingWs.addEventListener('close', event => {
     multiplayerReady = false;
     clearTimeout(turnRefreshTimer);
@@ -546,14 +543,14 @@ function connectSignaling() {
     
     // Auto-reconnect after 2 seconds if we were in-game
     if (document.getElementById('game-screen').style.display === 'block') {
-      mpLog('Connection lost. Reconnecting...');
+      showToast('Connection lost. Reconnecting...');
       setTimeout(() => {
         if (!signalingWs || signalingWs.readyState === WebSocket.CLOSED) {
           connectSignaling();
         }
       }, 2000);
     } else {
-      mpLog('Disconnected: ' + (event.reason || 'connection lost') + '. Reload to rejoin.');
+      showToast('Disconnected: ' + (event.reason || 'connection lost') + '. Reload to rejoin.');
     }
   });
 }
@@ -1929,7 +1926,7 @@ document.addEventListener('mousemove', () => {
 });
 
 // Toast notification system
-function showToast(message, duration = 3000) {
+function showToast(message, duration = 5000) {
   const container = document.getElementById('toast-container');
   const toast = document.createElement('div');
   toast.style.cssText = 'background:rgba(30,30,50,0.95);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:12px 20px;color:#ddd;font-family:system-ui,sans-serif;font-size:14px;opacity:0;transform:translateY(-10px);transition:opacity 0.3s,transform 0.3s;pointer-events:auto;';
@@ -1958,8 +1955,6 @@ function openMinigames() {
   const modal = document.getElementById('minigames-modal');
   modal.style.display = 'flex';
   updateMinigamesSelection();
-  document.getElementById('minigames-hint-gamepad').style.display = gamepadConnected ? 'inline' : 'none';
-  document.getElementById('minigames-hint-keyboard').style.display = gamepadConnected ? 'none' : 'inline';
 }
 
 function closeMinigames() {
@@ -2463,7 +2458,7 @@ function pitchCamp() {
   const firstAngle = Math.atan2(localHere.x, localHere.z) + Math.PI / 3;
   const preferred = nearby ? [localHere.x, localHere.z] : [Math.sin(firstAngle) * 2.3, Math.cos(firstAngle) * 2.3];
   const tent = findTentSpace(anchor, preferred, occupied, [localHere.x, localHere.z]);
-  if (!tent) { mpLog('This campsite is full. Move a little farther away to pitch.'); return; }
+  if (!tent) { showToast('This campsite is full. Move a little farther away to pitch.'); return; }
   localCampState = { position: anchor, tent, placedAt: roomNow(),
     style: tentStyle, color: tentColor.toString(16).padStart(6, '0'), sleeping: false };
   if (here.distanceTo(new THREE.Vector3(...anchor).multiplyScalar(GLOBE_RADIUS)) < 1.8) {
@@ -3050,6 +3045,9 @@ if (savedSession && savedSession.roomId === roomId && savedSession.globeRotation
   if (savedSession.campState) {
     localCampState = savedSession.campState;
     publishCampState();
+    if (localCampState.sleeping) {
+      enterTent();
+    }
   }
 }
 
