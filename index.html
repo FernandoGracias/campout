@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v159</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v165</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -109,7 +109,14 @@ canvas { display: block; }
       <div id="lever-track" style="position:absolute;width:4px;height:80px;left:50%;top:50%;transform:translate(-50%,-50%);border-radius:2px;background:rgba(255,255,255,0.15);pointer-events:none;"></div>
       <div id="lever-zone" style="position:absolute;left:0;top:0;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 512 512" fill="#ddd" stroke="none"><path d="M111.512 21.176c-6.65.088-13.7 1.088-21.162 3.088-87.625 23.48-77.956 222.752-9.297 310.984l.002-.002 99.513-26.664c-3.273-35.578.003-76.04 19.313-113.947 2.605-89.97-24.095-174.31-88.368-173.46zm294.38 0c-64.273-.852-90.972 83.488-88.37 173.46 19.31 37.905 22.587 78.368 19.314 113.946l99.514 26.664.002.002c68.658-88.232 78.327-287.505-9.297-310.984-7.463-2-14.513-3-21.162-3.088zM188.878 350.06l-101.26 27.13c5.495 191.896 200.51 104.13 101.26-27.13zm139.65 0c-99.25 131.26 95.767 219.026 101.262 27.13l-101.263-27.13z"/></svg></div>
     </div>
-    <div id="btn-pitch" style="position:relative;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><path d="M12 2L3 20h18L12 2z"/><line x1="12" y1="20" x2="12" y2="14"/></svg><span id="hint-pitch" style="position:absolute;top:-8px;right:-8px;background:#f0c040;color:#1a1a2e;font-size:10px;font-weight:bold;padding:2px 5px;border-radius:4px;font-family:system-ui,sans-serif;display:none;"></span></div>
+    <div id="btn-pitch-wrapper" style="position:relative;width:48px;height:48px;">
+      <div id="tent-compass" style="position:absolute;inset:-8px;pointer-events:none;display:none;">
+        <svg width="64" height="64" viewBox="0 0 64 64" style="position:absolute;left:0;top:0;">
+          <line id="tent-compass-line" x1="32" y1="32" x2="32" y2="4" stroke="#f0c040" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div id="btn-pitch" style="position:relative;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><path d="M12 2L3 20h18L12 2z"/><line x1="12" y1="20" x2="12" y2="14"/></svg><span id="hint-pitch" style="position:absolute;top:-8px;right:-8px;background:#f0c040;color:#1a1a2e;font-size:10px;font-weight:bold;padding:2px 5px;border-radius:4px;font-family:system-ui,sans-serif;display:none;"></span></div>
+    </div>
     <div id="btn-flashlight" style="position:relative;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><rect x="9" y="8" width="6" height="12" rx="1"/><path d="M9 8l-1-4h8l-1 4"/></svg><span id="hint-flashlight" style="position:absolute;top:-8px;right:-8px;background:#f0c040;color:#1a1a2e;font-size:10px;font-weight:bold;padding:2px 5px;border-radius:4px;font-family:system-ui,sans-serif;display:none;"></span></div>
     <div id="btn-minigames" style="position:relative;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="10" r="1"/><circle cx="16" cy="14" r="1"/><circle cx="14" cy="12" r="1"/><circle cx="18" cy="12" r="1"/></svg><span id="hint-minigames" style="position:absolute;top:-8px;right:-8px;background:#f0c040;color:#1a1a2e;font-size:10px;font-weight:bold;padding:2px 5px;border-radius:4px;font-family:system-ui,sans-serif;display:none;"></span></div>
   </div>
@@ -197,7 +204,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v164</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v165</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -1727,6 +1734,7 @@ function buildPlayer() {
   pack.position.set(0, 0.62, -0.22);
   pack.castShadow = true;
   group.add(pack);
+  group.userData.pack = pack;
 
   const packFlap = new THREE.Mesh(
     new THREE.BoxGeometry(0.26, 0.06, 0.16),
@@ -1734,6 +1742,7 @@ function buildPlayer() {
   );
   packFlap.position.set(0, 0.8, -0.22);
   group.add(packFlap);
+  group.userData.packFlap = packFlap;
 
   const sleepingBag = new THREE.Mesh(
     new THREE.CylinderGeometry(0.07, 0.07, 0.28, 8),
@@ -1743,6 +1752,7 @@ function buildPlayer() {
   sleepingBag.rotation.z = Math.PI / 2;
   sleepingBag.castShadow = true;
   group.add(sleepingBag);
+  group.userData.sleepingBag = sleepingBag;
 
   // Flashlight stick (held in right hand)
   const stickGroup = new THREE.Group();
@@ -2566,6 +2576,13 @@ function pitchCamp() {
   if (isSleeping) return;
   walkingToTent = false;
   if (localCampState) {
+    // Check distance before allowing pack-up
+    const playerPos = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert()).normalize().multiplyScalar(GLOBE_RADIUS);
+    const tentPos = campsitePoint(localCampState.position, localCampState.tent).normalize().multiplyScalar(GLOBE_RADIUS);
+    if (playerPos.distanceTo(tentPos) > 15) {
+      showToast('Too far from tent to pack up. Return to your campsite first.');
+      return;
+    }
     localCampState = null;
     publishCampState();
     return;
@@ -2693,6 +2710,12 @@ function syncCamps() {
     campGlobeRotation = null;
   }
   document.getElementById('btn-pitch').style.borderColor = campPitched ? '#f0c040' : 'rgba(255,255,255,0.3)';
+  // Toggle player backpack visibility based on camp state
+  if (player.userData.pack) {
+    player.userData.pack.visible = !campPitched;
+    player.userData.packFlap.visible = !campPitched;
+    player.userData.sleepingBag.visible = !campPitched;
+  }
   if (correctedOwn) publishCampState();
   const connected = Object.keys(dataChannels).filter(id => dataChannels[id].readyState === 'open');
   if (sharedEnvironment && [localPlayerId, ...connected].sort()[0] === localPlayerId) {
@@ -2950,7 +2973,43 @@ function buildCampModel(state, anchor) {
     }
   }
 
-  return { group: campGroup, tent, fireAnchor, campCoals, campFireGeo, campFireAlphas,
+  // Placed gear (backpack and sleeping bag) near tent
+  const gearGroup = new THREE.Group();
+  const placedPack = new THREE.Mesh(
+    new THREE.BoxGeometry(0.28, 0.32, 0.18),
+    new THREE.MeshStandardMaterial({ color: 0x3d6b35, roughness: 0.8 })
+  );
+  placedPack.position.set(0.08, 0.16, 0);
+  placedPack.rotation.x = -0.3;
+  placedPack.castShadow = true;
+  gearGroup.add(placedPack);
+  
+  const placedFlap = new THREE.Mesh(
+    new THREE.BoxGeometry(0.26, 0.06, 0.16),
+    new THREE.MeshStandardMaterial({ color: 0x2d5528, roughness: 0.8 })
+  );
+  placedFlap.position.set(0.08, 0.32, -0.06);
+  placedFlap.rotation.x = -0.3;
+  gearGroup.add(placedFlap);
+  
+  const placedBag = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.07, 0.07, 0.28, 8),
+    new THREE.MeshStandardMaterial({ color: 0x4488aa, roughness: 0.7 })
+  );
+  placedBag.position.set(-0.15, 0.07, 0.05);
+  placedBag.rotation.z = Math.PI / 2;
+  placedBag.rotation.y = 0.2;
+  placedBag.castShadow = true;
+  gearGroup.add(placedBag);
+  
+  // Position gear beside the tent
+  const tentPos = tent.position.clone();
+  const gearAngle = Math.atan2(tentPos.x, tentPos.z) + Math.PI / 2;
+  gearGroup.position.set(tentPos.x + Math.sin(gearAngle) * 1.2, 0, tentPos.z + Math.cos(gearAngle) * 1.2);
+  gearGroup.rotation.y = gearAngle + Math.PI;
+  campGroup.add(gearGroup);
+
+  return { group: campGroup, tent, fireAnchor, gearGroup, campCoals, campFireGeo, campFireAlphas,
     campFireLifespan, campSmokeGeo, campSmokeVelocities, campFireLight, campFireLight2,
     zTimer: 4.5, zSprites: [], sleeping: state.sleeping };
 }
@@ -3674,6 +3733,49 @@ function animate() {
       }
     }
     campSmokeGeo.attributes.position.needsUpdate = true;
+  }
+
+  // Tent compass indicator and distance-based pack-up control
+  const tentCompass = document.getElementById('tent-compass');
+  const tentCompassLine = document.getElementById('tent-compass-line');
+  const btnPitch = document.getElementById('btn-pitch');
+  if (campPitched && localCampState && !isSleeping) {
+    const ownCamp = campModels.get(localPlayerId);
+    if (ownCamp) {
+      // Calculate player distance from tent
+      const playerWorldPos = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert()).normalize().multiplyScalar(GLOBE_RADIUS);
+      const tentWorldPos = campsitePoint(localCampState.position, localCampState.tent).normalize().multiplyScalar(GLOBE_RADIUS);
+      const distToTent = playerWorldPos.distanceTo(tentWorldPos);
+      
+      // Disable pack-up if too far from tent (more than 15 units)
+      const tooFarFromTent = distToTent > 15;
+      btnPitch.style.opacity = tooFarFromTent ? '0.4' : '1';
+      btnPitch.style.pointerEvents = tooFarFromTent ? 'none' : 'auto';
+      
+      // Show compass if far enough that it's useful (more than 5 units)
+      if (distToTent > 5) {
+        tentCompass.style.display = 'block';
+        // Calculate direction to tent in screen space
+        const tentDir = tentWorldPos.clone().sub(playerWorldPos).normalize();
+        // Project to horizontal plane relative to player
+        const playerUp = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert()).normalize();
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(globeRotation.clone().invert());
+        const right = new THREE.Vector3().crossVectors(playerUp, forward).normalize();
+        forward.crossVectors(right, playerUp).normalize();
+        const angle = Math.atan2(tentDir.dot(right), tentDir.dot(forward)) - cameraAngle;
+        // Line points outward from center, rotate around
+        const x2 = 32 + Math.sin(angle) * 28;
+        const y2 = 32 - Math.cos(angle) * 28;
+        tentCompassLine.setAttribute('x2', x2);
+        tentCompassLine.setAttribute('y2', y2);
+      } else {
+        tentCompass.style.display = 'none';
+      }
+    }
+  } else {
+    tentCompass.style.display = 'none';
+    btnPitch.style.opacity = '1';
+    btnPitch.style.pointerEvents = 'auto';
   }
 
   renderer.render(scene, camera);
