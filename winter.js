@@ -7,7 +7,7 @@ export function createWinter(THREE, world) {
   const up = new THREE.Vector3(0, 1, 0);
   const iceRadius = waterRadius + 0.05; // 25 cm shell: 5 cm above water, 20 cm below.
   let enabled = false, cover = 0.75, snowfall = 0.4, elapsed = 0;
-  let held = false, packing = 0, lastAction = -10, throwPose = 0;
+  let held = false, heldCone = null, packing = 0, lastAction = -10, throwPose = 0;
   let inputMode = 'keyboard', skates = false;
   let hintState = '';
   const BALL_RADIUS = 0.08, FLIGHT_STEP = 1 / 60, GRAVITY_MU = 12 * radius * radius;
@@ -386,7 +386,7 @@ export function createWinter(THREE, world) {
   coneProfile.push(new THREE.Vector2(0.008, 0.15));
   const coneGeo = new THREE.LatheGeometry(coneProfile, 10);
   const coneMaterial = new THREE.MeshStandardMaterial({ color: 0x89512e, roughness: 1, flatShading: true });
-  const PICKUP_DISTANCE = 0.65, CONE_RESPAWN = 25;
+  const PICKUP_DISTANCE = 0.65;
   const cones = [];
   // Deterministic positions let every camper refer to the same cone by index.
   for (let i = 0; i < treeColumns.length; i++) {
@@ -425,7 +425,7 @@ export function createWinter(THREE, world) {
     return nearest;
   }
   function takeCone(id) {
-    cones[id].availableAt = elapsed + CONE_RESPAWN;
+    cones[id].availableAt = Infinity;
     drawCone(id, false);
   }
   function receivePickup(id, message) {
@@ -449,11 +449,22 @@ export function createWinter(THREE, world) {
       b.v.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(5);
     }
   }
-  function launch(owner, position, velocity, kind = enabled ? 'snowball' : 'pinecone') {
-    if (balls.length >= 32) globePivot.remove(balls.shift().mesh);
+  function landCone(id, position) {
+    const cone = cones[id];
+    if (!cone) return;
+    cone.direction.copy(position).normalize();
+    cone.position.copy(cone.direction).multiplyScalar(surface(cone.direction) + 0.075);
+    cone.availableAt = 0; drawCone(id, true);
+  }
+  function launch(owner, position, velocity, kind = enabled ? 'snowball' : 'pinecone', cone = null) {
+    if (balls.length >= 32) {
+      const oldest = balls.shift();
+      if (oldest.kind === 'pinecone') landCone(oldest.cone, oldest.mesh.position);
+      globePivot.remove(oldest.mesh);
+    }
     const mesh = new THREE.Mesh(kind === 'pinecone' ? coneGeo : ballGeo, kind === 'pinecone' ? coneMaterial : snowMaterial);
     mesh.position.copy(position); globePivot.add(mesh);
-    balls.push({ owner, mesh, velocity, kind, age: 0, accumulator: 0 });
+    balls.push({ owner, mesh, velocity, kind, cone, age: 0, accumulator: 0 });
   }
   function throwState() {
     const inverse = world.getRotation().clone().invert();
@@ -504,7 +515,7 @@ export function createWinter(THREE, world) {
       if (!enabled) {
         const id = nearbyCone(Number.isInteger(preferredCone) ? preferredCone : null);
         if (id === null) return;
-        takeCone(id); held = true; lastAction = elapsed;
+        takeCone(id); held = true; heldCone = id; lastAction = elapsed;
         world.send({ type: 'pinecone-pickup', cone: id });
         updateCrosshair(); refreshHints();
         return;
@@ -518,8 +529,9 @@ export function createWinter(THREE, world) {
     const shot = throwState();
     held = false; lastAction = elapsed; throwPose = 0.3;
     updateCrosshair();
-    launch(world.localId, shot.position, shot.velocity);
-    world.send({ type: enabled ? 'snowball' : 'pinecone', position: shot.position.toArray(), velocity: shot.velocity.toArray() });
+    launch(world.localId, shot.position, shot.velocity, enabled ? 'snowball' : 'pinecone', heldCone);
+    world.send({ type: enabled ? 'snowball' : 'pinecone', cone: heldCone, position: shot.position.toArray(), velocity: shot.velocity.toArray() });
+    heldCone = null;
   }
   function pointerHit(pointerRay) {
     const campers = Object.values(world.getPeers()).map(peer => peer.mesh).filter(mesh => mesh.visible);
@@ -555,7 +567,11 @@ export function createWinter(THREE, world) {
     const direction = up.clone().applyQuaternion(peer.currentGlobeRotation.clone().invert());
     if (position.length() < (enabled ? iceRadius : waterRadius) || position.length() > radius + 9 || speed.length() > 20.01 || speed.length() < 2.99 ||
         direction.distanceTo(position.clone().normalize()) * radius > 2) return;
-    receiveTimes.set(id, elapsed); launch(id, position, speed, message.type);
+    if (message.type === 'pinecone') {
+      if (!Number.isSafeInteger(message.cone) || !cones[message.cone]) return;
+      takeCone(message.cone);
+    }
+    receiveTimes.set(id, elapsed); launch(id, position, speed, message.type, message.cone);
   }
   const flightRay = new THREE.Raycaster();
   const iceBounds = new THREE.Sphere(new THREE.Vector3(), iceRadius);
@@ -641,6 +657,18 @@ export function createWinter(THREE, world) {
   function updateBalls(delta, inverse) {
     for (let i = balls.length - 1; i >= 0; i--) {
       const ball = balls[i]; let impact = false;
+      if (ball.bounce) {
+        ball.bounce.age += delta;
+        const t = Math.min(1, ball.bounce.age / 0.45);
+        ball.mesh.position.lerpVectors(ball.bounce.from, ball.bounce.to, t)
+          .addScaledVector(ball.bounce.to.clone().normalize(), Math.sin(Math.PI * t) * 0.3);
+        ball.mesh.rotateX(delta * 9);
+        if (t === 1) {
+          landCone(ball.cone, ball.bounce.to);
+          globePivot.remove(ball.mesh); balls.splice(i, 1);
+        }
+        continue;
+      }
       ball.accumulator += delta;
       while (ball.accumulator >= FLIGHT_STEP && !impact) {
         ball.accumulator -= FLIGHT_STEP;
@@ -654,11 +682,19 @@ export function createWinter(THREE, world) {
             if (hit.mesh === world.getPlayer()) floatScore(hit.mesh, -1);
             else if (ball.owner === world.localId) floatScore(hit.mesh, 1);
           }
+          if (ball.kind === 'pinecone') {
+            const base = hit.mesh ? hit.mesh.position.clone().applyQuaternion(inverse) : to.clone();
+            const radial = base.clone().normalize();
+            const away = ball.velocity.clone().negate().addScaledVector(radial, ball.velocity.dot(radial)).normalize();
+            const direction = base.addScaledVector(away, 0.4).normalize();
+            ball.bounce = { from: to.clone(), to: direction.clone().multiplyScalar(surface(direction) + 0.075), age: 0 };
+          }
         }
         ball.mesh.position.copy(to);
         ball.age += FLIGHT_STEP;
       }
       if (impact) {
+        if (ball.kind === 'pinecone') continue;
         if (ball.kind === 'snowball') splat(ball.mesh.position);
         globePivot.remove(ball.mesh); balls.splice(i, 1);
       }
@@ -814,13 +850,20 @@ export function createWinter(THREE, world) {
       document.getElementById(id + '-value').textContent = `${Math.round(value * 100)}%`;
     }
     if (wasEnabled !== enabled) {
+      if (heldCone !== null) {
+        landCone(heldCone, world.getPlayer().position.clone().applyQuaternion(world.getRotation().clone().invert()));
+        heldCone = null;
+      }
       clearTracks(); velocity.set(0, 0); held = false; packing = 0;
       for (const id of skateTracks.keys()) disposeCuts(id);
       if (!enabled) { skates = false; world.getPlayer().userData.skating = false; }
       for (const flake of flakes) flake.live = false;
       flakeWeather.fill(0); flakePositions.fill(0); floorCache.clear(); flakeCursor = 0;
       flakeGeo.attributes.position.needsUpdate = flakeGeo.attributes.weather.needsUpdate = true;
-      for (const ball of balls) globePivot.remove(ball.mesh);
+      for (const ball of balls) {
+        if (ball.kind === 'pinecone') landCone(ball.cone, ball.mesh.position);
+        globePivot.remove(ball.mesh);
+      }
       balls.length = 0;
       while (scoreFloats.length) removeScore(0);
     }
@@ -968,11 +1011,6 @@ export function createWinter(THREE, world) {
       }
     }
     if (changed) flakeGeo.attributes.position.needsUpdate = flakeGeo.attributes.weather.needsUpdate = true;
-    }
-    if (!enabled) {
-      for (const [id, cone] of cones.entries()) if (cone.availableAt > 0 && cone.availableAt <= elapsed) {
-        cone.availableAt = 0; drawCone(id, true);
-      }
     }
     if (packing > 0) {
       packing -= delta;
