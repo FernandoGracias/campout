@@ -737,23 +737,26 @@ async function handleSignalMessage(msg) {
           }
         }, 20000);
         
-        // Team assignment: creator picks, others get round-robin
-        const existingTeams = sharedEnvironment?.teams || {};
-        const teamCounts = { red: 0, blue: 0 };
-        for (const t of Object.values(existingTeams)) teamCounts[t]++;
-        if (Object.keys(existingTeams).length === 0) {
-          // Creator: show team picker
-          document.getElementById('lobby-team-picker').style.display = 'block';
-          document.getElementById('lobby-team-assigned').style.display = 'none';
-        } else {
-          // Joiner: auto-assign to smaller team (round-robin)
-          localTeam = teamCounts.red <= teamCounts.blue ? 'red' : 'blue';
-          document.getElementById('lobby-team-picker').style.display = 'none';
-          document.getElementById('lobby-team-assigned').style.display = 'block';
-          document.getElementById('lobby-team-name').textContent = localTeam.charAt(0).toUpperCase() + localTeam.slice(1);
-          document.getElementById('lobby-team-name').style.color = localTeam === 'red' ? '#ff6666' : '#6699ff';
-          document.getElementById('lobby-team-assigned').style.background = localTeam === 'red' ? 'rgba(204,51,51,0.2)' : 'rgba(51,102,204,0.2)';
-        }
+        // Team assignment: defer slightly to let peer-joined messages arrive first
+        setTimeout(() => {
+          const peerCount = Object.keys(peerConnections).length;
+          if (peerCount === 0) {
+            // Creator (no peers): show team picker
+            document.getElementById('lobby-team-picker').style.display = 'block';
+            document.getElementById('lobby-team-assigned').style.display = 'none';
+          } else {
+            // Joiner (has peers): auto-assign to smaller team (round-robin)
+            const existingTeams = sharedEnvironment?.teams || {};
+            const teamCounts = { red: 0, blue: 0 };
+            for (const t of Object.values(existingTeams)) teamCounts[t]++;
+            localTeam = teamCounts.red <= teamCounts.blue ? 'red' : 'blue';
+            document.getElementById('lobby-team-picker').style.display = 'none';
+            document.getElementById('lobby-team-assigned').style.display = 'block';
+            document.getElementById('lobby-team-name').textContent = localTeam.charAt(0).toUpperCase() + localTeam.slice(1);
+            document.getElementById('lobby-team-name').style.color = localTeam === 'red' ? '#ff6666' : '#6699ff';
+            document.getElementById('lobby-team-assigned').style.background = localTeam === 'red' ? 'rgba(204,51,51,0.2)' : 'rgba(51,102,204,0.2)';
+          }
+        }, 500);
         
         // Clear "Reconnecting" message if we're already in game
         if (document.getElementById('game-screen').style.display === 'block') {
@@ -1942,6 +1945,7 @@ function buildPlayer() {
 
   const hatGeo = new THREE.CylinderGeometry(0.12, 0.2, 0.14, 8);
   const hatMat = new THREE.MeshStandardMaterial({ color: 0x5c3d1e, roughness: 0.8 });
+  hatMat.userData.isHatMaterial = true;  // Tag for finding after clone
   const hat = new THREE.Mesh(hatGeo, hatMat);
   hat.position.y = 1.2;
   hat.castShadow = true;
@@ -2095,6 +2099,8 @@ function addOtherPlayer(id, color, startGlobeRotation, name) {
   const mesh = buildPlayer();
   mesh.traverse(c => { if (c.isMesh && c.material) { c.material = c.material.clone(); } });
   mesh.traverse(c => { if (c.isMesh && c.material?.userData.playerTint) c.material.color.set(color); });
+  // Update hatMat reference to the cloned material
+  mesh.traverse(c => { if (c.isMesh && c.material?.userData.isHatMaterial) mesh.userData.hatMat = c.material; });
   scene.add(mesh);
   const torch = new THREE.SpotLight(0xffffff, 0, 25, Math.PI * 0.08, 0.15, 0.5);
   torch.castShadow = true;
