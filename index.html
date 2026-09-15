@@ -145,7 +145,7 @@ canvas { display: block; }
       </div>
       <div id="btn-pitch" style="position:relative;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><path d="M12 2L3 20h18L12 2z"/><line x1="12" y1="20" x2="12" y2="14"/></svg><span id="hint-pitch" style="position:absolute;top:-8px;right:-8px;background:#f0c040;color:#1a1a2e;font-size:10px;font-weight:bold;padding:2px 5px;border-radius:4px;font-family:system-ui,sans-serif;display:none;"></span></div>
     </div>
-    <div id="btn-flashlight" style="position:relative;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg id="flashlight-battery" width="52" height="52" viewBox="0 0 52 52" style="position:absolute;left:-2px;top:-2px;transform:rotate(-90deg);pointer-events:none;"><circle cx="26" cy="26" r="23" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="3"/><circle id="flashlight-battery-ring" cx="26" cy="26" r="23" fill="none" stroke="#f0c040" stroke-width="3" stroke-dasharray="144.5" stroke-dashoffset="0" stroke-linecap="round"/></svg><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><rect x="9" y="8" width="6" height="12" rx="1"/><path d="M9 8l-1-4h8l-1 4"/></svg><span id="hint-flashlight" style="position:absolute;top:-8px;right:-8px;background:#f0c040;color:#1a1a2e;font-size:10px;font-weight:bold;padding:2px 5px;border-radius:4px;font-family:system-ui,sans-serif;display:none;"></span></div>
+    <div id="btn-flashlight" style="position:relative;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.06);border:3px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><rect x="9" y="8" width="6" height="12" rx="1"/><path d="M9 8l-1-4h8l-1 4"/></svg><span id="hint-flashlight" style="position:absolute;top:-8px;right:-8px;background:#f0c040;color:#1a1a2e;font-size:10px;font-weight:bold;padding:2px 5px;border-radius:4px;font-family:system-ui,sans-serif;display:none;"></span></div>
     <div id="btn-minigames" style="position:relative;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="10" r="1"/><circle cx="16" cy="14" r="1"/><circle cx="14" cy="12" r="1"/><circle cx="18" cy="12" r="1"/></svg><span id="hint-minigames" style="position:absolute;top:-8px;right:-8px;background:#f0c040;color:#1a1a2e;font-size:10px;font-weight:bold;padding:2px 5px;border-radius:4px;font-family:system-ui,sans-serif;display:none;"></span></div>
   </div>
 </div>
@@ -2716,8 +2716,10 @@ document.addEventListener('keydown', (e) => {
   if (e.key === '-') cameraDistance = Math.min(60, cameraDistance + 0.5);
   if (e.key.toLowerCase() === 't' && !e.repeat) interactWithCamp();
   if (e.key === 'f' && !e.repeat && !isSleeping) {
-    flashlightOn = !flashlightOn;
-    document.getElementById('btn-flashlight').style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
+    if (flashlightOn || flashlightBattery > 0) {
+      flashlightOn = !flashlightOn;
+      document.getElementById('btn-flashlight').style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
+    }
   }
 });
 
@@ -2867,6 +2869,7 @@ document.getElementById('time-pause').addEventListener('change', (e) => {
 
 // --- FLASHLIGHT ---
 let flashlightOn = false;
+const btnFlashlight = document.getElementById('btn-flashlight');
 const flashlight = new THREE.SpotLight(0xffffff, 0, 25, Math.PI * 0.08, 0.15, 0.5);
 flashlight.position.set(0.3, GLOBE_RADIUS + 0.6, 0.2);
 flashlight.target.position.set(0, GLOBE_RADIUS, 3);
@@ -2878,15 +2881,15 @@ document.getElementById('btn-flashlight').addEventListener('click', () => {
   if (isSleeping) return;
   if (flashlightOn || flashlightBattery > 0) {
     flashlightOn = !flashlightOn;
-    document.getElementById('btn-flashlight').style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
+    btnFlashlight.style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
   }
 });
-document.getElementById('btn-flashlight').addEventListener('touchstart', (e) => {
+btnFlashlight.addEventListener('touchstart', (e) => {
   e.preventDefault();
   if (isSleeping) return;
   if (flashlightOn || flashlightBattery > 0) {
     flashlightOn = !flashlightOn;
-    document.getElementById('btn-flashlight').style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
+    btnFlashlight.style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
   }
 });
 
@@ -3696,18 +3699,16 @@ function updateDayNight() {
     flashlightBattery = Math.max(0, flashlightBattery - delta / FLASHLIGHT_DRAIN_TIME);
     if (flashlightBattery <= 0) {
       flashlightOn = false;
-      document.getElementById('btn-flashlight').style.borderColor = 'rgba(255,255,255,0.3)';
+      btnFlashlight.style.borderColor = 'rgba(255,255,255,0.3)';
     }
   } else if (atTent && flashlightBattery < 1) {
     flashlightBattery = Math.min(1, flashlightBattery + delta / FLASHLIGHT_RECHARGE_TIME);
   }
-  // Update battery ring indicator
-  const batteryRing = document.getElementById('flashlight-battery-ring');
-  if (batteryRing) {
-    const circumference = 2 * Math.PI * 23;  // r=23
-    batteryRing.style.strokeDashoffset = circumference * (1 - flashlightBattery);
-    batteryRing.style.stroke = flashlightBattery < 0.2 ? '#ff4444' : '#f0c040';
-  }
+  // Update battery indicator using border width (3px full, shrinks to 0)
+  const borderWidth = Math.round(flashlightBattery * 3);
+  btnFlashlight.style.borderWidth = borderWidth + 'px';
+  btnFlashlight.style.borderColor = flashlightOn ? '#f0c040' : 
+    (flashlightBattery < 0.2 ? '#ff4444' : 'rgba(255,255,255,0.15)');
   
   flashlight.intensity = torchOn ? 15 : 0;
   player.userData.flashlightStick.visible = torchOn;
