@@ -204,7 +204,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v167</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v168</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -2572,12 +2572,30 @@ document.getElementById('tent-style').addEventListener('change', (e) => {
   saveSettings();
 });
 
+const TENT_INTERACTION_DISTANCE = 6;
+const CAMP_FIRE_CLEARANCE = 2.8;
+
+// Read the physical tent position in the shared globe frame, not a saved view rotation.
+function ownTentDirection() {
+  const own = campModels.get(localPlayerId);
+  if (!own) return null;
+  own.group.updateMatrix();
+  return own.tent.position.clone().applyMatrix4(own.group.matrix).normalize();
+}
+
+function ownTentDistance() {
+  const direction = ownTentDirection();
+  if (!direction) return Infinity;
+  const here = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert());
+  return here.distanceTo(direction) * GLOBE_RADIUS;
+}
+
 function pitchCamp() {
   if (isSleeping) return;
   walkingToTent = false;
   if (localCampState) {
     // Check distance before allowing pack-up (same distance as tent entry)
-    if (campGlobeRotation && globeRotation.angleTo(campGlobeRotation) > 0.3) {
+    if (ownTentDistance() > TENT_INTERACTION_DISTANCE) {
       showToast('Too far from tent to pack up. Return to your campsite first.');
       return;
     }
@@ -2595,7 +2613,7 @@ function pitchCamp() {
   const localHere = here.clone().sub(new THREE.Vector3(...anchor).multiplyScalar(GLOBE_RADIUS)).applyQuaternion(basis.clone().invert());
   const occupied = camps.filter(c => JSON.stringify(c.position) === JSON.stringify(anchor)).map(c => c.tent);
   const firstAngle = Math.atan2(localHere.x, localHere.z) + Math.PI / 3;
-  const preferred = nearby ? [localHere.x, localHere.z] : [Math.sin(firstAngle) * 2.3, Math.cos(firstAngle) * 2.3];
+  const preferred = nearby ? [localHere.x, localHere.z] : [Math.sin(firstAngle) * CAMP_FIRE_CLEARANCE, Math.cos(firstAngle) * CAMP_FIRE_CLEARANCE];
   const tent = findTentSpace(anchor, preferred, occupied, [localHere.x, localHere.z]);
   if (!tent) { showToast('This campsite is full. Move a little farther away to pitch.'); return; }
   localCampState = { position: anchor, tent, placedAt: roomNow(),
@@ -2620,14 +2638,14 @@ function campsitePoint(anchor, offset) {
 
 function findTentSpace(anchor, preferred, occupied, playerOffset = null) {
   const clear = offset => {
-    if (Math.hypot(...offset) < 2.3 - 1e-6 || occupied.some(t => Math.hypot(t[0] - offset[0], t[1] - offset[1]) < 3)) return false;
+    if (Math.hypot(...offset) < CAMP_FIRE_CLEARANCE - 1e-6 || occupied.some(t => Math.hypot(t[0] - offset[0], t[1] - offset[1]) < 3)) return false;
     if (playerOffset && Math.hypot(playerOffset[0] - offset[0], playerOffset[1] - offset[1]) < 1.8) return false;
     const point = campsitePoint(anchor, offset).normalize().multiplyScalar(GLOBE_RADIUS);
     return !collidables.some(c => point.distanceTo(latLonToWorld(c.lat, c.lon)) < c.radius + 1.2);
   };
   if (clear(preferred)) return preferred;
   let best = null, distance = Infinity;
-  for (let radius = 2.3; radius <= 30; radius += 0.75) {
+  for (let radius = CAMP_FIRE_CLEARANCE; radius <= 30; radius += 0.75) {
     for (let i = 0; i < 64; i++) {
       const angle = i * Math.PI / 32;
       const candidate = [Math.sin(angle) * radius, Math.cos(angle) * radius];
@@ -2685,7 +2703,8 @@ function syncCamps() {
       desired.set(id, model);
       
       // Add tent collider with style-specific radius (all tents, including own)
-      const tentWorldPos = campsitePoint(state.position, tent);
+      model.group.updateMatrix();
+      const tentWorldPos = model.tent.position.clone().applyMatrix4(model.group.matrix);
       const { lat, lon } = worldToLatLon(tentWorldPos);
       // Tent radii based on geometry * scale (1.25): aframe ~0.5, dome 0.8, cabin 0.7, tunnel 0.6
       const tentRadii = { aframe: 0.5, dome: 0.8, cabin: 0.7, tunnel: 0.6 };
@@ -2698,15 +2717,6 @@ function syncCamps() {
   const own = campModels.get(localPlayerId);
   campGroup = own?.group || null;
   campPitched = !!own;
-  if (own) {
-    globePivot.updateMatrixWorld(true);
-    const tentNormal = own.tent.getWorldPosition(new THREE.Vector3());
-    globePivot.worldToLocal(tentNormal).normalize();
-    campGlobeRotation = globeRotation.clone().premultiply(new THREE.Quaternion().setFromUnitVectors(
-      tentNormal.applyQuaternion(globeRotation), new THREE.Vector3(0, 1, 0)));
-  } else {
-    campGlobeRotation = null;
-  }
   document.getElementById('btn-pitch').style.borderColor = campPitched ? '#f0c040' : 'rgba(255,255,255,0.3)';
   // Toggle player backpack visibility based on camp state
   if (player.userData.pack) {
@@ -2720,6 +2730,33 @@ function syncCamps() {
     const rate = localCampState?.sleeping && connected.every(id => remoteCampStates[id]?.sleeping) ? 0.1 : 0.04;
     if (rate !== sharedEnvironment.rate) publishEnvironment({ rate });
   }
+}
+
+// Ground the whole object, including its orientation and geometry's bottom.
+function groundCampObject(object, sink = 0) {
+  globePivot.updateWorldMatrix(true, true);
+  const direction = object.getWorldPosition(new THREE.Vector3()).normalize();
+  const ray = new THREE.Raycaster(direction.clone().multiplyScalar(GLOBE_RADIUS + 10),
+    direction.clone().negate(), 0, GLOBE_RADIUS * 3);
+  const hit = ray.intersectObject(globe, false)[0];
+  if (!hit) return;
+  const parent = object.parent;
+  const normal = hit.face.normal.clone().transformDirection(globe.matrixWorld)
+    .applyQuaternion(parent.getWorldQuaternion(new THREE.Quaternion()).invert()).normalize();
+  object.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal));
+  let bottom = 0;
+  if (object.geometry) {
+    // Use actual vertices: rotated logs and sleeping rolls have different support heights.
+    const positions = object.geometry.attributes.position;
+    const vertex = new THREE.Vector3();
+    bottom = Infinity;
+    for (let i = 0; i < positions.count; i++) {
+      vertex.fromBufferAttribute(positions, i).multiply(object.scale).applyQuaternion(object.quaternion);
+      bottom = Math.min(bottom, vertex.dot(normal));
+    }
+  }
+  object.position.copy(parent.worldToLocal(hit.point.clone())).addScaledVector(normal, -bottom - sink);
+  object.updateMatrixWorld(true);
 }
 
 function buildCampModel(state, anchor) {
@@ -2772,9 +2809,6 @@ function buildCampModel(state, anchor) {
     tent.castShadow = true;
     tent.userData.needsRaycast = true;
     tent.userData.groundSink = 0.6 * 1.25 * 0.5;
-    campGroup.add(tent);
-    tent.userData.needsRaycast = true;
-    tent.userData.groundSink = 0.1;
     campGroup.add(tent);
   }
 
@@ -2837,6 +2871,7 @@ function buildCampModel(state, anchor) {
     const dist = rng() * 0.4;
     coal.position.set(Math.cos(angle) * dist, 0.05 + rng() * 0.1, Math.sin(angle) * dist);
     coal.scale.y = 0.4 + rng() * 0.4;
+    coal.userData.needsRaycast = true;
     campCoals.push(coal);
     fireAnchor.add(coal);
   }
@@ -2888,87 +2923,15 @@ function buildCampModel(state, anchor) {
   campFireLight2.position.set(0.2, 0.5, 0.1);
   fireAnchor.add(campFireLight2);
 
-  // Place on globe surface using raycast for proper terrain height
-  globePivot.updateMatrixWorld(true);
-  const surfaceNormal = new THREE.Vector3(...anchor).applyQuaternion(globePivot.quaternion);
-  const pos = surfaceNormal.clone().multiplyScalar(GLOBE_RADIUS);
-
-  // Raycast from well above to find actual deformed terrain surface
-  globe.updateMatrixWorld();
-  const rayOrigin = pos.clone().addScaledVector(surfaceNormal, 10);
-  const rayDir = surfaceNormal.clone().negate();
-  const campRay = new THREE.Raycaster(rayOrigin, rayDir, 0, 20);
-  const campHits = campRay.intersectObject(globe, false);
-  if (campHits.length > 0) {
-    campGroup.position.copy(globePivot.worldToLocal(campHits[0].point.clone()));
-    const hitNormal = campHits[0].face.normal.clone().transformDirection(globe.matrixWorld)
-      .applyQuaternion(globePivot.quaternion.clone().invert()).normalize();
-    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), hitNormal);
-    campGroup.quaternion.copy(quat);
-  } else {
-    campGroup.position.copy(globePivot.worldToLocal(pos.clone()));
-    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...anchor));
-    campGroup.quaternion.copy(quat);
-  }
-
+  // Keep layout in the same radial frame used by campsitePoint and colliders.
+  // Each object gets its own terrain height/slope instead of inheriting the fire's slope.
+  campGroup.position.set(...anchor).multiplyScalar(GLOBE_RADIUS);
+  campGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...anchor));
   globePivot.add(campGroup);
-
-  // Raycast each fire element to sit on terrain
-  campGroup.updateMatrixWorld(true);
-  fireAnchor.updateMatrixWorld(true);
-
-  // Raycast the fire anchor center first
-  const fireWorldPos = new THREE.Vector3();
-  fireAnchor.getWorldPosition(fireWorldPos);
-  const fireNorm = fireWorldPos.clone().normalize();
-  const fireRayOrig = fireWorldPos.clone().addScaledVector(fireNorm, 3);
-  const fireRayD = fireNorm.clone().negate();
-  const fireRay = new THREE.Raycaster(fireRayOrig, fireRayD, 0, 10);
-  const fireHits = fireRay.intersectObject(globe, false);
-  if (fireHits.length > 0) {
-    const localHit = campGroup.worldToLocal(fireHits[0].point.clone());
-    fireAnchor.position.y = localHit.y;
-    fireAnchor.updateMatrixWorld(true);
-  }
-
-  // Raycast tent elements to terrain
-  for (const child of campGroup.children) {
-    if (!child.userData.needsRaycast) continue;
-    if (child === fireAnchor) continue;
-    child.userData.baseQuaternion = child.quaternion.clone();
-    const worldPos = new THREE.Vector3();
-    child.getWorldPosition(worldPos);
-    const normal = worldPos.clone().normalize();
-    const rayOrigin = worldPos.clone().addScaledVector(normal, 3);
-    const rayDir = normal.clone().negate();
-    const ray = new THREE.Raycaster(rayOrigin, rayDir, 0, 10);
-    const hits = ray.intersectObject(globe, false);
-    if (hits.length > 0) {
-      const localHit = campGroup.worldToLocal(hits[0].point.clone());
-      const sink = child.userData.groundSink || 0;
-      child.position.y = localHit.y - sink;
-      // Orient tent to match terrain slope: compose slope with original rotation
-      const hitNormal = hits[0].face.normal.clone().transformDirection(globe.matrixWorld).normalize();
-      const invGroupQuat = campGroup.getWorldQuaternion(new THREE.Quaternion()).invert();
-      const localNormal = hitNormal.clone().applyQuaternion(invGroupQuat);
-      const slopeQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), localNormal);
-      child.quaternion.copy(slopeQuat).multiply(child.userData.baseQuaternion);
-    }
-  }
-
+  groundCampObject(fireAnchor);
+  groundCampObject(tent, tent.userData.groundSink || 0);
   for (const child of fireAnchor.children) {
-    if (!child.userData.needsRaycast) continue;
-    const worldPos = new THREE.Vector3();
-    child.getWorldPosition(worldPos);
-    const normal = worldPos.clone().normalize();
-    const rayOrigin = worldPos.clone().addScaledVector(normal, 3);
-    const rayDir = normal.clone().negate();
-    const ray = new THREE.Raycaster(rayOrigin, rayDir, 0, 10);
-    const hits = ray.intersectObject(globe, false);
-    if (hits.length > 0) {
-      const localHit = fireAnchor.worldToLocal(hits[0].point.clone());
-      child.position.y = localHit.y;
-    }
+    if (child.userData.needsRaycast) groundCampObject(child, 0.02);
   }
 
   // Placed gear (backpack and sleeping bag) near tent
@@ -2986,40 +2949,31 @@ function buildCampModel(state, anchor) {
     new THREE.BoxGeometry(0.26, 0.06, 0.16),
     new THREE.MeshStandardMaterial({ color: 0x2d5528, roughness: 0.8 })
   );
-  placedFlap.position.set(0.08, 0.32, 0);
-  gearGroup.add(placedFlap);
+  placedFlap.position.set(0, 0.16, 0);
+  placedPack.add(placedFlap);
   
   const placedBag = new THREE.Mesh(
     new THREE.CylinderGeometry(0.07, 0.07, 0.28, 8),
     new THREE.MeshStandardMaterial({ color: 0x4488aa, roughness: 0.7 })
   );
-  placedBag.position.set(-0.15, 0.07, 0);
+  placedBag.position.set(-0.3, 0.07, 0);
   placedBag.rotation.z = Math.PI / 2;
   placedBag.castShadow = true;
   placedBag.userData.needsRaycast = true;
   gearGroup.add(placedBag);
   
-  // Position gear right beside the tent entrance
+  // Outside the front wall, toward the fire, slightly aside from the entrance.
   const tentPos = tent.position.clone();
-  const gearAngle = Math.atan2(tentPos.x, tentPos.z) + Math.PI / 2;
-  gearGroup.position.set(tentPos.x + Math.sin(gearAngle) * 0.6, 0, tentPos.z + Math.cos(gearAngle) * 0.6);
+  const towardFire = new THREE.Vector3(-state.tent[0], 0, -state.tent[1]).normalize();
+  const side = new THREE.Vector3(towardFire.z, 0, -towardFire.x);
+  gearGroup.position.copy(tentPos).addScaledVector(towardFire, 1.25).addScaledVector(side, 0.55);
+  gearGroup.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle + Math.PI);
   campGroup.add(gearGroup);
   
   // Raycast gear to terrain
   for (const child of gearGroup.children) {
     if (!child.userData.needsRaycast) continue;
-    campGroup.updateMatrixWorld(true);
-    const worldPos = new THREE.Vector3();
-    child.getWorldPosition(worldPos);
-    const normal = worldPos.clone().normalize();
-    const rayOrigin = worldPos.clone().addScaledVector(normal, 3);
-    const rayDir = normal.clone().negate();
-    const ray = new THREE.Raycaster(rayOrigin, rayDir, 0, 10);
-    const hits = ray.intersectObject(globe, false);
-    if (hits.length > 0) {
-      const localHit = gearGroup.worldToLocal(hits[0].point.clone());
-      child.position.y = localHit.y + (child === placedPack ? 0.16 : 0.07);
-    }
+    groundCampObject(child, 0.01);
   }
 
   return { group: campGroup, tent, fireAnchor, gearGroup, campCoals, campFireGeo, campFireAlphas,
@@ -3030,7 +2984,6 @@ function buildCampModel(state, anchor) {
 // Sleep state
 let isSleeping = false;
 let walkingToTent = false;
-let campGlobeRotation = null;
 const tapRaycaster = new THREE.Raycaster();
 const tapMouse = new THREE.Vector2();
 let lastMouseDownPos = null;
@@ -3353,10 +3306,9 @@ function animate() {
   if (gamepadY) {
     if (isSleeping) {
       wakeUp();
-    } else if (campPitched && campGlobeRotation) {
+    } else if (campPitched) {
       // Check if near tent
-      const tentDist = globeRotation.angleTo(campGlobeRotation);
-      if (tentDist < 0.3) {  // Close enough to enter (~6 units on globe)
+      if (ownTentDistance() <= TENT_INTERACTION_DISTANCE) {
         walkingToTent = true;
       }
     }
@@ -3384,18 +3336,24 @@ function animate() {
   }
 
   // Auto-walk to tent
-  if (walkingToTent && campGlobeRotation) {
-    const target = campGlobeRotation.clone().invert();
-    const current = globeRotation.clone().invert();
-    const angle = current.angleTo(target);
-    if (angle < 0.02) {
-      enterTent();
+  if (walkingToTent) {
+    const tentDirection = ownTentDirection();
+    if (!tentDirection) {
+      walkingToTent = false;
     } else {
-      // Constant walk speed toward tent (same as normal walking)
-      const walkSpeed = (player.userData.swimming ? SWIM_SPEED : 0.2) * delta;
-      const slerpFactor = Math.min(1, walkSpeed / angle);
-      globeRotation.slerp(campGlobeRotation, slerpFactor);
-      moveInput = 0;
+      moveInput = strafeInput = 0;
+      const up = new THREE.Vector3(0, 1, 0);
+      const towardTent = tentDirection.applyQuaternion(globeRotation);
+      const angle = up.angleTo(towardTent);
+      if (angle * GLOBE_RADIUS < 0.4) {
+        enterTent();
+      } else {
+        // Shortest physical route, preserving the current orientation around the globe.
+        const walkSpeed = (player.userData.swimming ? SWIM_SPEED : 0.2) * delta;
+        const correction = new THREE.Quaternion().setFromUnitVectors(towardTent, up);
+        const step = new THREE.Quaternion().slerp(correction, Math.min(1, walkSpeed / angle));
+        globeRotation.premultiply(step).normalize();
+      }
     }
   }
 
@@ -3742,10 +3700,8 @@ function animate() {
   const tentCompass = document.getElementById('tent-compass');
   const tentCompassLine = document.getElementById('tent-compass-line');
   const btnPitch = document.getElementById('btn-pitch');
-  if (campPitched && localCampState && campGlobeRotation && !isSleeping) {
-    // Use angular distance (same as tent entry check)
-    const tentDist = globeRotation.angleTo(campGlobeRotation);
-    const nearTent = tentDist < 0.3;
+  if (campPitched && localCampState && !isSleeping) {
+    const nearTent = ownTentDistance() <= TENT_INTERACTION_DISTANCE;
     
     // Disable pack-up if too far from tent
     btnPitch.style.opacity = nearTent ? '1' : '0.4';
@@ -3754,16 +3710,11 @@ function animate() {
     // Show compass if not near tent
     if (!nearTent) {
       tentCompass.style.display = 'block';
-      // Calculate direction to tent in screen space
-      const playerWorldPos = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert()).normalize().multiplyScalar(GLOBE_RADIUS);
-      const tentWorldPos = campsitePoint(localCampState.position, localCampState.tent).normalize().multiplyScalar(GLOBE_RADIUS);
-      const tentDir = tentWorldPos.clone().sub(playerWorldPos).normalize();
-      // Project to horizontal plane relative to player
-      const playerUp = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert()).normalize();
-      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(globeRotation.clone().invert());
-      const right = new THREE.Vector3().crossVectors(playerUp, forward).normalize();
-      forward.crossVectors(right, playerUp).normalize();
-      const angle = Math.atan2(tentDir.dot(right), tentDir.dot(forward)) - cameraAngle;
+      // Camera-relative bearing to the same physical tent used by interaction checks.
+      const tentDir = ownTentDirection().applyQuaternion(globeRotation);
+      const right = new THREE.Vector3(Math.cos(cameraAngle), 0, -Math.sin(cameraAngle));
+      const forward = new THREE.Vector3(-Math.sin(cameraAngle), 0, -Math.cos(cameraAngle));
+      const angle = Math.atan2(tentDir.dot(right), tentDir.dot(forward));
       // Line points outward from center, rotate around
       const x2 = 32 + Math.sin(angle) * 28;
       const y2 = 32 - Math.cos(angle) * 28;
