@@ -733,7 +733,9 @@ export function createWinter(THREE, world) {
       balls.length = 0;
     }
     if (cover === 0 && wasCover > 0) clearTracks();
-    button.style.display = enabled ? 'flex' : 'none';
+    // Ring container shows when winter enabled (it contains the snowball button)
+    const snowballRing = document.getElementById('snowball-ring');
+    snowballRing.style.display = enabled ? 'flex' : 'none';
     refreshHints();
   }
   const iceContacts = new Map();
@@ -829,9 +831,13 @@ export function createWinter(THREE, world) {
     skatesButton.style.display = enabled && (skates || player.userData.onIce) ? 'flex' : 'none';
     aimButton.disabled = !canAct;
     skatesButton.disabled = !canAct;
-    // Show joystick ring on snowball button when holding a snowball (mobile only)
+    // Ring expands to joystick when holding snowball on mobile, otherwise stays button-sized
     const snowballRing = document.getElementById('snowball-ring');
-    if (snowballRing) snowballRing.style.display = isMobile && held && canAct ? 'block' : 'none';
+    const showJoystick = isMobile && held && canAct;
+    snowballRing.style.width = showJoystick ? '80px' : '48px';
+    snowballRing.style.height = showJoystick ? '80px' : '48px';
+    snowballRing.style.background = showJoystick ? 'rgba(30,50,70,0.5)' : 'transparent';
+    snowballRing.style.border = showJoystick ? '2px solid rgba(100,140,180,0.4)' : 'none';
     if (!enabled) return;
     const inverse = world.getRotation().clone().invert();
     flightObstacles = world.getObstacles();
