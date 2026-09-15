@@ -1,30 +1,35 @@
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
-import { iceImpulse, advanceOrbit } from './winter-physics.js?v=175';
+import { iceImpulse, advanceOrbit } from './winter-physics.js?v=176';
 
 // Winter coordinates are planet-local: tracks and projectiles stay put as campers walk.
 export function createWinter(THREE, world) {
   const { scene, globePivot, globe, trees, waterSphere, radius, waterRadius } = world;
+  const mobile = world.mobile === true;
   const up = new THREE.Vector3(0, 1, 0);
   const iceRadius = waterRadius + 0.05; // 25 cm shell: 5 cm above water, 20 cm below.
   let enabled = false, cover = 0.75, snowfall = 0.4, elapsed = 0;
   let held = false, packing = 0, lastAction = -10, throwPose = 0;
-  let aiming = false, aimPitch = Math.atan2(3.4, 15), inputMode = 'keyboard', skates = false;
+  let aiming = false, aimPitch = 0.3, aimYaw = 0, inputMode = 'keyboard', skates = false;
   let hintState = '';
   const BALL_RADIUS = 0.08, FLIGHT_STEP = 1 / 60, GRAVITY_MU = 12 * radius * radius;
-  let throwPower = 15.5;
+  let throwPower = 9.5;
   const velocity = new THREE.Vector2();
   const button = document.getElementById('btn-snowball');
   const aimButton = document.getElementById('btn-aim');
   const skatesButton = document.getElementById('btn-skates');
   const crosshair = document.getElementById('snow-crosshair');
+  const distancePanel = document.getElementById('aim-distance');
   const powerSlider = document.getElementById('throw-power');
-  powerSlider.addEventListener('input', () => {
-    throwPower = THREE.MathUtils.clamp(Number(powerSlider.value), 10, 20);
-    document.getElementById('throw-power-value').textContent = throwPower.toFixed(1);
-    previewAt = -10;
-  });
+  function setPower(value) {
+    throwPower = THREE.MathUtils.clamp(value, 3, 20);
+    powerSlider.value = throwPower;
+    document.getElementById('throw-power-value').textContent = `${Math.round((throwPower - 3) / 17 * 100)}%`;
+  }
+  powerSlider.addEventListener('input', () => setPower(Number(powerSlider.value)));
+  document.getElementById('throw-closer').addEventListener('click', () => setPower(throwPower - 0.75));
+  document.getElementById('throw-farther').addEventListener('click', () => setPower(throwPower + 0.75));
   const snowAmount = { value: 0 };
   // Small static terrain patches let raycasts reject most of the globe cheaply.
   // This matters for dense snowfall and full-orbit previews; triangles stay exact.
@@ -48,6 +53,8 @@ export function createWinter(THREE, world) {
   const snowMaterial = new THREE.MeshStandardMaterial({ color: 0xeaf5ff, roughness: 0.95, flatShading: true });
   const snowCaps = [];
   const shelters = [];
+  const mobileFoliage = [];
+  const treeColumns = trees.map(tree => ({ object: tree.obj, direction: tree.obj.position.clone().normalize() }));
 
   // Overlapping cones intercept vertical snowfall. Only the exposed outer skirt
   // of each lower tier is capped; open-ended meshes never whiten the undersides.
@@ -56,6 +63,18 @@ export function createWinter(THREE, world) {
     for (let i = 0; i < cones.length; i++) {
       const cone = cones[i], p = cone.geometry.parameters;
       const top = i === cones.length - 1;
+      if (mobile) {
+        // camping-sim's vertex tinting, on the original cones and original shadows.
+        const positions = cone.geometry.attributes.position, normals = cone.geometry.attributes.normal;
+        const weights = new Float32Array(positions.count);
+        for (let v = 0; v < positions.count; v++) {
+          const heightRatio = (positions.getY(v) + p.height / 2) / p.height;
+          weights[v] = normals.getY(v) < 0 ? 0 : top ? 1 : Math.max(0, 1 - heightRatio * 1.5);
+        }
+        cone.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(positions.count * 3), 3));
+        mobileFoliage.push({ cone, green: cone.material.color.clone(), weights });
+        continue;
+      }
       const exposed = top ? 1 : 0.1;
       const height = p.height * exposed;
       const cap = new THREE.Mesh(new THREE.CylinderGeometry(
@@ -91,7 +110,7 @@ export function createWinter(THREE, world) {
   // A single spherical exposure texture avoids a per-fragment loop over the forest.
   // Gradients leave a little wind-blown snow beneath the lowest branches.
   const canvas = document.createElement('canvas');
-  canvas.width = 1024; canvas.height = 512;
+  canvas.width = mobile ? 512 : 1024; canvas.height = mobile ? 256 : 512;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
   for (const shelter of shelters) {
@@ -112,7 +131,66 @@ export function createWinter(THREE, world) {
   }
   const exposure = new THREE.CanvasTexture(canvas);
   exposure.wrapS = THREE.RepeatWrapping;
-  globe.material.onBeforeCompile = shader => {
+  const originalColors = globe.geometry.attributes.color.array.slice();
+  let groundDirty = false, lastBake = -1;
+  let groundTexture = null, groundPixels = null, groundContext = null, shelterPixels = null;
+  if (mobile) {
+    const groundCanvas = document.createElement('canvas');
+    groundCanvas.width = canvas.width; groundCanvas.height = canvas.height;
+    groundContext = groundCanvas.getContext('2d');
+    groundPixels = groundContext.createImageData(canvas.width, canvas.height);
+    shelterPixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    groundTexture = new THREE.CanvasTexture(groundCanvas);
+    groundTexture.generateMipmaps = false;
+    groundTexture.minFilter = THREE.LinearFilter;
+    groundTexture.wrapS = THREE.RepeatWrapping;
+  }
+  function bakeGround() {
+    if (!mobile || !groundDirty || elapsed - lastBake < 0.12) return;
+    lastBake = elapsed; groundDirty = false;
+    const coated = enabled && cover > 0;
+    for (const { cone, green, weights } of mobileFoliage) {
+      const colors = cone.geometry.attributes.color;
+      for (let v = 0; v < weights.length; v++) {
+        const snow = coated ? weights[v] * cover : 0;
+        colors.setXYZ(v, green.r + (1 - green.r) * snow, green.g + (1 - green.g) * snow, green.b + (1 - green.b) * snow);
+      }
+      colors.needsUpdate = true;
+      if (cone.material.vertexColors !== coated) {
+        cone.material.vertexColors = coated; cone.material.needsUpdate = true;
+      }
+      if (coated) cone.material.color.setHex(0xffffff);
+      else cone.material.color.copy(green);
+    }
+    if (coated) {
+      const w = canvas.width, h = canvas.height, cols = globe.geometry.parameters.widthSegments;
+      const rows = globe.geometry.parameters.heightSegments, strength = cover * cover * (3 - 2 * cover);
+      const snowRGB = [0.83, 0.91, 0.98];
+      for (let y = 0; y < h; y++) {
+        const gy = y / (h - 1) * rows, y0 = Math.min(rows - 1, Math.floor(gy)), fy = gy - y0;
+        for (let x = 0; x < w; x++) {
+          const gx = x / (w - 1) * cols, x0 = Math.min(cols - 1, Math.floor(gx)), fx = gx - x0;
+          const base = (y0 * (cols + 1) + x0) * 3, lower = base + (cols + 1) * 3;
+          const pixel = (y * w + x) * 4, snow = strength * shelterPixels[pixel] / 255;
+          for (let c = 0; c < 3; c++) {
+            const a = originalColors[base + c] * (1 - fx) + originalColors[base + 3 + c] * fx;
+            const b = originalColors[lower + c] * (1 - fx) + originalColors[lower + 3 + c] * fx;
+            const terrain = a * (1 - fy) + b * fy;
+            groundPixels.data[pixel + c] = Math.round(255 * (terrain * (1 - snow) + snowRGB[c] * snow));
+          }
+          groundPixels.data[pixel + 3] = 255;
+        }
+      }
+      groundContext.putImageData(groundPixels, 0, 0); groundTexture.needsUpdate = true;
+    }
+    // Keep the original terrain material, lighting and shadows; only bake our coating.
+    if (globe.material.map !== (coated ? groundTexture : null)) {
+      globe.material.map = coated ? groundTexture : null;
+      globe.material.vertexColors = !coated;
+      globe.material.needsUpdate = true;
+    }
+  }
+  if (!mobile) globe.material.onBeforeCompile = shader => {
     shader.uniforms.winterSnow = snowAmount;
     shader.uniforms.snowExposure = { value: exposure };
     shader.vertexShader = 'varying vec2 snowUV;\n' + shader.vertexShader;
@@ -149,29 +227,59 @@ export function createWinter(THREE, world) {
   // the shared planet frame. Each flake stops at its first tree/terrain surface.
   const flakeCount = 6400;
   const flakePositions = new Float32Array(flakeCount * 3);
-  const flakes = Array.from({ length: flakeCount }, () => ({ direction: new THREE.Vector3(), height: 0, floor: 0, speed: 0 }));
+  const flakeWeather = new Float32Array(flakeCount * 4);
+  const flakes = Array.from({ length: flakeCount }, () => ({ direction: new THREE.Vector3(), live: false, floor: 0, speed: 0 }));
   const flakeGeo = new THREE.BufferGeometry();
   flakeGeo.setAttribute('position', new THREE.BufferAttribute(flakePositions, 3));
+  flakeGeo.setAttribute('weather', new THREE.BufferAttribute(flakeWeather, 4));
+  flakeGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), radius + 16);
   const flakeMat = new THREE.PointsMaterial({ color: 0xeaf5ff, size: 0.075, transparent: true, opacity: 0.85, depthWrite: false });
   flakeMat.onBeforeCompile = shader => {
     shader.fragmentShader = shader.fragmentShader.replace('#include <clipping_planes_fragment>',
       '#include <clipping_planes_fragment>\nif (length(gl_PointCoord - vec2(0.5)) > 0.5) discard;');
   };
-  const falling = new THREE.Points(flakeGeo, flakeMat);
-  falling.frustumCulled = false; falling.visible = false; globePivot.add(falling);
-  function spawnFlake(flake, initial, inverse) {
+  const snowTime = { value: 0 }, snowView = { value: new THREE.Vector3(0, 1, 0) };
+  const fallingMaterial = flakeMat.clone();
+  fallingMaterial.onBeforeCompile = shader => {
+    flakeMat.onBeforeCompile(shader);
+    shader.uniforms.snowTime = snowTime;
+    shader.uniforms.snowView = snowView;
+    shader.vertexShader = 'attribute vec4 weather; uniform float snowTime; uniform vec3 snowView;\n' + shader.vertexShader;
+    shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>',
+      'vec3 transformed = position * (weather.x + mod(weather.w - snowTime * weather.z, max(weather.y, 1.0)));');
+    shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+      // No rasterization for uninitialized flakes or the far side of the globe.
+      if (weather.y < 0.5 || dot(position, snowView) < 0.12) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    `);
+  };
+  const falling = new THREE.Points(flakeGeo, fallingMaterial);
+  falling.visible = false; globePivot.add(falling);
+  const floorCache = new Map();
+  let flakeCursor = 0;
+  function spawnFlake(flake, index, inverse) {
     flake.direction.set((Math.random() - 0.5) * 32, radius, (Math.random() - 0.5) * 32).normalize().applyQuaternion(inverse);
-    flake.floor = surface(flake.direction);
-    // Raycast only nearby canopies, in their rendered world frame.
-    const nearby = trees.filter(t => t.obj.position.clone().normalize().distanceTo(flake.direction) * radius < 2);
-    if (nearby.length) {
-      const direction = flake.direction.clone().applyQuaternion(world.getRotation());
-      ray.set(direction.clone().multiplyScalar(radius + 12), direction.clone().negate());
-      const hit = ray.intersectObjects(nearby.map(t => t.obj), true)[0];
-      if (hit) flake.floor = Math.max(flake.floor, hit.point.length());
+    const d = flake.direction;
+    const key = `${Math.round(d.x * 128)},${Math.round(d.y * 128)},${Math.round(d.z * 128)}`;
+    if (mobile && floorCache.has(key)) flake.floor = floorCache.get(key);
+    else {
+      flake.floor = surface(flake.direction);
+      const nearby = treeColumns.filter(t => t.direction.distanceTo(flake.direction) * radius < 2);
+      if (nearby.length) {
+        const direction = flake.direction.clone().applyQuaternion(world.getRotation());
+        ray.set(direction.clone().multiplyScalar(radius + 12), direction.clone().negate());
+        const hit = ray.intersectObjects(nearby.map(t => t.object), true)[0];
+        if (hit) flake.floor = Math.max(flake.floor, hit.point.length());
+      }
+      if (mobile) {
+        if (floorCache.size >= 16000) floorCache.delete(floorCache.keys().next().value);
+        floorCache.set(key, flake.floor);
+      }
     }
-    flake.height = initial ? flake.floor + Math.random() * 12 : radius + 13 + Math.random() * 2;
     flake.speed = 1.5 + Math.random() * 1.8;
+    const span = Math.max(2, radius + 15 - flake.floor);
+    flakePositions.set([d.x, d.y, d.z], index * 3);
+    flakeWeather.set([flake.floor, span, flake.speed, Math.random() * span + elapsed * flake.speed], index * 4);
+    flake.live = true;
   }
 
   // Fifty prints per camper, recycled. Each subdivided sole follows the actual
@@ -186,16 +294,18 @@ export function createWinter(THREE, world) {
   for (const y of [23, 40, 57, 96, 108]) sole.fillRect(9, y, 46, 4);
   const soleTexture = new THREE.CanvasTexture(soleCanvas);
   const tracks = new Map();
+  function disposeTrack(track) {
+    if (!track.batch) return;
+    globePivot.remove(track.batch); track.batch.geometry.dispose(); track.batch.material.dispose();
+  }
   function clearTracks() {
-    for (const track of tracks.values()) for (const print of track.prints) {
-      globePivot.remove(print); print.geometry.dispose(); print.material.dispose();
-    }
+    for (const track of tracks.values()) disposeTrack(track);
     tracks.clear();
   }
   function updateTrack(id, mesh, inverse, delta) {
     const direction = mesh.position.clone().applyQuaternion(inverse).normalize();
     let track = tracks.get(id);
-    if (!track) { track = { last: direction.clone(), distance: 0, count: 0, prints: [] }; tracks.set(id, track); }
+    if (!track) { track = { last: direction.clone(), distance: 0, count: 0, prints: [], batch: null }; tracks.set(id, track); }
     const distance = track.last.distanceTo(direction) * radius;
     track.last.copy(direction);
     const active = mesh.visible && !mesh.userData.skating && !mesh.userData.onIce && !mesh.userData.swimming && cover > 0.05;
@@ -204,34 +314,46 @@ export function createWinter(THREE, world) {
     if (active && track.distance > 0.42 && exposureAt(direction) * cover > 0.08) {
       track.distance %= 0.42;
       const index = track.count++ % 50;
-      let print = track.prints[index];
-      if (!print) {
-        print = new THREE.Mesh(new THREE.PlaneGeometry(0.14, 0.3, 2, 3),
-          // Black alpha compositing only darkens the existing surface, even in fog/night.
-          new THREE.MeshBasicMaterial({ color: 0x000000, map: soleTexture, transparent: true, opacity: 0.4,
-            fog: false, toneMapped: false, alphaTest: 0.02, depthWrite: false, side: THREE.DoubleSide }));
-        print.frustumCulled = false;
-        track.prints[index] = print; globePivot.add(print);
+      if (!track.batch) {
+        const sole = new THREE.PlaneGeometry(0.14, 0.3, 2, 3), geometry = new THREE.BufferGeometry();
+        const uvs = new Float32Array(50 * 12 * 2), indices = [];
+        for (let i = 0; i < 50; i++) {
+          uvs.set(sole.attributes.uv.array, i * 24);
+          for (const vertex of sole.index.array) indices.push(vertex + i * 12);
+        }
+        geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(50 * 12 * 3), 3));
+        geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+        geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(50 * 12 * 4), 4));
+        geometry.setIndex(indices); sole.dispose();
+        track.batch = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: 0x000000, map: soleTexture,
+          vertexColors: true, transparent: true, opacity: 0.42, fog: false, toneMapped: false,
+          alphaTest: 0.02, depthWrite: false, side: THREE.DoubleSide }));
+        track.batch.frustumCulled = false; globePivot.add(track.batch);
       }
       const basis = mesh.quaternion.clone().premultiply(inverse);
       const right = new THREE.Vector3(1, 0, 0).applyQuaternion(basis);
       const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(basis);
       const center = direction.clone().multiplyScalar(radius).addScaledVector(right, track.count % 2 ? 0.13 : -0.13);
-      const position = print.geometry.attributes.position;
-      for (let i = 0; i < position.count; i++) {
+      const position = track.batch.geometry.attributes.position;
+      for (let i = 0; i < 12; i++) {
         const x = (i % 3 / 2 - 0.5) * 0.14;
         const z = (0.5 - Math.floor(i / 3) / 3) * 0.3;
         const d = center.clone().addScaledVector(right, x).addScaledVector(forward, z).normalize();
         const point = d.multiplyScalar(surface(d) + 0.012);
-        position.setXYZ(i, point.x, point.y, point.z);
+        position.setXYZ(index * 12 + i, point.x, point.y, point.z);
       }
       position.needsUpdate = true;
-      print.userData.born = track.count; print.userData.age = 0;
+      track.prints[index] = { born: track.count, at: elapsed };
     }
-    for (const print of track.prints) {
-      print.userData.age += delta;
-      print.material.opacity = 0.42 * Math.min(1, (50 - track.count + print.userData.born) / 12) *
-        Math.max(0, 1 - print.userData.age / (snowfall > 0 ? 45 : 90));
+    if (track.batch) {
+      const colors = track.batch.geometry.attributes.color;
+      for (let i = 0; i < track.prints.length; i++) {
+        const print = track.prints[i];
+        const alpha = Math.min(1, (50 - track.count + print.born) / 12) *
+          Math.max(0, 1 - (elapsed - print.at) / (snowfall > 0 ? 45 : 90));
+        for (let v = 0; v < 12; v++) colors.setXYZW(i * 12 + v, 1, 1, 1, alpha);
+      }
+      colors.needsUpdate = true;
     }
   }
 
@@ -258,10 +380,14 @@ export function createWinter(THREE, world) {
   }
   function throwState() {
     const inverse = world.getRotation().clone().invert();
-    const forward = new THREE.Vector3(Math.sin(world.getFacing()), 0, Math.cos(world.getFacing()));
-    const pitch = aiming ? aimPitch : Math.atan2(3.4, 15);
+    const facing = aiming ? aimYaw : world.getFacing();
+    const forward = new THREE.Vector3(Math.sin(facing), 0, Math.cos(facing));
+    const pitch = aiming ? aimPitch : 0.3;
+    const player = world.getPlayer(), ball = player.userData.winterEquipment?.ball;
+    const hand = ball ? ball.getWorldPosition(new THREE.Vector3())
+      : new THREE.Vector3(-0.25, 0.7, 0.3).applyAxisAngle(up, facing).add(player.position);
     return {
-      position: world.getPlayer().position.clone().addScaledVector(up, 0.85).addScaledVector(forward, 0.45).applyQuaternion(inverse),
+      position: hand.applyQuaternion(inverse),
       velocity: forward.multiplyScalar(Math.cos(pitch) * throwPower).addScaledVector(up, Math.sin(pitch) * throwPower).applyQuaternion(inverse),
     };
   }
@@ -286,7 +412,7 @@ export function createWinter(THREE, world) {
     const position = new THREE.Vector3(...message.position), speed = new THREE.Vector3(...message.velocity);
     const peer = world.getPeers()[id];
     const direction = up.clone().applyQuaternion(peer.currentGlobeRotation.clone().invert());
-    if (position.length() < iceRadius || position.length() > radius + 9 || speed.length() > 20.01 || speed.length() < 9.99 ||
+    if (position.length() < iceRadius || position.length() > radius + 9 || speed.length() > 20.01 || speed.length() < 2.99 ||
         direction.distanceTo(position.clone().normalize()) * radius > 2) return;
     receiveTimes.set(id, elapsed); launch(id, position, speed);
   }
@@ -314,10 +440,11 @@ export function createWinter(THREE, world) {
       const bounds = new THREE.Sphere(center, 0.32 + BALL_RADIUS);
       accept(bounds.containsPoint(from) ? from.clone() : flightRay.ray.intersectSphere(bounds, new THREE.Vector3()), mesh);
     }
-    const nearby = trees.filter(t => t.obj.position.clone().normalize().distanceTo(from.clone().normalize()) * radius < 2.5);
+    const direction = from.clone().normalize();
+    const nearby = treeColumns.filter(t => t.direction.distanceTo(direction) * radius < 2.5);
     if (nearby.length || flightObstacles.length) {
       flightRay.set(from.clone().applyQuaternion(world.getRotation()), travel.normalize().applyQuaternion(world.getRotation()));
-      const hit = flightRay.intersectObjects([...nearby.map(t => t.obj), ...flightObstacles], true)[0];
+      const hit = flightRay.intersectObjects([...nearby.map(t => t.object), ...flightObstacles], true)[0];
       if (hit) accept(hit.point.applyQuaternion(inverse));
     }
     if (!nearest && to.length() < iceRadius) nearest = { point: to.clone().normalize().multiplyScalar(iceRadius), mesh: null };
@@ -328,61 +455,58 @@ export function createWinter(THREE, world) {
     advanceOrbit(next, speed, FLIGHT_STEP, GRAVITY_MU);
     return next;
   }
-  const PREVIEW_STEPS = 960;
+  const PREVIEW_STEPS = 240;
   const arcGeo = new LineGeometry().setPositions(new Float32Array((PREVIEW_STEPS + 1) * 3));
   const arc = new Line2(arcGeo, new LineMaterial({ color: 0xe32636, linewidth: 5, dashed: true,
     dashSize: 0.24, gapSize: 0.16, alphaToCoverage: true, depthWrite: false, toneMapped: false }));
   arc.computeLineDistances();
+  arcGeo.instanceCount = 0;
   arc.frustumCulled = false; arc.visible = false; globePivot.add(arc);
   let previewAt = -10, impactPoint = null;
-  const previewBounds = new THREE.Box3(), previewCenter = new THREE.Vector3();
-  let previewRadius = 3;
+  let preview = null;
+  const previewPoints = new Float32Array((PREVIEW_STEPS + 1) * 3);
+  const previewDistances = new Float32Array(PREVIEW_STEPS + 1);
   function updateAim(inverse) {
     arc.visible = enabled && aiming && held && world.canAct();
     arc.material.resolution.set(innerWidth, innerHeight);
     crosshair.style.display = 'none';
     if (!arc.visible) return;
-    if (elapsed - previewAt >= 0.08) {
+    if (!preview && elapsed - previewAt >= (mobile ? 0.14 : 0.08)) {
       previewAt = elapsed;
       const shot = throwState();
-      let position = shot.position, distance = 0, count = 0;
-      const { instanceStart: starts, instanceEnd: ends, instanceDistanceStart: distances, instanceDistanceEnd: endDistances } = arcGeo.attributes;
-      previewBounds.setFromPoints([position, world.getPlayer().position.clone().applyQuaternion(inverse)]);
-      impactPoint = null;
-      for (let i = 0; i < PREVIEW_STEPS; i++) {
-        const next = advanceFlight(position, shot.velocity);
-        const hit = flightHit(position, next, i < 24 ? world.localId : null, inverse);
+      preview = { position: shot.position, velocity: shot.velocity, count: 0, distance: 0 };
+      previewPoints.set(shot.position.toArray(), 0); previewDistances[0] = 0;
+    }
+    if (preview) {
+      // Finish into staging buffers; never show a half-updated arc or spend an
+      // unbounded frame tracing an orbit on a phone.
+      for (let work = 0; work < (mobile ? 32 : PREVIEW_STEPS); work++) {
+        const i = preview.count, next = advanceFlight(preview.position, preview.velocity);
+        const hit = flightHit(preview.position, next, i < 24 ? world.localId : null, inverse);
         if (hit) next.copy(hit.point);
-        starts.setXYZ(i, position.x, position.y, position.z);
-        ends.setXYZ(i, next.x, next.y, next.z);
-        distances.setX(i, distance);
-        distance += next.distanceTo(position);
-        endDistances.setX(i, distance);
-        count++; position = next;
-        previewBounds.expandByPoint(position);
-        if (hit) { impactPoint = position; break; }
+        preview.distance += next.distanceTo(preview.position);
+        preview.count++; preview.position = next;
+        previewPoints.set(next.toArray(), preview.count * 3);
+        previewDistances[preview.count] = preview.distance;
+        if (hit || preview.count === PREVIEW_STEPS) {
+          const { instanceStart: starts, instanceEnd: ends, instanceDistanceStart: distances, instanceDistanceEnd: endDistances } = arcGeo.attributes;
+          for (let j = 0; j < preview.count; j++) {
+            starts.setXYZ(j, previewPoints[j * 3], previewPoints[j * 3 + 1], previewPoints[j * 3 + 2]);
+            ends.setXYZ(j, previewPoints[j * 3 + 3], previewPoints[j * 3 + 4], previewPoints[j * 3 + 5]);
+            distances.setX(j, previewDistances[j]); endDistances.setX(j, previewDistances[j + 1]);
+          }
+          arcGeo.instanceCount = preview.count;
+          starts.data.needsUpdate = distances.data.needsUpdate = true;
+          impactPoint = hit ? next.clone() : null;
+          preview = null;
+          break;
+        }
       }
-      previewBounds.getCenter(previewCenter);
-      previewRadius = previewBounds.getSize(new THREE.Vector3()).length() / 2;
-      arcGeo.instanceCount = count;
-      starts.data.needsUpdate = distances.data.needsUpdate = true;
     }
     {
-      // Frame the arc from above and slightly over the shoulder. On a little
-      // planet, an ordinary chase camera hides long throws behind the horizon.
-      const center = previewCenter.clone().applyQuaternion(world.getRotation());
-      const normal = center.clone().normalize();
-      const backward = new THREE.Vector3(-Math.sin(world.getFacing()), 0, -Math.cos(world.getFacing()));
-      backward.addScaledVector(normal, -backward.dot(normal)).normalize();
-      const side = new THREE.Vector3().crossVectors(normal, backward).normalize();
-      const view = normal.multiplyScalar(0.85).addScaledVector(backward, 0.45).addScaledVector(side, 0.25).normalize();
-      const halfFov = THREE.MathUtils.degToRad(world.camera.fov / 2);
-      const limitingFov = Math.min(halfFov, Math.atan(Math.tan(halfFov) * world.camera.aspect));
-      const distance = Math.max(6, previewRadius * 1.15 / Math.sin(limitingFov));
-      world.camera.position.copy(center).addScaledVector(view, distance);
-      world.camera.lookAt(center); world.camera.updateMatrixWorld(true);
-      // An unbroken orbit has no predicted impact: show the direction crosshair.
-      const target = impactPoint ?? throwState().position.addScaledVector(throwState().velocity.normalize(), 4);
+      // The forecast never controls the camera or the movement basis.
+      const shot = throwState();
+      const target = impactPoint ?? shot.position.addScaledVector(shot.velocity.normalize(), 4);
       const screen = target.clone().applyQuaternion(world.getRotation()).project(world.camera);
       if (screen.z >= -1 && screen.z <= 1 && Math.abs(screen.x) < 1 && Math.abs(screen.y) < 1) {
         crosshair.style.display = 'block';
@@ -393,10 +517,15 @@ export function createWinter(THREE, world) {
   }
   function setAim(value) {
     const next = !!value && enabled && world.canAct();
-    if (next !== aiming) { aiming = next; previewAt = -10; refreshHints(); }
+    if (next !== aiming) {
+      if (next) aimYaw = world.getFacing();
+      aiming = next; preview = null; previewAt = -10; impactPoint = null;
+      arcGeo.instanceCount = 0; refreshHints();
+    }
     if (!aiming) { arc.visible = false; crosshair.style.display = 'none'; }
   }
-  function adjustAim(change) { aimPitch = THREE.MathUtils.clamp(aimPitch + change, -0.35, 1.1); previewAt = -10; }
+  function adjustAim(change) { aimPitch = THREE.MathUtils.clamp(aimPitch + change, -0.35, 1.1); }
+  function turnAim(change) { aimYaw = THREE.MathUtils.euclideanModulo(aimYaw + change + Math.PI, Math.PI * 2) - Math.PI; }
   function updateBalls(delta, inverse) {
     for (let i = balls.length - 1; i >= 0; i--) {
       const ball = balls[i]; let impact = false;
@@ -538,26 +667,30 @@ export function createWinter(THREE, world) {
     refreshHints();
   }
   function configure(state) {
-    const wasEnabled = enabled;
+    const wasEnabled = enabled, wasCover = cover;
     enabled = state.winter === true;
     cover = state.snowCover ?? 0.75; snowfall = state.snowfall ?? 0.4;
     snowAmount.value = enabled ? cover : 0;
     ice.visible = enabled; waterSphere.visible = !enabled;
-    canopySnow.visible = enabled && cover > 0;
+    groundDirty ||= wasEnabled !== enabled || wasCover !== cover;
+    canopySnow.visible = !mobile && enabled && cover > 0;
     capMaterial.opacity = Math.min(1, cover * 2);
     document.getElementById('winter-enabled').checked = enabled;
     for (const [id, value] of [['snow-cover', cover], ['snow-fall', snowfall]]) {
       document.getElementById(id).value = Math.round(value * 100);
       document.getElementById(id + '-value').textContent = `${Math.round(value * 100)}%`;
     }
-    if (wasEnabled !== enabled || cover === 0) {
+    if (wasEnabled !== enabled) {
       clearTracks(); velocity.set(0, 0); held = false; packing = 0;
       for (const id of skateTracks.keys()) disposeCuts(id);
       if (!enabled) { skates = false; world.getPlayer().userData.skating = false; setAim(false); }
-      for (const flake of flakes) flake.height = 0;
+      for (const flake of flakes) flake.live = false;
+      flakeWeather.fill(0); flakePositions.fill(0); floorCache.clear(); flakeCursor = 0;
+      flakeGeo.attributes.position.needsUpdate = flakeGeo.attributes.weather.needsUpdate = true;
       for (const ball of balls) globePivot.remove(ball.mesh);
       balls.length = 0;
     }
+    if (cover === 0 && wasCover > 0) clearTracks();
     button.style.display = enabled ? 'block' : 'none';
     refreshHints();
   }
@@ -634,6 +767,7 @@ export function createWinter(THREE, world) {
   }
   function update(delta) {
     elapsed += delta;
+    bakeGround();
     falling.visible = enabled && snowfall > 0;
     spray.visible = enabled;
     const player = world.getPlayer();
@@ -647,6 +781,7 @@ export function createWinter(THREE, world) {
       if (peer.torch?.visible) peer.mesh.userData.flashlightLens.getWorldPosition(peer.torch.position);
     }
     aimButton.style.display = enabled ? 'block' : 'none';
+    distancePanel.style.display = enabled && aiming && canAct ? 'block' : 'none';
     skatesButton.style.display = enabled && (skates || player.userData.onIce) ? 'block' : 'none';
     aimButton.disabled = !canAct;
     skatesButton.disabled = !canAct;
@@ -655,19 +790,20 @@ export function createWinter(THREE, world) {
     flightObstacles = world.getObstacles();
     const count = Math.round(flakeCount * snowfall);
     flakeGeo.setDrawRange(0, count);
-    let spawnBudget = 256;
-    for (let i = 0; i < count; i++) {
+    snowTime.value = elapsed;
+    snowView.value.copy(world.camera.position).normalize().applyQuaternion(inverse);
+    const here = up.clone().applyQuaternion(inverse);
+    let spawnBudget = mobile ? 48 : 192, changed = false;
+    // Once initialized, snowfall needs only a time uniform. Inspect a bounded
+    // slice for cells left behind by walking; falling itself never raycasts.
+    for (let scan = 0; scan < Math.min(count, mobile ? 192 : 768) && spawnBudget > 0; scan++) {
+      const i = flakeCursor++ % count;
       const f = flakes[i];
-      const relative = f.direction.clone().applyQuaternion(world.getRotation());
-      if (f.height <= f.floor || relative.y < 0.65) {
-        // Ramp into a blizzard instead of raycasting thousands of spawns in one frame.
-        if (!spawnBudget) { flakePositions.fill(0, i * 3, i * 3 + 3); continue; }
-        spawnBudget--; spawnFlake(f, f.height === 0, inverse);
+      if (!f.live || f.direction.dot(here) < 0.6) {
+        spawnBudget--; spawnFlake(f, i, inverse); changed = true;
       }
-      f.height -= f.speed * delta;
-      flakePositions.set(f.direction.clone().multiplyScalar(f.height).toArray(), i * 3);
     }
-    flakeGeo.attributes.position.needsUpdate = true;
+    if (changed) flakeGeo.attributes.position.needsUpdate = flakeGeo.attributes.weather.needsUpdate = true;
     if (packing > 0) {
       packing -= delta;
       player.userData.leftArm.rotation.x = player.userData.rightArm.rotation.x = -1.1;
@@ -683,7 +819,7 @@ export function createWinter(THREE, world) {
       updateSkateTracks(id, peer.mesh, inverse, peer.mesh.visible && peer.mesh.userData.skating && (peer.mesh.userData.onIce || cover > 0.05));
     }
     for (const [id, track] of tracks) if (id !== world.localId && !world.getPeers()[id]) {
-      for (const print of track.prints) { globePivot.remove(print); print.geometry.dispose(); print.material.dispose(); }
+      disposeTrack(track);
       tracks.delete(id); receiveTimes.delete(id);
       disposeCuts(id);
       iceContacts.delete(id);
@@ -691,12 +827,13 @@ export function createWinter(THREE, world) {
     updateAim(inverse);
     updateBalls(delta, inverse);
   }
-  return { configure, movement, update, action, receive, setAim, adjustAim, updateHints, toggleSkates,
+  return { configure, movement, update, action, receive, setAim, adjustAim, turnAim, updateHints, toggleSkates,
     collide, receiveIceContact, sharedVelocity,
     moveFacing() {
-      const forward = world.camera.getWorldDirection(new THREE.Vector3());
-      return Math.atan2(forward.x, forward.z);
+      return world.getCameraAngle() + Math.PI;
     },
+    get facing() { return aimYaw; },
+    get snowy() { return enabled && (cover > 0 || snowfall > 0); },
     stop: () => velocity.set(0, 0), get aiming() { return aiming; },
     get holding() { return enabled && held && world.canAct(); },
     get skating() { return enabled && skates; },

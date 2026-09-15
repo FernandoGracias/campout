@@ -151,8 +151,6 @@ canvas { display: block; }
     <input type="range" id="snow-cover" min="0" max="100" value="75">
     <label for="snow-fall">Falling snow <output id="snow-fall-value">40%</output></label>
     <input type="range" id="snow-fall" min="0" max="100" value="40">
-    <label for="throw-power">Throw power <output id="throw-power-value">15.5</output></label>
-    <input type="range" id="throw-power" min="10" max="20" step="0.1" value="15.5">
   </div>
   <div id="room-code-display" style="display:none;margin-bottom:12px;padding:8px;background:rgba(255,255,255,0.08);border-radius:6px;text-align:center;">
     <div style="font-size:10px;color:#888;margin-bottom:2px;">WORLD CODE</div>
@@ -215,14 +213,23 @@ canvas { display: block; }
 
 <button id="btn-stand" style="display:none;position:fixed;bottom:100px;left:30px;z-index:101;padding:10px 16px;border:1px solid #f0c040;border-radius:8px;background:#252535;color:#fff;cursor:pointer;">Stand up</button>
 <button id="camp-interaction" style="display:none;position:fixed;z-index:150;transform:translate(-50%,-100%);padding:6px 10px;border:1px solid #f0c040;border-radius:7px;background:rgba(25,25,40,0.95);color:#fff;font:14px system-ui,sans-serif;white-space:nowrap;cursor:pointer;"></button>
-<div style="position:fixed;bottom:160px;left:24px;z-index:101;display:flex;flex-direction:column;align-items:flex-start;gap:8px;">
+<div id="winter-actions" style="position:fixed;bottom:160px;left:24px;z-index:101;display:flex;flex-direction:column;align-items:flex-start;gap:8px;">
   <button id="btn-skates" class="winter-action" style="display:none;"></button>
   <button id="btn-aim" class="winter-action" style="display:none;"></button>
   <button id="btn-snowball" class="winter-action" style="display:none;">❄ Pack snowball</button>
 </div>
+<div id="aim-distance" style="display:none;position:fixed;top:70px;left:50%;transform:translateX(-50%);width:min(310px,calc(100vw - 24px));padding:8px 10px;background:rgba(25,35,45,.9);border-radius:12px;color:white;z-index:102;">
+  <label for="throw-power" style="display:block;text-align:center;font-size:13px;">Throw distance <output id="throw-power-value">38%</output></label>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <button id="throw-closer" class="winter-action" style="padding:8px;min-height:44px;">Closer</button>
+    <input type="range" id="throw-power" aria-label="Throw distance, closer to farther" min="3" max="20" step="0.25" value="9.5" style="flex:1;min-width:0;height:44px;touch-action:none;">
+    <button id="throw-farther" class="winter-action" style="padding:8px;min-height:44px;">Farther</button>
+  </div>
+</div>
+<style>@media(pointer:coarse){#winter-actions{left:auto!important;right:12px;bottom:calc(110px + env(safe-area-inset-bottom,0px))!important;align-items:flex-end!important}.winter-action{min-height:44px;touch-action:manipulation}#lever-zone{touch-action:none}} </style>
 <style>.winter-action{padding:10px 14px;border:1px solid #cde;border-radius:20px;background:#243848;color:white;cursor:pointer}.winter-action:disabled{opacity:.45}#snow-crosshair{position:fixed;display:none;width:24px;height:24px;border:4px solid #e32636;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:100}#snow-crosshair::before,#snow-crosshair::after{content:'';position:absolute;background:#e32636;border-radius:3px}#snow-crosshair::before{width:34px;height:4px;top:6px;left:-9px}#snow-crosshair::after{width:4px;height:34px;left:6px;top:-9px}</style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v175</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v176</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -236,7 +243,7 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=175';
+import { createWinter } from './winter.js?v=176';
 
 // --- SCREEN MANAGEMENT & NETWORKING ---
 const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
@@ -996,6 +1003,9 @@ function sendBump(peerId, axis) {
 // --- GAME INITIALIZATION (called after lobby) ---
 function startGame(seed) {
 
+const mobileGraphics = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
+  (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1) ||
+  (matchMedia('(pointer: coarse)').matches && Math.min(innerWidth, innerHeight) < 900);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -1543,9 +1553,11 @@ const waterSphere = new THREE.Mesh(
 globePivot.add(waterSphere);
 
 const winter = createWinter(THREE, {
+  mobile: mobileGraphics,
   scene, camera, globePivot, globe, trees, waterSphere, radius: GLOBE_RADIUS, waterRadius: WATER_RADIUS,
   localId: localPlayerId, getPlayer: () => player, getPeers: () => otherPlayers,
   getRotation: () => globeRotation, getFacing: () => playerFacing,
+  getCameraAngle: () => cameraAngle,
   getObstacles: () => [...rockData.map(r => r.obj), ...Array.from(campModels.values(), model => model.tent).filter(tent => tent.visible)],
   canAct: () => !isSleeping && sittingFireId === null && !walkingToTent && !walkingToFire && !minigamesOpen,
   toast: message => showToast(message),
@@ -1576,6 +1588,14 @@ renderer.domElement.addEventListener('pointerdown', e => {
 });
 window.addEventListener('pointerup', e => { if (e.pointerType === 'mouse' && e.button === 2) winter.setAim(false); });
 window.addEventListener('blur', () => winter.setAim(false));
+window.addEventListener('blur', () => {
+  if (!winter.enabled) return;
+  clearMovementInput(); isDragging = false; orbitTouchId = null; pinchStartDist = null;
+});
+window.addEventListener('touchcancel', () => {
+  if (!winter.enabled) return;
+  clearMovementInput(); orbitTouchId = null; pinchStartDist = null;
+});
 document.addEventListener('visibilitychange', () => { if (document.hidden) winter.setAim(false); });
 
 // --- PLAYER TERRAIN FOLLOWING ---
@@ -2332,6 +2352,7 @@ Object.defineProperty(window, 'cameraAngle', { get: () => cameraAngle });
 let cameraDistance = 6;
 let cameraHeight = 6;
 let cameraManual = false;
+let aimViewBlend = 0, cameraGroundY = null;
 let lastTouchAngle = null;
 let pinchStartDist = null;
 let pinchStartZoom = null;
@@ -2359,7 +2380,7 @@ renderer.domElement.addEventListener('mousedown', (e) => {
 });
 window.addEventListener('mousemove', (e) => {
   if (winter.aiming && lastInputMode === 'keyboard') {
-    cameraAngle += e.movementX * 0.006 * (invertX ? -1 : 1);
+    winter.turnAim(e.movementX * 0.006 * (invertX ? -1 : 1));
     winter.adjustAim(-e.movementY * 0.004);
     return;
   }
@@ -2437,7 +2458,12 @@ renderer.domElement.addEventListener('touchmove', (e) => {
   }
   for (const touch of e.changedTouches) {
     if (touch.identifier === orbitTouchId) {
-      if (winter.aiming) { winter.adjustAim((orbitStartY - touch.clientY) * 0.004); orbitStartY = touch.clientY; }
+      if (winter.aiming) {
+        winter.turnAim((touch.clientX - orbitStartX) * 0.006 * (invertX ? -1 : 1));
+        winter.adjustAim((orbitStartY - touch.clientY) * 0.004);
+        orbitStartX = touch.clientX; orbitStartY = touch.clientY;
+        continue;
+      }
       const dx = touch.clientX - orbitStartX;
       cameraAngle = orbitStartAngle + dx * 0.01 * (invertX ? -1 : 1);
       cameraTargetAngle = cameraAngle;
@@ -3403,8 +3429,12 @@ function updateDayNight() {
   const sunAltitude = Math.sin(sunAngle);
   const daylight = THREE.MathUtils.smoothstep(sunAltitude, -0.12, 0.22);
   const twilight = Math.exp(-Math.pow(sunAltitude / 0.12, 2)) * 0.65;
-  const skyColor = new THREE.Color(0x0a0a1e).lerp(new THREE.Color(0x68b8e8), daylight)
-    .lerp(new THREE.Color(0xffaa55), twilight);
+  const snowy = winter.snowy;
+  const skyColor = new THREE.Color(0x0a0a1e).lerp(new THREE.Color(snowy ? 0xc3ccd1 : 0x68b8e8), daylight)
+    .lerp(new THREE.Color(snowy ? 0xcdd0d2 : 0xffaa55), twilight);
+  sun.color.setHex(snowy ? 0xffffff : 0xfff4e0);
+  sunSphere.material.color.setHex(snowy ? 0xf3f4f5 : 0xffee88);
+  hemi.groundColor.setHex(snowy ? 0xa6adb3 : 0x446622);
   sun.intensity = 1.2 * THREE.MathUtils.smoothstep(sunAltitude, -0.03, 0.2);
   moon.intensity = (0.2 + moonlightStrength * 0.3) * (1 - THREE.MathUtils.smoothstep(sunAltitude, -0.2, 0.08));
   sunSphere.material.opacity = THREE.MathUtils.smoothstep(sunAltitude, -0.02, 0.12);
@@ -3627,7 +3657,11 @@ function animate() {
     // Gamepad left stick X = strafe in pan mode
     if (gamepadMoveX) strafeInput = gamepadMoveX;
   }
-  if (gamepadLookX) cameraAngle += gamepadLookX * 2.5 * delta * (invertX ? -1 : 1);
+  if (gamepadLookX) {
+    const turn = gamepadLookX * 2.5 * delta * (invertX ? -1 : 1);
+    if (winter.aiming) winter.turnAim(turn);
+    else cameraAngle += turn;
+  }
   if (leverActive) {
     moveInput = leverY;
     if (winter.aiming) strafeInput = -leverX;
@@ -3693,7 +3727,9 @@ function animate() {
       const towardFire = fireDirection(sittingFireId)?.applyQuaternion(globeRotation);
       if (towardFire) playerFacing = Math.atan2(towardFire.x, towardFire.z);
     }
-  } else if (controlMode === 'pan' || winter.aiming) {
+  } else if (winter.aiming) {
+    playerFacing = winter.facing;
+  } else if (controlMode === 'pan') {
     playerFacing = cameraAngle + Math.PI;
   } else {
     if (leverActive && Math.abs(leverX) > 0.1) {
@@ -3861,14 +3897,19 @@ function animate() {
   resetSwimLimbs(player);
 
   // Camera: cameraHeight is tilt (1=ground level, 12=overhead), cameraDistance is total distance
-  const tiltFraction = cameraHeight / 12;
+  aimViewBlend = THREE.MathUtils.lerp(aimViewBlend, winter.aiming && !movementLocked ? 1 : 0, 1 - Math.exp(-8 * delta));
+  const tiltFraction = THREE.MathUtils.lerp(cameraHeight / 12, Math.max(cameraHeight / 12, 0.65), aimViewBlend);
+  const viewDistance = cameraDistance + 2 * aimViewBlend;
   const playerY = player.userData.groundY ?? player.position.y;
-  const camY = playerY + tiltFraction * cameraDistance;
-  const camHorizDist = cameraDistance * (1 - tiltFraction * 0.85);
-  const camX = Math.sin(cameraAngle) * camHorizDist;
-  const camZ = Math.cos(cameraAngle) * camHorizDist;
+  cameraGroundY = cameraGroundY === null || !winter.enabled ? playerY
+    : THREE.MathUtils.lerp(cameraGroundY, playerY, 1 - Math.exp(-10 * delta));
+  const camY = cameraGroundY + tiltFraction * viewDistance;
+  const camHorizDist = viewDistance * (1 - tiltFraction * 0.85);
+  const camX = Math.sin(cameraAngle) * camHorizDist + Math.cos(cameraAngle) * 0.7 * aimViewBlend;
+  const camZ = Math.cos(cameraAngle) * camHorizDist - Math.sin(cameraAngle) * 0.7 * aimViewBlend;
   camera.position.set(camX, camY, camZ);
-  camera.lookAt(0, playerY + 1, 0);
+  camera.lookAt(-Math.sin(cameraAngle) * aimViewBlend, cameraGroundY + 1, -Math.cos(cameraAngle) * aimViewBlend);
+  camera.updateMatrixWorld(true);
   atmosMat.uniforms.viewVector.value.copy(camera.position);
 
   const isKeyTurning = keys['a'] || keys['d'] || keys['arrowleft'] || keys['arrowright'];
