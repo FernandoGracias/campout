@@ -62,7 +62,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v189</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v191</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -226,12 +226,12 @@ canvas { display: block; }
 <style>
   #btn-snowball{touch-action:manipulation}
   #snow-crosshair{left:50%;top:50%}
-  .winter-mode #lever-track{display:none}
-  .winter-mode #joystick-base{display:block!important}
+  #lever-track{display:none}
+  #joystick-base{display:block!important}
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v189</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v191</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -245,7 +245,7 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=189';
+import { createWinter } from './winter.js?v=191';
 
 // --- SCREEN MANAGEMENT & NETWORKING ---
 const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
@@ -839,8 +839,12 @@ function setupDataChannel(peerId, channel) {
       if (window.syncCamps) window.syncCamps();
       return;
     }
-    if (data?.type === 'snowball') {
+    if (data?.type === 'snowball' || data?.type === 'pinecone') {
       window.receiveSnowball?.(peerId, data);
+      return;
+    }
+    if (data?.type === 'pinecone-pickup') {
+      window.receivePineconePickup?.(peerId, data);
       return;
     }
     if (data?.type === 'ice-contact') {
@@ -880,7 +884,7 @@ function setupDataChannel(peerId, channel) {
           ![0, 8, 12].includes(m.rate) || ![0.35, 0.5].includes(m.amplitude) || ![0.03, 0.04].includes(m.waddle) ||
           !Number.isFinite(m.swing) || Math.abs(m.swing) > 0.5 || !Number.isFinite(m.roll) || Math.abs(m.roll) > 0.1 ||
           typeof m.flashlight !== 'boolean' ||
-          ['snowball', 'skating'].some(key => m[key] !== undefined && typeof m[key] !== 'boolean') ||
+          ['snowball', 'pinecone', 'skating'].some(key => m[key] !== undefined && typeof m[key] !== 'boolean') ||
           (m.iceVelocity !== undefined && (!Array.isArray(m.iceVelocity) || m.iceVelocity.length !== 3 ||
             !m.iceVelocity.every(n => Number.isFinite(n) && Math.abs(n) <= 0.6) || Math.hypot(...m.iceVelocity) > 0.61))) {
         console.warn('Ignoring bad motion data:', m);
@@ -1588,6 +1592,7 @@ const winter = createWinter(THREE, {
   },
 });
 window.receiveSnowball = winter.receive;
+window.receivePineconePickup = winter.receivePickup;
 window.receiveIceContact = winter.receiveIceContact;
 document.getElementById('btn-snowball').addEventListener('click', winter.action);
 document.getElementById('btn-skates').addEventListener('click', winter.toggleSkates);
@@ -1602,11 +1607,9 @@ renderer.domElement.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse') setInputMode('keyboard');
 });
 window.addEventListener('blur', () => {
-  if (!winter.enabled) return;
   clearMovementInput(); isDragging = false; orbitTouchId = null; pinchStartDist = null;
 });
 window.addEventListener('touchcancel', () => {
-  if (!winter.enabled) return;
   clearMovementInput(); orbitTouchId = null; pinchStartDist = null;
 });
 
@@ -2334,14 +2337,8 @@ function updateLever(touch) {
   const cy = rect.top + rect.height / 2;
   let dy = touch.clientY - cy;
   let dx = touch.clientX - cx;
-  // Winter uses a conventional movement stick: forward/back and strafe.
-  if (controlMode === 'pan' && !winter.enabled) {
-    if (dy > leverRange) dy = leverRange;
-    if (dy < -leverRange) dy = -leverRange;
-    leverY = dy / leverRange;
-    leverX = 0;
-    leverZone.style.transform = `translateY(${dy}px)`;
-  } else {
+  // The movement stick always controls forward/back and strafe.
+  {
     const dist = Math.sqrt(dx * dx + dy * dy);
     const maxDist = joystickRange;
     if (dist > maxDist) { dx = dx / dist * maxDist; dy = dy / dist * maxDist; }
@@ -2388,7 +2385,8 @@ renderer.domElement.addEventListener('pointerdown', e => {
 window.addEventListener('blur', () => { aimPointerPosition = null; });
 
 // Pointer lock for FPS-style mouse look
-renderer.domElement.addEventListener('click', () => {
+renderer.domElement.addEventListener('click', e => {
+  if (e.pointerType === 'touch' || lastInputMode === 'touch') return;
   if (document.pointerLockElement !== renderer.domElement && !isSleeping && sittingFireId === null) {
     renderer.domElement.requestPointerLock();
   }
@@ -2424,7 +2422,7 @@ window.addEventListener('pointermove', (e) => {
   const dxAim = aimPointerPosition ? e.clientX - aimPointerPosition.x : 0;
   const dyAim = aimPointerPosition ? e.clientY - aimPointerPosition.y : 0;
   aimPointerPosition = { x: e.clientX, y: e.clientY };
-  if (winter.enabled && lastInputMode === 'keyboard' && e.target === renderer.domElement &&
+  if (lastInputMode === 'keyboard' && e.target === renderer.domElement &&
       !isSleeping && sittingFireId === null && !minigamesOpen) {
     cameraAngle += dxAim * 0.006 * (invertX ? -1 : 1);
     cameraTargetAngle = cameraAngle;
@@ -2505,16 +2503,10 @@ renderer.domElement.addEventListener('touchmove', (e) => {
   }
   for (const touch of e.changedTouches) {
     if (touch.identifier === orbitTouchId) {
-      if (winter.enabled) {
-        cameraAngle += (touch.clientX - orbitStartX) * 0.006 * (invertX ? -1 : 1);
-        cameraTargetAngle = cameraAngle;
-        cameraLookPitch = THREE.MathUtils.clamp(cameraLookPitch + (orbitStartY - touch.clientY) * 0.004, -0.65, 1.35);
-        orbitStartX = touch.clientX; orbitStartY = touch.clientY;
-        continue;
-      }
-      const dx = touch.clientX - orbitStartX;
-      cameraAngle = orbitStartAngle + dx * 0.01 * (invertX ? -1 : 1);
+      cameraAngle += (touch.clientX - orbitStartX) * 0.006 * (invertX ? -1 : 1);
       cameraTargetAngle = cameraAngle;
+      cameraLookPitch = THREE.MathUtils.clamp(cameraLookPitch + (orbitStartY - touch.clientY) * 0.004, -0.65, 1.35);
+      orbitStartX = touch.clientX; orbitStartY = touch.clientY;
     }
   }
 });
@@ -3690,8 +3682,7 @@ function animate() {
     if (gamepadDpadDown) cameraDistance = Math.min(60, cameraDistance + delta * 15);
     // Right stick Y = tilt camera
     if (gamepadLookY) {
-      if (winter.enabled) cameraLookPitch = THREE.MathUtils.clamp(cameraLookPitch - gamepadLookY * delta * 1.3, -0.65, 1.35);
-      else cameraHeight = Math.max(1, Math.min(12, cameraHeight + gamepadLookY * delta * 8));
+      cameraLookPitch = THREE.MathUtils.clamp(cameraLookPitch - gamepadLookY * delta * 1.3, -0.65, 1.35);
     }
   }
   
@@ -3708,23 +3699,12 @@ function animate() {
   if (keys['w'] || keys['arrowup']) moveInput = -1;
   if (keys['s'] || keys['arrowdown']) moveInput = 1;
   if (gamepadMoveY) moveInput = gamepadMoveY;
-  // A/D always strafe (keyboard); arrows turn camera in pan mode
+  // All seasons share camera-relative movement and strafing.
   if (keys['a']) strafeInput = -1;
   if (keys['d']) strafeInput = 1;
-  if (winter.enabled) {
-    if (gamepadMoveX) strafeInput = gamepadMoveX;
-    if (keys['arrowleft']) strafeInput = -1;
-    if (keys['arrowright']) strafeInput = 1;
-  } else if (controlMode === 'joystick' && !isSleeping && sittingFireId === null) {
-    if (keys['arrowleft']) playerFacing += 2.5 * delta;
-    if (keys['arrowright']) playerFacing -= 2.5 * delta;
-    if (gamepadMoveX) playerFacing -= gamepadMoveX * 2.5 * delta;
-  } else {
-    if (keys['arrowleft']) cameraAngle += 2.5 * delta;
-    if (keys['arrowright']) cameraAngle -= 2.5 * delta;
-    // Gamepad left stick X = strafe in pan mode
-    if (gamepadMoveX) strafeInput = gamepadMoveX;
-  }
+  if (gamepadMoveX) strafeInput = gamepadMoveX;
+  if (keys['arrowleft']) strafeInput = -1;
+  if (keys['arrowright']) strafeInput = 1;
   if (gamepadLookX) {
     const turn = gamepadLookX * 2.5 * delta * (invertX ? -1 : 1);
     cameraAngle += turn;
@@ -3788,29 +3768,14 @@ function animate() {
   const movementLocked = isSleeping || sittingFireId !== null;
   if (movementLocked) { moveInput = strafeInput = 0; playerBounceState = null; }
 
-  // Control mode: pan = camera angle drives facing, joystick = camera follows player
+  // The camper faces the camera's forward direction in every season.
   if (movementLocked) {
     if (sittingFireId !== null) {
       const towardFire = fireDirection(sittingFireId)?.applyQuaternion(globeRotation);
       if (towardFire) playerFacing = Math.atan2(towardFire.x, towardFire.z);
     }
-  } else if (winter.enabled) {
-    playerFacing = cameraAngle + Math.PI;
-  } else if (controlMode === 'pan') {
-    playerFacing = cameraAngle + Math.PI;
   } else {
-    // Joystick mode: camera follows behind player (unless free-looking)
-    // Player turns via arrow keys, not leverX (leverX now strafes)
-    const isFreeLooking = isDragging || orbitTouchId !== null;
-    if (!isFreeLooking) {
-      const targetCamAngle = playerFacing - Math.PI;
-      let angleDiff = targetCamAngle - cameraAngle;
-      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-      if (Math.abs(moveInput) > 0.1) {
-        cameraAngle += angleDiff * 3 * delta;
-      }
-    }
+    playerFacing = cameraAngle + Math.PI;
   }
 
   if (walkingToFire) {
@@ -3965,18 +3930,18 @@ function animate() {
   const tiltFraction = cameraHeight / 12;
   const viewDistance = cameraDistance + 1;
   const playerY = player.userData.groundY ?? player.position.y;
-  cameraGroundY = cameraGroundY === null || !winter.enabled ? playerY
+  cameraGroundY = cameraGroundY === null ? playerY
     : THREE.MathUtils.lerp(cameraGroundY, playerY, 1 - Math.exp(-10 * delta));
   const camY = cameraGroundY + tiltFraction * viewDistance;
   const camHorizDist = viewDistance * (1 - tiltFraction * 0.85);
-  const shoulderOffset = winter.enabled && !movementLocked ? 0.65 : 0;
+  const shoulderOffset = 0;
   const camX = Math.sin(cameraAngle) * camHorizDist + Math.cos(cameraAngle) * shoulderOffset;
   const camZ = Math.cos(cameraAngle) * camHorizDist - Math.sin(cameraAngle) * shoulderOffset;
   camera.position.set(camX, camY, camZ);
   // Frame above the camper's head and slightly farther back. Looking up/down
   // directly rotates the camera; there is no independent snowball aim angle.
   camera.lookAt(0, cameraGroundY + 2.1, 0);
-  if (winter.enabled && !movementLocked) camera.rotateX(cameraLookPitch);
+  if (!movementLocked) camera.rotateX(cameraLookPitch);
   camera.updateMatrixWorld(true);
   atmosMat.uniforms.viewVector.value.copy(camera.position);
 
@@ -4014,7 +3979,8 @@ function animate() {
       flashlight: flashlightOn && !isSleeping,
       moving: isWalking && !isSleeping,
       sitting: sittingFireId !== null,
-      snowball: winter.holding,
+      snowball: winter.enabled && winter.holding,
+      pinecone: !winter.enabled && winter.holding,
       skating: winter.skating,
       iceVelocity: winter.sharedVelocity(),
     });

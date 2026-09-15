@@ -1,6 +1,6 @@
-import { iceImpulse, advanceOrbit } from './winter-physics.js?v=189';
+import { iceImpulse, advanceOrbit, ballisticArcs } from './winter-physics.js?v=190';
 
-// Winter coordinates are planet-local: tracks and projectiles stay put as campers walk.
+// Seasonal equipment uses planet-local coordinates, including summer pinecones.
 export function createWinter(THREE, world) {
   const { scene, globePivot, globe, trees, waterSphere, radius, waterRadius } = world;
   const mobile = world.mobile === true;
@@ -378,6 +378,63 @@ export function createWinter(THREE, world) {
   }
 
   const ballGeo = new THREE.IcosahedronGeometry(BALL_RADIUS, 1);
+  const coneProfile = [new THREE.Vector2(0.015, -0.12)];
+  for (let row = 0; row < 6; row++) {
+    const y = -0.105 + row * 0.04, width = 0.075 * Math.sin((row + 1) / 7 * Math.PI);
+    coneProfile.push(new THREE.Vector2(width * 0.65, y), new THREE.Vector2(width, y + 0.015));
+  }
+  coneProfile.push(new THREE.Vector2(0.008, 0.15));
+  const coneGeo = new THREE.LatheGeometry(coneProfile, 10);
+  const coneMaterial = new THREE.MeshStandardMaterial({ color: 0x89512e, roughness: 1, flatShading: true });
+  const PICKUP_DISTANCE = 0.65, CONE_RESPAWN = 25;
+  const cones = [];
+  // Deterministic positions let every camper refer to the same cone by index.
+  for (let i = 0; i < treeColumns.length; i++) {
+    const normal = treeColumns[i].direction;
+    const basis = new THREE.Quaternion().setFromUnitVectors(up, normal);
+    const angle = i * 2.399963229728653;
+    const direction = normal.clone().multiplyScalar(radius).add(
+      new THREE.Vector3(Math.cos(angle) * 0.85, 0, Math.sin(angle) * 0.85).applyQuaternion(basis)).normalize();
+    const floor = surface(direction);
+    if (floor <= waterRadius + 0.06) continue;
+    cones.push({ position: direction.clone().multiplyScalar(floor + 0.075), direction, availableAt: 0 });
+  }
+  const groundCones = new THREE.InstancedMesh(coneGeo, coneMaterial, cones.length);
+  groundCones.name = 'ground-pinecones'; groundCones.castShadow = true;
+  groundCones.frustumCulled = false; globePivot.add(groundCones);
+  const coneTransform = new THREE.Object3D();
+  function drawCone(index, visible) {
+    const cone = cones[index];
+    coneTransform.position.copy(cone.position);
+    coneTransform.quaternion.setFromUnitVectors(up, cone.direction);
+    coneTransform.rotateZ(Math.PI / 2); coneTransform.rotateY(index * 1.7);
+    coneTransform.scale.setScalar(visible ? 1 : 0);
+    coneTransform.updateMatrix(); groundCones.setMatrixAt(index, coneTransform.matrix);
+    groundCones.instanceMatrix.needsUpdate = true;
+    groundCones.boundingSphere = null;
+  }
+  cones.forEach((cone, index) => drawCone(index, true));
+  function nearbyCone(preferred = null) {
+    const foot = world.getPlayer().position.clone().applyQuaternion(world.getRotation().clone().invert());
+    let nearest = null, distance = PICKUP_DISTANCE;
+    for (const [id, cone] of cones.entries()) {
+      if ((preferred !== null && preferred !== id) || cone.availableAt > elapsed) continue;
+      const separation = foot.distanceTo(cone.position);
+      if (separation <= distance) { nearest = id; distance = separation; }
+    }
+    return nearest;
+  }
+  function takeCone(id) {
+    cones[id].availableAt = elapsed + CONE_RESPAWN;
+    drawCone(id, false);
+  }
+  function receivePickup(id, message) {
+    const peer = world.getPeers()[id], cone = cones[message.cone];
+    if (enabled || !peer || !Number.isSafeInteger(message.cone) || !cone || cone.availableAt > elapsed) return;
+    const foot = up.clone().applyQuaternion(peer.currentGlobeRotation.clone().invert()).multiplyScalar(peer.mesh.position.length());
+    if (foot.distanceTo(cone.position) > PICKUP_DISTANCE + 0.25) return;
+    takeCone(message.cone);
+  }
   const balls = [], receiveTimes = new Map();
   const burstCount = 160, burstPositions = new Float32Array(burstCount * 3);
   const bursts = Array.from({ length: burstCount }, () => ({ life: 0, p: new THREE.Vector3(), v: new THREE.Vector3() }));
@@ -392,11 +449,11 @@ export function createWinter(THREE, world) {
       b.v.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(5);
     }
   }
-  function launch(owner, position, velocity) {
+  function launch(owner, position, velocity, kind = enabled ? 'snowball' : 'pinecone') {
     if (balls.length >= 32) globePivot.remove(balls.shift().mesh);
-    const mesh = new THREE.Mesh(ballGeo, snowMaterial);
+    const mesh = new THREE.Mesh(kind === 'pinecone' ? coneGeo : ballGeo, kind === 'pinecone' ? coneMaterial : snowMaterial);
     mesh.position.copy(position); globePivot.add(mesh);
-    balls.push({ owner, mesh, velocity, age: 0, accumulator: 0 });
+    balls.push({ owner, mesh, velocity, kind, age: 0, accumulator: 0 });
   }
   function throwState() {
     const inverse = world.getRotation().clone().invert();
@@ -404,21 +461,54 @@ export function createWinter(THREE, world) {
     const player = world.getPlayer(), ball = player.userData.winterEquipment?.ball;
     const hand = ball ? ball.getWorldPosition(new THREE.Vector3())
       : new THREE.Vector3(-0.25, 0.7, 0.3).applyAxisAngle(up, facing).add(player.position);
-    // Converge the hand's launch direction on the camera's center ray, never
-    // on a clicked player or a predicted impact. Gravity still affects flight.
+    // The fixed crosshair chooses the destination. Solve the launch arc in the
+    // planet's frame so gravity and curvature carry the ball to that point.
     const centerRay = new THREE.Raycaster();
     centerRay.setFromCamera(new THREE.Vector2(0, 0), world.camera);
     const hit = pointerHit(centerRay);
     const viewDirection = world.camera.getWorldDirection(new THREE.Vector3());
-    const target = hit && hit.point.clone().sub(hand).dot(viewDirection) > 0.2
-      ? hit.point : hand.clone().addScaledVector(viewDirection, 30);
-    return { position: hand.clone().applyQuaternion(inverse),
-      velocity: target.clone().sub(hand).normalize().multiplyScalar(throwPower).applyQuaternion(inverse) };
+    const position = hand.clone().applyQuaternion(inverse);
+    if (hit && hit.point.clone().sub(hand).dot(viewDirection) > 0.2) {
+      const target = hit.point.clone().applyQuaternion(inverse);
+      flightObstacles = world.getObstacles();
+      let fallback = null;
+      for (const arc of ballisticArcs(position, target, GRAVITY_MU, enabled ? iceRadius : waterRadius, throwPower)) {
+        const velocity = new THREE.Vector3(arc.velocity.x, arc.velocity.y, arc.velocity.z);
+        fallback ??= velocity;
+        let blocked = false;
+        for (let i = 1; i < arc.points.length; i++) {
+          const from = arc.points[i-1], to = arc.points[i];
+          const contact = flightHit(new THREE.Vector3(from.x,from.y,from.z), new THREE.Vector3(to.x,to.y,to.z),
+            i <= 24 ? world.localId : null, inverse);
+          if (contact) {
+            blocked = contact.point.distanceTo(target) > BALL_RADIUS*2+0.04;
+            break;
+          }
+        }
+        if (!blocked) return { position, velocity };
+      }
+      // Cover may block every route. Still use a globe-clearing arc, never the
+      // straight underground chord. Real collisions remain authoritative.
+      if (fallback) return { position, velocity: fallback };
+      const radial = position.clone().normalize();
+      const tangent = target.clone().addScaledVector(radial,-target.dot(radial)).normalize();
+      return { position, velocity: tangent.add(radial).normalize().multiplyScalar(throwPower) };
+    }
+    // Looking into empty sky has no surface destination to compensate toward.
+    return { position, velocity: viewDirection.multiplyScalar(throwPower).applyQuaternion(inverse) };
   }
-  function action() {
-    if (!enabled || !world.canAct() || elapsed - lastAction < 0.3 || packing > 0) return;
+  function action(preferredCone = null) {
+    if (!world.canAct() || elapsed - lastAction < 0.3 || packing > 0) return;
     const player = world.getPlayer();
     if (!held) {
+      if (!enabled) {
+        const id = nearbyCone(Number.isInteger(preferredCone) ? preferredCone : null);
+        if (id === null) return;
+        takeCone(id); held = true; lastAction = elapsed;
+        world.send({ type: 'pinecone-pickup', cone: id });
+        updateCrosshair(); refreshHints();
+        return;
+      }
       const d = player.position.clone().applyQuaternion(world.getRotation().clone().invert()).normalize();
       if (player.userData.onIce || cover * exposureAt(d) < 0.08) {
         world.toast('Find snowy ground to pack a snowball.'); return;
@@ -429,21 +519,27 @@ export function createWinter(THREE, world) {
     held = false; lastAction = elapsed; throwPose = 0.3;
     updateCrosshair();
     launch(world.localId, shot.position, shot.velocity);
-    world.send({ type: 'snowball', position: shot.position.toArray(), velocity: shot.velocity.toArray() });
+    world.send({ type: enabled ? 'snowball' : 'pinecone', position: shot.position.toArray(), velocity: shot.velocity.toArray() });
   }
   function pointerHit(pointerRay) {
     const campers = Object.values(world.getPeers()).map(peer => peer.mesh).filter(mesh => mesh.visible);
-    const roots = [globe, ice, ...trees.map(tree => tree.obj), ...world.getObstacles(), ...campers].filter(mesh => mesh.visible);
+    const roots = [globe, enabled ? ice : waterSphere, groundCones, ...trees.map(tree => tree.obj), ...world.getObstacles(), ...campers].filter(mesh => mesh.visible);
     return pointerRay.intersectObjects(roots, true).find(hit => {
       if (hit.object.isSprite) return false;
+      if (hit.object === groundCones && cones[hit.instanceId]?.availableAt > elapsed) return false;
       for (let mesh = hit.object; mesh; mesh = mesh.parent) if (!mesh.visible) return false;
       return true;
     });
   }
   function interact(pointerRay) {
-    if (!enabled || !world.canAct()) return false;
+    if (!world.canAct()) return false;
     if (held) { action(); return true; }
     const hit = pointerHit(pointerRay);
+    if (!enabled) {
+      const id = nearbyCone(hit?.object === groundCones ? hit.instanceId : null);
+      if (id === null) return false;
+      action(id); return true;
+    }
     if (!hit) return false;
     const direction = hit.point.clone().applyQuaternion(world.getRotation().clone().invert()).normalize();
     if (hit.object !== globe || cover * exposureAt(direction) < 0.08) return false;
@@ -451,14 +547,15 @@ export function createWinter(THREE, world) {
     return true;
   }
   function receive(id, message) {
-    if (!enabled || !world.getPeers()[id] || elapsed - (receiveTimes.get(id) ?? -10) < 0.3) return;
+    if (!world.getPeers()[id] || elapsed - (receiveTimes.get(id) ?? -10) < 0.3) return;
+    if (message.type !== (enabled ? 'snowball' : 'pinecone')) return;
     if (![message.position, message.velocity].every(v => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite))) return;
     const position = new THREE.Vector3(...message.position), speed = new THREE.Vector3(...message.velocity);
     const peer = world.getPeers()[id];
     const direction = up.clone().applyQuaternion(peer.currentGlobeRotation.clone().invert());
-    if (position.length() < iceRadius || position.length() > radius + 9 || speed.length() > 20.01 || speed.length() < 2.99 ||
+    if (position.length() < (enabled ? iceRadius : waterRadius) || position.length() > radius + 9 || speed.length() > 20.01 || speed.length() < 2.99 ||
         direction.distanceTo(position.clone().normalize()) * radius > 2) return;
-    receiveTimes.set(id, elapsed); launch(id, position, speed);
+    receiveTimes.set(id, elapsed); launch(id, position, speed, message.type);
   }
   const flightRay = new THREE.Raycaster();
   const iceBounds = new THREE.Sphere(new THREE.Vector3(), iceRadius);
@@ -476,13 +573,19 @@ export function createWinter(THREE, world) {
       const distance = from.distanceTo(point);
       if (distance <= length + BALL_RADIUS && (!nearest || distance < nearest.distance)) nearest = { distance, point, mesh };
     };
+    iceBounds.radius = enabled ? iceRadius : waterRadius;
     accept(flightRay.ray.intersectSphere(iceBounds, new THREE.Vector3()));
     const campers = [[world.localId, world.getPlayer()], ...Object.entries(world.getPeers()).map(([id, p]) => [id, p.mesh])];
     for (const [id, mesh] of campers) {
       if (id === owner || !mesh.visible) continue;
-      const center = mesh.position.clone().addScaledVector(mesh.position.clone().normalize(), 0.65).applyQuaternion(inverse);
-      const bounds = new THREE.Sphere(center, 0.32 + BALL_RADIUS);
-      accept(bounds.containsPoint(from) ? from.clone() : flightRay.ray.intersectSphere(bounds, new THREE.Vector3()), mesh);
+      const radial = mesh.position.clone().normalize();
+      // Match both the torso and visible head. The old torso-only sphere ended
+      // at chin height, so a correctly calculated head shot could pass through.
+      for (const [height, bodyRadius] of [[0.65, 0.32], [1.05, 0.18]]) {
+        const center = mesh.position.clone().addScaledVector(radial, height).applyQuaternion(inverse);
+        const bounds = new THREE.Sphere(center, bodyRadius + BALL_RADIUS);
+        accept(bounds.containsPoint(from) ? from.clone() : flightRay.ray.intersectSphere(bounds, new THREE.Vector3()), mesh);
+      }
     }
     const direction = from.clone().normalize();
     const nearby = treeColumns.filter(t => t.direction.distanceTo(direction) * radius < 2.5);
@@ -491,7 +594,7 @@ export function createWinter(THREE, world) {
       const hit = flightRay.intersectObjects([...nearby.map(t => t.object), ...flightObstacles], true)[0];
       if (hit) accept(hit.point.applyQuaternion(inverse));
     }
-    if (!nearest && to.length() < iceRadius) nearest = { point: to.clone().normalize().multiplyScalar(iceRadius), mesh: null };
+    if (!nearest && to.length() < iceBounds.radius) nearest = { point: to.clone().normalize().multiplyScalar(iceBounds.radius), mesh: null };
     return nearest;
   }
   function advanceFlight(position, speed) {
@@ -500,7 +603,7 @@ export function createWinter(THREE, world) {
     return next;
   }
   function updateCrosshair() {
-    crosshair.style.display = enabled && held && world.canAct() ? 'block' : 'none';
+    crosshair.style.display = held && world.canAct() ? 'block' : 'none';
   }
   const scoreTextures = new Map(), scoreFloats = [];
   function removeScore(index) {
@@ -522,7 +625,7 @@ export function createWinter(THREE, world) {
     if (scoreFloats.length >= 24) removeScore(0);
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: scoreTextures.get(amount),
       transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
-    sprite.name = amount > 0 ? 'snowball-score-plus' : 'snowball-score-minus';
+    sprite.name = amount > 0 ? 'projectile-score-plus' : 'projectile-score-minus';
     sprite.scale.set(0.85, 0.64, 1); sprite.renderOrder = 1001;
     sprite.position.copy(mesh.position).addScaledVector(mesh.position.clone().normalize(), 1.65);
     scene.add(sprite); scoreFloats.push({ sprite, mesh, age: 0 });
@@ -556,7 +659,7 @@ export function createWinter(THREE, world) {
         ball.age += FLIGHT_STEP;
       }
       if (impact) {
-        if (impact) splat(ball.mesh.position);
+        if (ball.kind === 'snowball') splat(ball.mesh.position);
         globePivot.remove(ball.mesh); balls.splice(i, 1);
       }
     }
@@ -573,9 +676,9 @@ export function createWinter(THREE, world) {
 
   const bladeGeo = new THREE.BoxGeometry(0.025, 0.045, 0.25);
   const bladeMaterial = new THREE.MeshStandardMaterial({ color: 0xa8b4be, roughness: 0.3, metalness: 0.7 });
-  function equip(mesh, carrying, skating, moving) {
+  function equip(mesh, carrying, skating, moving, kind = enabled ? 'snowball' : 'pinecone') {
     const s = mesh.userData;
-    if (!enabled && !s.winterEquipment) return;
+    if (!carrying && !skating && !s.winterEquipment) return;
     if (!s.winterEquipment) {
       const ball = new THREE.Mesh(ballGeo, snowMaterial);
       ball.position.set(0, -0.3, 0.015); s.rightArm.add(ball);
@@ -590,7 +693,9 @@ export function createWinter(THREE, world) {
       hand.add(s.flashlightStick);
       s.flashlightStick.position.x = carrying ? 0.01 : -0.01;
     }
-    s.winterEquipment.ball.visible = enabled && carrying && mesh.visible;
+    s.winterEquipment.ball.geometry = kind === 'pinecone' ? coneGeo : ballGeo;
+    s.winterEquipment.ball.material = kind === 'pinecone' ? coneMaterial : snowMaterial;
+    s.winterEquipment.ball.visible = carrying && mesh.visible;
     if (carrying) s.rightArm.rotation.x = -1.2;
     for (const blade of s.winterEquipment.blades) blade.visible = enabled && skating;
     if (enabled && skating && s.onIce) {
@@ -664,7 +769,9 @@ export function createWinter(THREE, world) {
   const skateIcon = icon(skatePaths);
   const skateNoIcon = icon(skatePaths + '<path d="M3 3l18 18" stroke="#e32636" stroke-width="2.3"/>');
   // Only the solid half has an arc; the flake half has three branching arms.
-  button.innerHTML = icon('<path d="M12 2a10 10 0 0 1 0 20Z" fill="currentColor" fill-opacity=".3"/><path d="M12 2v20M12 12L3.34 7M12 12l-8.66 5M12 6l-3-2M12 18l-3 2M6.8 9l-.2-3.5M6.8 9l-3.2 1.5M6.8 15l-3.2-1.5M6.8 15l-.2 3.5"/>');
+  const snowballIcon = icon('<path d="M12 2a10 10 0 0 1 0 20Z" fill="currentColor" fill-opacity=".3"/><path d="M12 2v20M12 12L3.34 7M12 12l-8.66 5M12 6l-3-2M12 18l-3 2M6.8 9l-.2-3.5M6.8 9l-3.2 1.5M6.8 15l-3.2-1.5M6.8 15l-.2 3.5"/>');
+  const pineconeIcon = icon('<path d="M12 3c-3 0-7 7-7 12s3 7 7 7 7-2 7-7S15 3 12 3Z" fill="#89512e" fill-opacity=".7"/><path d="M12 3V1M8 7l4 3 4-3M6 11l6 4 6-4M5 16l7 4 7-4M12 10v5M8 13v5M16 13v5"/>');
+  button.innerHTML = snowballIcon;
   const targetIcon = icon('<circle cx="12" cy="12" r="7"/><path d="M12 1v22M1 12h22"/>');
   crosshair.innerHTML = targetIcon;
   const actionHint = document.createElement('span');
@@ -673,10 +780,11 @@ export function createWinter(THREE, world) {
   button.setAttribute('aria-label', 'Load or throw snowball');
   skatesButton.setAttribute('aria-label', 'Toggle ice skates');
   function refreshHints() {
-    const next = [packing > 0, held, skates, inputMode].join(':');
+    const next = [enabled, packing > 0, held, skates, inputMode].join(':');
     if (hintState === next) return;
     hintState = next;
-    // Update button icons - only skates changes based on state
+    button.querySelector('svg').outerHTML = enabled ? snowballIcon : pineconeIcon;
+    button.setAttribute('aria-label', enabled ? 'Load or throw snowball' : 'Pick up nearby pinecone or throw');
     skatesButton.innerHTML = skates ? skateNoIcon : skateIcon;
     // Update border colors to indicate active states
     button.style.borderColor = packing > 0 ? '#f0c040' : 'rgba(255,255,255,0.15)';
@@ -684,6 +792,7 @@ export function createWinter(THREE, world) {
     actionHint.textContent = inputMode === 'gamepad' ? 'RT' : 'L';
     actionHint.style.display = inputMode === 'touch' ? 'none' : 'block';
     button.title = inputMode === 'gamepad' ? 'Right trigger: load / throw. Right stick: look.' : 'Left-click: load / throw. Move the camera to aim at the center crosshair.';
+    if (!enabled) button.title += ' Stand within arm’s reach of a pinecone to pick it up.';
     skatesButton.setAttribute('aria-pressed', String(skates));
   }
   function updateHints(mode) {
@@ -716,7 +825,8 @@ export function createWinter(THREE, world) {
       while (scoreFloats.length) removeScore(0);
     }
     if (cover === 0 && wasCover > 0) clearTracks();
-    button.style.display = enabled ? 'flex' : 'none';
+    button.style.display = 'flex';
+    groundCones.visible = !enabled;
     updateCrosshair();
     refreshHints();
   }
@@ -795,22 +905,23 @@ export function createWinter(THREE, world) {
     elapsed += delta;
     bakeGround();
     falling.visible = enabled && snowfall > 0;
-    spray.visible = enabled;
+    spray.visible = true;
     const player = world.getPlayer();
     const canAct = world.canAct();
     if (!canAct) packing = 0;
-    equip(player, enabled && held && canAct, enabled && skates, velocity.lengthSq() > 0.0001);
+    equip(player, held && canAct, enabled && skates, velocity.lengthSq() > 0.0001);
     for (const peer of Object.values(world.getPeers())) {
       const fresh = performance.now() - peer.motionReceivedAt < 2000;
-      equip(peer.mesh, enabled && fresh && !!peer.motion?.snowball,
-        enabled && peer.mesh.userData.skating, peer.isWalking && peer.interpT < 1);
+      equip(peer.mesh, fresh && !!(peer.motion?.snowball || peer.motion?.pinecone),
+        enabled && peer.mesh.userData.skating, peer.isWalking && peer.interpT < 1,
+        peer.motion?.pinecone ? 'pinecone' : 'snowball');
       if (peer.torch?.visible) peer.mesh.userData.flashlightLens.getWorldPosition(peer.torch.position);
     }
     skatesButton.style.display = enabled && (skates || player.userData.onIce) ? 'flex' : 'none';
     skatesButton.disabled = !canAct;
-    if (!enabled) return;
     const inverse = world.getRotation().clone().invert();
     flightObstacles = world.getObstacles();
+    if (enabled) {
     const count = Math.round(flakeCount * snowfall);
     flakeGeo.setDrawRange(0, count);
     snowTime.value = elapsed;
@@ -857,6 +968,12 @@ export function createWinter(THREE, world) {
       }
     }
     if (changed) flakeGeo.attributes.position.needsUpdate = flakeGeo.attributes.weather.needsUpdate = true;
+    }
+    if (!enabled) {
+      for (const [id, cone] of cones.entries()) if (cone.availableAt > 0 && cone.availableAt <= elapsed) {
+        cone.availableAt = 0; drawCone(id, true);
+      }
+    }
     if (packing > 0) {
       packing -= delta;
       player.userData.leftArm.rotation.x = player.userData.rightArm.rotation.x = -1.1;
@@ -864,7 +981,8 @@ export function createWinter(THREE, world) {
     }
     if (throwPose > 0) { throwPose -= delta; player.userData.rightArm.rotation.x = -2.2 * Math.max(0, throwPose / 0.3); }
     refreshHints();
-    button.disabled = !canAct;
+    button.disabled = !canAct || (!enabled && !held && nearbyCone() === null);
+    if (enabled) {
     updateTrack(world.localId, player, inverse, delta);
     updateSkateTracks(world.localId, player, inverse, skates && (player.userData.onIce || cover > 0.05) && canAct);
     for (const [id, peer] of Object.entries(world.getPeers())) {
@@ -877,15 +995,16 @@ export function createWinter(THREE, world) {
       disposeCuts(id);
       iceContacts.delete(id);
     }
+    }
     updateCrosshair();
     updateBalls(delta, inverse);
     updateScores(delta);
   }
-  return { configure, movement, update, action, interact, receive, updateHints, toggleSkates,
+  return { configure, movement, update, action, interact, receive, receivePickup, updateHints, toggleSkates,
     collide, receiveIceContact, sharedVelocity,
     get snowy() { return enabled && (cover > 0 || snowfall > 0); },
     stop: () => velocity.set(0, 0),
-    get holding() { return enabled && held && world.canAct(); },
+    get holding() { return held && world.canAct(); },
     get skating() { return enabled && skates; },
     get enabled() { return enabled; }, iceRadius };
 }
