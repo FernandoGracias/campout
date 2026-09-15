@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Campout</title>
 <style>
+  .winter-action{position:relative}
+  .winter-hint{position:absolute;top:-6px;right:-6px;background:#f0c040;color:#1a1a2e;font:bold 10px system-ui,sans-serif;padding:2px 5px;border-radius:4px;pointer-events:none}
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { overflow: hidden; background: #1a1a2e; font-family: system-ui, sans-serif; touch-action: none; -webkit-user-select: none; user-select: none; }
 canvas { display: block; }
@@ -60,7 +62,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v185</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v186</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -228,7 +230,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v185</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v186</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -242,7 +244,8 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=185';
+import { createWinter } from './winter.js?v=186';
+import { createSnowballPointer } from './winter-input.js?v=186';
 
 // --- SCREEN MANAGEMENT & NETWORKING ---
 const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
@@ -1588,7 +1591,8 @@ window.receiveSnowball = winter.receive;
 window.receiveIceContact = winter.receiveIceContact;
 document.getElementById('btn-snowball').addEventListener('click', winter.action);
 document.getElementById('btn-skates').addEventListener('click', winter.toggleSkates);
-document.getElementById('btn-aim').addEventListener('click', () => winter.setAim(!winter.aiming));
+document.getElementById('btn-aim').addEventListener('click', () => winter.setAim(!winter.aimSelected));
+const snowballPointer = createSnowballPointer(winter);
 
 // Mobile targeting joystick - snowball button becomes a joystick when holding a snowball
 let targetingTouch = null;
@@ -1662,17 +1666,19 @@ snowballBtn.addEventListener('touchcancel', () => {
 
 document.addEventListener('keydown', e => {
   if (!e.repeat && !e.target.closest('input, select, textarea, [contenteditable]')) {
-    if (e.key.toLowerCase() === 'q') { e.preventDefault(); winter.action(); }
+    if (['q', 'r'].includes(e.key.toLowerCase())) { e.preventDefault(); winter.action(); }
+    if (e.key === 'Escape') snowballPointer.cancel();
     if (e.key.toLowerCase() === 'c') { e.preventDefault(); winter.toggleSkates(); }
   }
 });
 renderer.domElement.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse') setInputMode('keyboard');
-  if (e.pointerType === 'mouse' && e.button === 2) winter.setAim(true);
-  if (e.pointerType === 'mouse' && e.button === 0 && winter.aiming) winter.action();
+  if (snowballPointer.down(e)) e.preventDefault();
 });
-window.addEventListener('pointerup', e => { if (e.pointerType === 'mouse' && e.button === 2) winter.setAim(false); });
-window.addEventListener('blur', () => winter.setAim(false));
+window.addEventListener('pointermove', e => snowballPointer.move(e));
+window.addEventListener('pointerup', e => snowballPointer.up(e));
+window.addEventListener('pointercancel', () => snowballPointer.cancel());
+window.addEventListener('blur', () => snowballPointer.cancel());
 window.addEventListener('blur', () => {
   if (!winter.enabled) return;
   clearMovementInput(); isDragging = false; orbitTouchId = null; pinchStartDist = null;
@@ -1681,7 +1687,7 @@ window.addEventListener('touchcancel', () => {
   if (!winter.enabled) return;
   clearMovementInput(); orbitTouchId = null; pinchStartDist = null;
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden) winter.setAim(false); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) snowballPointer.cancel(); });
 
 // --- PLAYER TERRAIN FOLLOWING ---
 const raycaster = new THREE.Raycaster();
@@ -2438,7 +2444,7 @@ Object.defineProperty(window, 'cameraAngle', { get: () => cameraAngle });
 let cameraDistance = 6;
 let cameraHeight = 6;
 let cameraManual = false;
-let aimViewBlend = 0, cameraGroundY = null;
+let aimViewBlend = 0, cameraGroundY = null, aimCameraPitch = 0.3, aimPointerY = null;
 let lastTouchAngle = null;
 let pinchStartDist = null;
 let pinchStartZoom = null;
@@ -2457,7 +2463,7 @@ let dragStartHeight = 0;
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('mousedown', (e) => {
   if (e.target !== renderer.domElement) return;
-  if (winter.aiming) return;
+  if (winter.aimSelected || (winter.enabled && e.button === 2)) return;
   isDragging = true;
   dragStartX = e.clientX;
   dragStartAngle = cameraAngle;
@@ -2465,7 +2471,8 @@ renderer.domElement.addEventListener('mousedown', (e) => {
   dragStartHeight = cameraHeight;
 });
 window.addEventListener('mousemove', (e) => {
-  if (winter.aiming && lastInputMode === 'keyboard') {
+  if (winter.aimSelected && lastInputMode === 'keyboard') {
+    aimPointerY = e.clientY;
     winter.turnAim(e.movementX * 0.006 * (invertX ? -1 : 1));
     winter.adjustAim(-e.movementY * 0.004);
     return;
@@ -2544,7 +2551,7 @@ renderer.domElement.addEventListener('touchmove', (e) => {
   }
   for (const touch of e.changedTouches) {
     if (touch.identifier === orbitTouchId) {
-      if (winter.aiming) {
+      if (winter.aimSelected) {
         winter.turnAim((touch.clientX - orbitStartX) * 0.006 * (invertX ? -1 : 1));
         winter.adjustAim((orbitStartY - touch.clientY) * 0.004);
         orbitStartX = touch.clientX; orbitStartY = touch.clientY;
@@ -3367,12 +3374,18 @@ let lastMouseDownPos = null;
 let lastMouseDownTime = 0;
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
-  lastMouseDownPos = { x: e.clientX, y: e.clientY };
+  if (e.button !== 0) return;
+  if (!e.isPrimary) { if (lastMouseDownPos) lastMouseDownPos.dragged = true; return; }
+  lastMouseDownPos = { x: e.clientX, y: e.clientY, id: e.pointerId, dragged: false };
   lastMouseDownTime = performance.now();
 }, true);
+renderer.domElement.addEventListener('pointermove', e => {
+  if (lastMouseDownPos?.id === e.pointerId && Math.hypot(e.clientX - lastMouseDownPos.x, e.clientY - lastMouseDownPos.y) > 10) lastMouseDownPos.dragged = true;
+});
+renderer.domElement.addEventListener('pointercancel', () => { if (lastMouseDownPos) lastMouseDownPos.dragged = true; });
 
 renderer.domElement.addEventListener('click', (e) => {
-  if (winter.aiming) return;
+  if (e.button !== 0 || targetingTouch) return;
   const ownModel = campModels.get(localPlayerId);
   
   // Ignore if this was a drag (moved more than 10px or held longer than 300ms)
@@ -3381,12 +3394,16 @@ renderer.domElement.addEventListener('click', (e) => {
     const dy = e.clientY - lastMouseDownPos.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
     const duration = performance.now() - lastMouseDownTime;
-    if (dist > 10 || duration > 300) return;
+    if (lastMouseDownPos.dragged || dist > 10 || duration > 500) return;
   }
+  // A click is a shot/reload only after release: trackpad taps work and a
+  // camera drag cannot accidentally fire. Manual aim keeps its exact direction.
+  if (winter.aimSelected) { winter.action(); return; }
   
   tapMouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   tapMouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
   tapRaycaster.setFromCamera(tapMouse, camera);
+  if (winter.holding && winter.interact(tapRaycaster)) return;
   
   const targets = ownModel ? [ownModel.tent] : [];
   const fires = new Map();
@@ -3399,10 +3416,10 @@ renderer.domElement.addEventListener('click', (e) => {
   }
   const hits = tapRaycaster.intersectObjects(targets, false);
   const hit = hits[0];
-  if (!hit) return;
+  if (!hit) { winter.interact(tapRaycaster); return; }
   // Ignore camps hidden behind terrain on the far side of the planet.
   const terrainHit = tapRaycaster.intersectObject(globe, false)[0];
-  if (terrainHit && terrainHit.distance < hit.distance - 0.05) return;
+  if (terrainHit && terrainHit.distance < hit.distance - 0.05) { winter.interact(tapRaycaster); return; }
   if (fires.has(hit.object)) {
     walkToCampfire(fires.get(hit.object));
   } else {
@@ -3722,7 +3739,7 @@ function animate() {
     if (gamepadDpadDown) cameraDistance = Math.min(60, cameraDistance + delta * 15);
     // Right stick Y = tilt camera
     if (gamepadLookY) {
-      if (winter.aiming) winter.adjustAim(-gamepadLookY * delta * 1.3);
+      if (winter.aimSelected) winter.adjustAim(-gamepadLookY * delta * 1.3);
       else cameraHeight = Math.max(1, Math.min(12, cameraHeight + gamepadLookY * delta * 8));
     }
   }
@@ -3740,7 +3757,7 @@ function animate() {
   if (keys['w'] || keys['arrowup']) moveInput = -1;
   if (keys['s'] || keys['arrowdown']) moveInput = 1;
   if (gamepadMoveY) moveInput = gamepadMoveY;
-  if (winter.aiming) {
+  if (winter.aimSelected) {
     strafeInput = gamepadMoveX;
     if (keys['a'] || keys['arrowleft']) strafeInput = -1;
     if (keys['d'] || keys['arrowright']) strafeInput = 1;
@@ -3756,7 +3773,7 @@ function animate() {
   }
   if (gamepadLookX) {
     const turn = gamepadLookX * 2.5 * delta * (invertX ? -1 : 1);
-    if (winter.aiming) winter.turnAim(turn);
+    if (winter.aimSelected) winter.turnAim(turn);
     else cameraAngle += turn;
   }
   if (leverActive) {
@@ -3824,7 +3841,7 @@ function animate() {
       const towardFire = fireDirection(sittingFireId)?.applyQuaternion(globeRotation);
       if (towardFire) playerFacing = Math.atan2(towardFire.x, towardFire.z);
     }
-  } else if (winter.aiming) {
+  } else if (winter.aimSelected) {
     playerFacing = winter.facing;
     cameraAngle = playerFacing - Math.PI;
     cameraTargetAngle = cameraAngle;
@@ -3854,7 +3871,7 @@ function animate() {
   const isWalking = !movementLocked && (Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1 || walkingToTent || !!walkingToFire);
   const moveSpeed = (player.userData.swimming ? SWIM_SPEED : 0.2) * delta;
 
-  const moveFacing = winter.aiming ? winter.moveFacing() : playerFacing;
+  const moveFacing = winter.aimSelected ? winter.moveFacing() : playerFacing;
   const iceMotion = winter.movement(moveInput, strafeInput, moveFacing, delta,
     movementLocked || !!playerBounceState || walkingToTent || !!walkingToFire || minigamesOpen);
   if (!movementLocked && !playerBounceState && (Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1 || iceMotion.lengthSq() > 0.000001)) {
@@ -3996,7 +4013,10 @@ function animate() {
   resetSwimLimbs(player);
 
   // Camera: cameraHeight is tilt (1=ground level, 12=overhead), cameraDistance is total distance
-  aimViewBlend = THREE.MathUtils.lerp(aimViewBlend, winter.aiming && !movementLocked ? 1 : 0, 1 - Math.exp(-8 * delta));
+  if (!winter.aimSelected || lastInputMode !== 'keyboard') aimPointerY = null;
+  if (aimPointerY !== null && aimPointerY < 48) winter.adjustAim((1 - Math.max(0, aimPointerY) / 48) * delta * 0.8);
+  aimViewBlend = THREE.MathUtils.lerp(aimViewBlend, winter.aimSelected && !movementLocked ? 1 : 0, 1 - Math.exp(-8 * delta));
+  aimCameraPitch = THREE.MathUtils.lerp(aimCameraPitch, winter.pitch, 1 - Math.exp(-10 * delta));
   const tiltFraction = THREE.MathUtils.lerp(cameraHeight / 12, Math.max(cameraHeight / 12, 0.65), aimViewBlend);
   const viewDistance = cameraDistance + 2 * aimViewBlend;
   const playerY = player.userData.groundY ?? player.position.y;
@@ -4008,6 +4028,9 @@ function animate() {
   const camZ = Math.cos(cameraAngle) * camHorizDist - Math.sin(cameraAngle) * 0.7 * aimViewBlend;
   camera.position.set(camX, camY, camZ);
   camera.lookAt(-Math.sin(cameraAngle) * aimViewBlend, cameraGroundY + 1, -Math.cos(cameraAngle) * aimViewBlend);
+  // Follow elevated manual throws instead of permanently looking down at the
+  // ground. Edge continuation lets mice/trackpads keep raising aim at screen top.
+  camera.rotateX(Math.max(0, aimCameraPitch - 0.3) * 1.4 * aimViewBlend);
   camera.updateMatrixWorld(true);
   atmosMat.uniforms.viewVector.value.copy(camera.position);
 
