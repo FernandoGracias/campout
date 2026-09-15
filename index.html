@@ -62,7 +62,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v207</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v208</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -109,7 +109,7 @@ canvas { display: block; }
     <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
     <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v207</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v208</div>
 </div>
 
 <!-- GAME OVER SCREEN -->
@@ -258,7 +258,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v207</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v208</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -272,7 +272,7 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=207';
+import { createWinter } from './winter.js?v=208';
 
 // Toast notification system - defined early since used by WebSocket handlers
 function showToast(message, duration = 5000) {
@@ -1828,7 +1828,7 @@ document.getElementById('btn-skates').addEventListener('click', winter.toggleSka
 document.addEventListener('keydown', e => {
   if (!e.repeat && !e.target.closest('input, select, textarea, [contenteditable]')) {
     if (e.key.toLowerCase() === 'q') { e.preventDefault(); winter.action(); }
-    if (e.key.toLowerCase() === 'c') { e.preventDefault(); winter.toggleSkates(); }
+    if (e.key.toLowerCase() === 'i') { e.preventDefault(); winter.toggleSkates(); }
   }
 });
 renderer.domElement.addEventListener('pointerdown', e => {
@@ -2514,17 +2514,23 @@ function updateControlHints() {
   } else if (lastInputMode === 'gamepad') {
     hintPitch.textContent = 'X';
     hintPitch.style.display = 'block';
+    hintPitch.style.borderRadius = '4px';  // X button is square on Xbox
     hintFlashlight.textContent = 'B';
     hintFlashlight.style.display = 'block';
+    hintFlashlight.style.borderRadius = '50%';  // B button is circle on Xbox
     hintMinigames.textContent = '☰';
     hintMinigames.style.display = 'block';
+    hintMinigames.style.borderRadius = '4px';
   } else {
     hintPitch.textContent = 'T';
     hintPitch.style.display = 'block';
+    hintPitch.style.borderRadius = '4px';
     hintFlashlight.textContent = 'F';
     hintFlashlight.style.display = 'block';
+    hintFlashlight.style.borderRadius = '4px';
     hintMinigames.textContent = 'G';
     hintMinigames.style.display = 'block';
+    hintMinigames.style.borderRadius = '4px';
   }
 }
 
@@ -3204,6 +3210,7 @@ function syncCamps() {
 }
 
 // Ground the whole object, including its orientation and geometry's bottom.
+// When winter is enabled and terrain is below ice level, place on ice surface instead.
 function groundCampObject(object, sink = 0) {
   globePivot.updateWorldMatrix(true, true);
   const direction = object.getWorldPosition(new THREE.Vector3()).normalize();
@@ -3212,8 +3219,14 @@ function groundCampObject(object, sink = 0) {
   const hit = ray.intersectObject(globe, false)[0];
   if (!hit) return;
   const parent = object.parent;
-  const normal = hit.face.normal.clone().transformDirection(globe.matrixWorld)
-    .applyQuaternion(parent.getWorldQuaternion(new THREE.Quaternion()).invert()).normalize();
+  // If winter is enabled and terrain is below ice, use ice surface instead
+  let surfacePoint = hit.point.clone();
+  let surfaceNormal = hit.face.normal.clone().transformDirection(globe.matrixWorld);
+  if (winter.enabled && hit.point.length() < winter.iceRadius) {
+    surfacePoint = direction.clone().multiplyScalar(winter.iceRadius);
+    surfaceNormal = direction.clone();
+  }
+  const normal = surfaceNormal.applyQuaternion(parent.getWorldQuaternion(new THREE.Quaternion()).invert()).normalize();
   object.quaternion.premultiply(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal));
   let bottom = 0;
   if (object.geometry) {
@@ -3226,7 +3239,7 @@ function groundCampObject(object, sink = 0) {
       bottom = Math.min(bottom, vertex.dot(normal));
     }
   }
-  object.position.copy(parent.worldToLocal(hit.point.clone())).addScaledVector(normal, -bottom - sink);
+  object.position.copy(parent.worldToLocal(surfacePoint)).addScaledVector(normal, -bottom - sink);
   object.updateMatrixWorld(true);
 }
 

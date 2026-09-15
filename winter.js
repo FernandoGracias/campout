@@ -879,6 +879,9 @@ export function createWinter(THREE, world) {
   const actionHint = document.createElement('span');
   actionHint.className = 'winter-hint';
   button.append(actionHint);
+  const skatesHint = document.createElement('span');
+  skatesHint.className = 'winter-hint';
+  skatesButton.append(skatesHint);
   button.setAttribute('aria-label', 'Load or throw snowball');
   skatesButton.setAttribute('aria-label', 'Toggle ice skates');
   function refreshHints() {
@@ -888,11 +891,15 @@ export function createWinter(THREE, world) {
     button.querySelector('svg').outerHTML = enabled ? snowballIcon : pineconeIcon;
     button.setAttribute('aria-label', enabled ? 'Load or throw snowball' : 'Pick up nearby pinecone or throw');
     skatesButton.innerHTML = skates ? skateNoIcon : skateIcon;
+    skatesButton.append(skatesHint);  // Re-append after innerHTML replacement
     // Update border colors to indicate active states
     button.style.borderColor = packing > 0 ? '#f0c040' : 'rgba(255,255,255,0.15)';
     skatesButton.style.borderColor = skates ? '#f0c040' : 'rgba(255,255,255,0.15)';
-    actionHint.textContent = inputMode === 'gamepad' ? 'RT' : 'L';
+    actionHint.textContent = inputMode === 'gamepad' ? 'RT' : 'Q';
     actionHint.style.display = inputMode === 'touch' ? 'none' : 'block';
+    skatesHint.textContent = inputMode === 'gamepad' ? 'LB' : 'I';
+    skatesHint.style.display = inputMode === 'touch' ? 'none' : 'block';
+    skatesHint.style.borderRadius = '4px';  // LB/I are both squirkles (bumpers, keyboard)
     button.title = inputMode === 'gamepad' ? 'Right trigger: load / throw. Right stick: look.' : 'Left-click: load / throw. Move the camera to aim at the center crosshair.';
     if (!enabled) button.title += ' Stand within arm’s reach of a pinecone to pick it up.';
     skatesButton.setAttribute('aria-pressed', String(skates));
