@@ -206,7 +206,7 @@ canvas { display: block; }
 
 <button id="btn-stand" style="display:none;position:fixed;bottom:100px;left:30px;z-index:101;padding:10px 16px;border:1px solid #f0c040;border-radius:8px;background:#252535;color:#fff;cursor:pointer;">Stand up</button>
 <button id="camp-interaction" style="display:none;position:fixed;z-index:150;transform:translate(-50%,-100%);padding:6px 10px;border:1px solid #f0c040;border-radius:7px;background:rgba(25,25,40,0.95);color:#fff;font:14px system-ui,sans-serif;white-space:nowrap;cursor:pointer;"></button>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v171</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v172</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -2039,7 +2039,7 @@ document.addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; 
 document.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
 
 const gamepadState = { 
-  aWasPressed: false, bWasPressed: false, yWasPressed: false, xWasPressed: false,
+  aWasPressed: false, bWasPressed: false, yWasPressed: false, xWasPressed: false, menuWasPressed: false,
   dpadUpWasPressed: false, dpadUpLastTap: 0,
   dpadDownWasPressed: false, dpadDownLastTap: 0
 };
@@ -2146,11 +2146,11 @@ function updateControlHints() {
     hintFlashlight.style.display = 'none';
     hintMinigames.style.display = 'none';
   } else if (lastInputMode === 'gamepad') {
-    hintPitch.textContent = 'A';
+    hintPitch.textContent = 'X';
     hintPitch.style.display = 'block';
     hintFlashlight.textContent = 'B';
     hintFlashlight.style.display = 'block';
-    hintMinigames.textContent = 'X';
+    hintMinigames.textContent = '☰';
     hintMinigames.style.display = 'block';
   } else {
     hintPitch.textContent = 'T';
@@ -3033,6 +3033,12 @@ function fireDirection(id) {
 }
 
 const campInteraction = document.getElementById('camp-interaction');
+const standButton = document.getElementById('btn-stand');
+campInteraction.style.transition = standButton.style.transition = 'opacity 0.5s ease';
+let lastCampPromptActivity = performance.now();
+let previousRestState = null;
+let previousPromptView = null;
+document.addEventListener('pointermove', () => { lastCampPromptActivity = performance.now(); }, { passive: true });
 
 function nearbyCampInteraction() {
   if (minigamesOpen || walkingToTent || walkingToFire) return null;
@@ -3063,7 +3069,7 @@ function nearbyCampInteraction() {
   return candidates.sort((a, b) => a.distance - b.distance)[0] || null;
 }
 
-function interactWithCamp() {
+function interactWithCamp(allowPitch = true) {
   if (minigamesOpen || walkingToTent || walkingToFire) return;
   const target = nearbyCampInteraction();
   if (target?.type === 'tent') {
@@ -3073,17 +3079,31 @@ function interactWithCamp() {
     walkToCampfire(target.id);
   } else if (sittingFireId !== null) {
     standUp();
-  } else if (!isSleeping) {
+  } else if (!isSleeping && allowPitch) {
     pitchCamp();
   }
 }
 campInteraction.addEventListener('click', interactWithCamp);
 
 function updateCampInteraction() {
+  const now = performance.now();
+  const restState = isSleeping ? 'tent' : sittingFireId;
+  const view = [cameraAngle, cameraHeight, cameraDistance];
+  if (restState !== previousRestState || !previousPromptView ||
+      view.some((value, i) => Math.abs(value - previousPromptView[i]) > 0.0001)) {
+    lastCampPromptActivity = now;
+  }
+  previousRestState = restState;
+  previousPromptView = view;
+  const showPrompt = restState === null || now - lastCampPromptActivity < 2200;
+  for (const element of [campInteraction, standButton]) {
+    element.style.opacity = showPrompt ? '1' : '0';
+    element.style.pointerEvents = showPrompt ? 'auto' : 'none';
+  }
   const target = nearbyCampInteraction();
   campInteraction.style.display = target ? 'block' : 'none';
-  // The toolbar still packs the camp; don't show a conflicting A/T badge on it.
-  document.getElementById('hint-pitch').style.display = target || lastInputMode === 'touch' ? 'none' : 'block';
+  // X always packs/pitches; only the keyboard T badge conflicts with interaction.
+  document.getElementById('hint-pitch').style.display = (target && lastInputMode !== 'gamepad') || lastInputMode === 'touch' ? 'none' : 'block';
   if (!target) return;
   const key = lastInputMode === 'gamepad' ? 'A' : lastInputMode === 'touch' ? 'Tap' : 'T';
   const action = target.type === 'tent' ? (isSleeping ? 'Wake up' : 'Enter tent') : (sittingFireId !== null ? 'Stand up' : 'Sit by fire');
@@ -3384,7 +3404,7 @@ function animate() {
   let gamepadMoveY = 0, gamepadMoveX = 0, gamepadLookX = 0, gamepadLookY = 0;
   let gamepadA = false, gamepadB = false, gamepadY = false;
   let gamepadDpadUp = false, gamepadDpadDown = false;
-  let gamepadX = false;
+  let gamepadX = false, gamepadMenu = false;
   let gamepadDpadLeft = false, gamepadDpadRight = false;
   const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
   for (const gp of gamepads) {
@@ -3417,6 +3437,8 @@ function animate() {
     else if (!gp.buttons[1]?.pressed) gamepadState.bWasPressed = false;
     if (gp.buttons[2]?.pressed && !gamepadState.xWasPressed) { gamepadX = true; gamepadState.xWasPressed = true; }
     else if (!gp.buttons[2]?.pressed) gamepadState.xWasPressed = false;
+    if (gp.buttons[9]?.pressed && !gamepadState.menuWasPressed) { gamepadMenu = true; gamepadState.menuWasPressed = true; }
+    else if (!gp.buttons[9]?.pressed) gamepadState.menuWasPressed = false;
     if (gp.buttons[3]?.pressed && !gamepadState.yWasPressed) { gamepadY = true; gamepadState.yWasPressed = true; }
     else if (!gp.buttons[3]?.pressed) gamepadState.yWasPressed = false;
     break; // Use first connected gamepad
@@ -3425,7 +3447,7 @@ function animate() {
   // If minigames modal is open, handle navigation there instead
   if (minigamesOpen) {
     if (gamepadB) closeMinigames();
-    if (gamepadA) selectMinigame();
+    if (gamepadA) { selectMinigame(); gamepadA = false; }
     if (gamepadDpadUp && !gamepadState.dpadUpWasPressed) { minigamesSelectedIndex = Math.max(0, minigamesSelectedIndex - 1); updateMinigamesSelection(); }
     if (gamepadDpadDown && !gamepadState.dpadDownWasPressed) { minigamesSelectedIndex = Math.min(minigameItems().length - 1, minigamesSelectedIndex + 1); updateMinigamesSelection(); }
     gamepadState.dpadUpWasPressed = gamepadDpadUp;
@@ -3436,8 +3458,12 @@ function animate() {
     if (gamepadDpadRight) cameraAngle -= delta * 2.5;
   }
   
-  // X button opens minigames
-  if (gamepadX && !minigamesOpen) openMinigames();
+  // Menu opens minigames; X is dedicated to setting up / taking down camp.
+  if (gamepadMenu) {
+    if (minigamesOpen) closeMinigames();
+    else openMinigames();
+  }
+  if (gamepadX && !minigamesOpen && !isSleeping) pitchCamp();
   
   // D-pad up/down = zoom in/out (hold), or double-tap for preset views (only when modal closed)
   if (!minigamesOpen) {
@@ -3469,7 +3495,7 @@ function animate() {
     if (gamepadLookY) cameraHeight = Math.max(1, Math.min(12, cameraHeight + gamepadLookY * delta * 8));
   }
   
-  if (gamepadA && !minigamesOpen) interactWithCamp();
+  if (gamepadA && !minigamesOpen) interactWithCamp(false);
   if (gamepadB && !isSleeping && !minigamesOpen) {
     flashlightOn = !flashlightOn;
     document.getElementById('btn-flashlight').style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
