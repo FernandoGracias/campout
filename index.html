@@ -197,7 +197,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v160</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v161</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -1547,7 +1547,7 @@ function applyBumpPose(mesh, bump, rotation) {
   if (!bump) return;
   const t = Math.min(1, bump.elapsed / BUMP_DURATION);
   const envelope = Math.sin(Math.PI * t) * (1 - t);
-  const waddle = Math.sin(t * Math.PI * 6) * envelope;
+  const waddle = Math.sin(t * Math.PI * 3) * envelope * 0.5;
   const up = mesh.position.clone().normalize();
   const axis = bump.axis.clone().applyQuaternion(rotation);
   const away = new THREE.Vector3().crossVectors(up, axis).normalize()
