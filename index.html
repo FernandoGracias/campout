@@ -197,7 +197,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v163</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v164</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -1537,15 +1537,24 @@ function applySwimPose(mesh) {
   const phase = s.swimPhase;
   const moving = s.swimMoving;
   mesh.rotateX(0.85 * moving * weight);
-  mesh.rotateZ(Math.sin(phase) * 0.045 * weight);
+  mesh.rotateZ(Math.sin(phase) * 0.045 * weight * (1 - moving));
+  // Both arms reach together, pull back slowly, then recover forward quickly.
+  const cycle = phase / (Math.PI * 2);
+  const pulling = cycle < 0.7;
+  const strokeProgress = pulling ? cycle / 0.7 : (cycle - 0.7) / 0.3;
+  const easedStroke = (1 - Math.cos(strokeProgress * Math.PI)) / 2;
+  const paddle = pulling
+    ? THREE.MathUtils.lerp(-2.4, 0.45, easedStroke)
+    : THREE.MathUtils.lerp(0.45, -2.4, easedStroke);
+  const recoverySpread = pulling ? 0 : Math.sin(strokeProgress * Math.PI) * 0.75;
   for (const [side, sign] of [['left', 1], ['right', -1]]) {
     const arm = s[side + 'Arm'];
     const leg = s[side + 'Leg'];
     const stroke = phase + (sign < 0 ? Math.PI : 0);
     const tread = -0.25 + Math.sin(stroke) * 0.3;
-    const paddle = -2.9 + Math.sin(stroke) * 0.65;
     arm.rotation.x = THREE.MathUtils.lerp(arm.rotation.x, THREE.MathUtils.lerp(tread, paddle, moving), weight);
-    arm.rotation.z = THREE.MathUtils.lerp(sign * 0.15, sign * (0.65 - moving * 0.47 + Math.cos(stroke) * 0.1), weight);
+    const armSpread = THREE.MathUtils.lerp(0.65 + Math.cos(stroke) * 0.1, 0.15 + recoverySpread, moving);
+    arm.rotation.z = THREE.MathUtils.lerp(sign * 0.15, sign * armSpread, weight);
     leg.rotation.x = THREE.MathUtils.lerp(leg.rotation.x, Math.sin(stroke) * (0.22 + moving * 0.25), weight);
     leg.rotation.z = sign * (0.12 + Math.cos(stroke) * 0.06) * weight;
   }
