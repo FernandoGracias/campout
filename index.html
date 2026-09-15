@@ -2387,10 +2387,22 @@ renderer.domElement.addEventListener('pointerdown', e => {
 });
 window.addEventListener('blur', () => { aimPointerPosition = null; });
 
+// Pointer lock for FPS-style mouse look
+renderer.domElement.addEventListener('click', () => {
+  if (document.pointerLockElement !== renderer.domElement && !isSleeping && sittingFireId === null) {
+    renderer.domElement.requestPointerLock();
+  }
+});
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement === renderer.domElement) {
+    setInputMode('keyboard');
+  }
+});
+
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('mousedown', (e) => {
   if (e.target !== renderer.domElement) return;
-  if (winter.enabled && lastInputMode === 'keyboard') return;
+  if (document.pointerLockElement === renderer.domElement) return;
   isDragging = true;
   dragStartX = e.clientX;
   dragStartAngle = cameraAngle;
@@ -2400,6 +2412,15 @@ renderer.domElement.addEventListener('mousedown', (e) => {
 // Pointer events support mouse and trackpad look, including right-button drags.
 window.addEventListener('pointermove', (e) => {
   if (e.pointerType !== 'mouse') return;
+  // Pointer lock mode - use movementX/Y for smooth FPS look
+  if (document.pointerLockElement === renderer.domElement) {
+    if (!isSleeping && sittingFireId === null && !minigamesOpen) {
+      cameraAngle += e.movementX * 0.002 * (invertX ? -1 : 1);
+      cameraTargetAngle = cameraAngle;
+      cameraLookPitch = THREE.MathUtils.clamp(cameraLookPitch - e.movementY * 0.002, -0.65, 1.35);
+    }
+    return;
+  }
   const dxAim = aimPointerPosition ? e.clientX - aimPointerPosition.x : 0;
   const dyAim = aimPointerPosition ? e.clientY - aimPointerPosition.y : 0;
   aimPointerPosition = { x: e.clientX, y: e.clientY };
