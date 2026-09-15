@@ -1,0 +1,2382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Campout</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; background: #1a1a2e; font-family: system-ui, sans-serif; touch-action: none; -webkit-user-select: none; user-select: none; }
+canvas { display: block; }
+
+#joystick-zone {
+  position: fixed;
+  bottom: 30px;
+  left: 30px;
+  width: 130px;
+  height: 130px;
+  z-index: 100;
+}
+#joystick-base {
+  position: absolute;
+  width: 110px;
+  height: 110px;
+  left: 10px;
+  top: 10px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  border: 2px solid rgba(255,255,255,0.2);
+}
+#joystick-knob {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  left: 33px;
+  top: 33px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.25);
+  border: 2px solid rgba(255,255,255,0.4);
+}
+
+.control-row { margin-bottom: 10px; }
+
+.control-row label { display: block; font-size: 11px; margin-bottom: 4px; color: #aaa; }
+.control-row input[type="range"] { width: 100%; }
+.control-row button { background: #333; color: #ddd; border: 1px solid #555; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; margin-right: 4px; }
+.control-row button:hover { background: #444; }
+#controls.open { transform: translateX(0) !important; }
+</style>
+</head>
+<body>
+
+<!-- LANDING SCREEN -->
+<div id="landing-screen" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#1a1a2e;z-index:1000;padding:20px;">
+  <h1 style="color:#f0c040;font-size:36px;margin-bottom:8px;font-family:system-ui,sans-serif;">Campout</h1>
+  <p style="color:#aaa;font-size:14px;margin-bottom:32px;">Multiplayer globe-walking sim</p>
+  <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:280px;">
+    <button id="btn-create-room" style="padding:14px;font-size:16px;background:#337733;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Create World</button>
+    <div style="display:flex;gap:8px;">
+      <input id="input-room-code" type="text" placeholder="Room code" maxlength="6" style="flex:1;padding:12px;font-size:16px;background:#2a2a3e;color:#fff;border:1px solid #555;border-radius:8px;text-align:center;font-family:monospace;text-transform:lowercase;">
+      <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
+    </div>
+  </div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v109</div>
+</div>
+
+<!-- LOBBY SCREEN -->
+<div id="lobby-screen" style="position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:#1a1a2e;z-index:1000;padding:20px;">
+  <h2 style="color:#f0c040;font-size:24px;margin-bottom:4px;font-family:system-ui,sans-serif;">Room: <span id="lobby-room-id" style="font-family:monospace;"></span></h2>
+  <p id="lobby-seed-display" style="color:#666;font-size:11px;margin-bottom:24px;font-family:monospace;"></p>
+  <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:280px;">
+    <div>
+      <label style="color:#aaa;font-size:12px;display:block;margin-bottom:4px;">Your Name</label>
+      <input id="input-player-name" type="text" placeholder="Camper" maxlength="16" style="width:100%;padding:10px;font-size:16px;background:#2a2a3e;color:#fff;border:1px solid #555;border-radius:8px;font-family:system-ui,sans-serif;">
+    </div>
+    <div>
+      <label style="color:#aaa;font-size:12px;display:block;margin-bottom:4px;">Tent Color</label>
+      <div id="lobby-tent-colors" style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button data-color="cc5522" style="background:#cc5522;width:32px;height:32px;border:3px solid #fff;border-radius:6px;cursor:pointer;"></button>
+        <button data-color="2266aa" style="background:#2266aa;width:32px;height:32px;border:3px solid transparent;border-radius:6px;cursor:pointer;"></button>
+        <button data-color="337733" style="background:#337733;width:32px;height:32px;border:3px solid transparent;border-radius:6px;cursor:pointer;"></button>
+        <button data-color="aa2222" style="background:#aa2222;width:32px;height:32px;border:3px solid transparent;border-radius:6px;cursor:pointer;"></button>
+        <button data-color="ddaa22" style="background:#ddaa22;width:32px;height:32px;border:3px solid transparent;border-radius:6px;cursor:pointer;"></button>
+        <button data-color="553388" style="background:#553388;width:32px;height:32px;border:3px solid transparent;border-radius:6px;cursor:pointer;"></button>
+        <button data-color="ee66aa" style="background:#ee66aa;width:32px;height:32px;border:3px solid transparent;border-radius:6px;cursor:pointer;"></button>
+      </div>
+    </div>
+    <div>
+      <label style="color:#aaa;font-size:12px;display:block;margin-bottom:4px;">Tent Style</label>
+      <select id="lobby-tent-style" style="width:100%;padding:10px;font-size:14px;background:#2a2a3e;color:#fff;border:1px solid #555;border-radius:8px;">
+        <option value="aframe">A-Frame</option>
+        <option value="dome">Dome</option>
+        <option value="cabin">Tipi</option>
+        <option value="tunnel">Tunnel</option>
+      </select>
+    </div>
+    <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
+    <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
+  </div>
+</div>
+
+<!-- GAME SCREEN -->
+<div id="game-screen" style="display:none;">
+<div id="controls-row" style="position:fixed;bottom:calc(30px + env(safe-area-inset-bottom, 0px));left:30px;z-index:100;">
+  <div style="display:flex;gap:12px;align-items:center;">
+    <div style="position:relative;width:48px;height:48px;" id="lever-wrapper">
+      <div id="joystick-base" style="display:none;position:absolute;width:72px;height:72px;left:-12px;top:-12px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);pointer-events:none;"></div>
+      <div id="lever-track" style="position:absolute;width:4px;height:80px;left:50%;top:50%;transform:translate(-50%,-50%);border-radius:2px;background:rgba(255,255,255,0.15);pointer-events:none;"></div>
+      <div id="lever-zone" style="position:absolute;left:0;top:0;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 512 512" fill="#ddd" stroke="none"><path d="M111.512 21.176c-6.65.088-13.7 1.088-21.162 3.088-87.625 23.48-77.956 222.752-9.297 310.984l.002-.002 99.513-26.664c-3.273-35.578.003-76.04 19.313-113.947 2.605-89.97-24.095-174.31-88.368-173.46zm294.38 0c-64.273-.852-90.972 83.488-88.37 173.46 19.31 37.905 22.587 78.368 19.314 113.946l99.514 26.664.002.002c68.658-88.232 78.327-287.505-9.297-310.984-7.463-2-14.513-3-21.162-3.088zM188.878 350.06l-101.26 27.13c5.495 191.896 200.51 104.13 101.26-27.13zm139.65 0c-99.25 131.26 95.767 219.026 101.262 27.13l-101.263-27.13z"/></svg></div>
+    </div>
+    <div id="btn-pitch" style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><path d="M12 2L3 20h18L12 2z"/><line x1="12" y1="20" x2="12" y2="14"/></svg></div>
+    <div id="btn-flashlight" style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><rect x="9" y="8" width="6" height="12" rx="1"/><path d="M9 8l-1-4h8l-1 4"/></svg></div>
+  </div>
+</div>
+
+<div id="sidebar-toggle" style="position:fixed;top:12px;right:12px;width:44px;height:44px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.3);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:200;-webkit-tap-highlight-color:transparent;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div>
+
+<div id="controls" style="position:fixed;top:0;right:0;bottom:0;width:260px;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#ddd;padding:60px 16px 16px;z-index:150;overflow-y:auto;transform:translateX(100%);transition:transform 0.3s ease;font-family:monospace;">
+  <h3 style="margin-bottom:12px;color:#f0c040;font-size:14px;">CAMP CONTROLS</h3>
+  <div id="room-code-display" style="display:none;margin-bottom:12px;padding:8px;background:rgba(255,255,255,0.08);border-radius:6px;text-align:center;">
+    <div style="font-size:10px;color:#888;margin-bottom:2px;">ROOM CODE</div>
+    <div id="room-code-value" style="font-size:18px;color:#f0c040;font-family:monospace;letter-spacing:2px;"></div>
+  </div>
+  <div class="control-row">
+    <label>Time of Day</label>
+    <input type="range" id="time-slider" min="0" max="24" step="0.1" value="12">
+    <div id="time-display" style="font-size:11px;color:#f0c040;text-align:center;margin-top:4px;">12:00</div>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:#aaa;"><input type="checkbox" id="time-pause"> Pause time cycle</label>
+  </div>
+  <div class="control-row">
+    <label>Moonlight</label>
+    <input type="range" id="moonlight-slider" min="0" max="100" step="1" value="50">
+  </div>
+  <div class="control-row">
+    <label>Fog</label>
+    <input type="range" id="fog-slider" min="0" max="100" step="1" value="0">
+  </div>
+  <div class="control-row">
+    <label>Control Mode</label>
+    <select id="control-mode" style="width:100%;background:#333;color:#ddd;border:1px solid #555;padding:4px;border-radius:4px;font-size:11px;">
+      <option value="pan">Pan to Steer</option>
+      <option value="joystick">Joystick</option>
+    </select>
+  </div>
+  <div class="control-row">
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#aaa;"><input type="checkbox" id="invert-x"> Invert pan direction</label>
+  </div>
+  <hr style="border:none;border-top:1px solid #444;margin:12px 0;">
+  <h3 style="margin-bottom:12px;color:#f0c040;font-size:14px;">TENT OPTIONS</h3>
+  <div class="control-row">
+    <label>Tent Color</label>
+    <div id="tent-colors" style="display:flex;gap:4px;flex-wrap:wrap;">
+      <button data-color="cc5522" style="background:#cc5522;width:24px;height:24px;border:2px solid #fff;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="2266aa" style="background:#2266aa;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="337733" style="background:#337733;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="aa2222" style="background:#aa2222;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="888888" style="background:#888888;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="ddaa22" style="background:#ddaa22;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="553388" style="background:#553388;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="222222" style="background:#222222;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+      <button data-color="ee66aa" style="background:#ee66aa;width:24px;height:24px;border:2px solid transparent;border-radius:4px;cursor:pointer;"></button>
+    </div>
+  </div>
+  <div class="control-row">
+    <label>Tent Style</label>
+    <select id="tent-style" style="width:100%;background:#333;color:#ddd;border:1px solid #555;padding:4px;border-radius:4px;font-size:11px;">
+      <option value="aframe">A-Frame (2P)</option>
+      <option value="dome">Dome (4P)</option>
+      <option value="cabin">Tipi</option>
+      <option value="tunnel">Tunnel (4P)</option>
+    </select>
+  </div>
+</div>
+
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v109</div>
+<div id="mp-status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:200;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;"></div>
+</div><!-- /game-screen -->
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// --- SCREEN MANAGEMENT & NETWORKING ---
+const SIGNAL_SERVER = 'https://campout-server.fernando-eb7.workers.dev';
+const mpLogs = [];
+function mpLog(msg) {
+  mpLogs.push(msg);
+  if (mpLogs.length > 20) mpLogs.shift();
+  const el = document.getElementById('mp-status');
+  if (el) { el.style.display = 'block'; el.textContent = mpLogs.slice(-5).join('\n'); }
+}
+let roomId = null;
+let worldSeed = null;
+let playerName = 'Camper';
+let lobbyTentColor = 'cc5522';
+let lobbyTentStyle = 'aframe';
+let signalingWs = null;
+let localPlayerId = Math.random().toString(36).substring(2, 10);
+const peerConnections = {};
+const dataChannels = {};
+const pendingCandidates = {};
+window.__mp = { peerConnections, dataChannels, pendingCandidates, get signalingWs() { return signalingWs; }, localPlayerId };
+
+// Landing screen handlers
+document.getElementById('btn-create-room').addEventListener('click', async () => {
+  const resp = await fetch(SIGNAL_SERVER + '/create');
+  const data = await resp.json();
+  roomId = data.roomId;
+  worldSeed = data.seed;
+  showLobby();
+});
+
+document.getElementById('btn-join-room').addEventListener('click', () => {
+  const code = document.getElementById('input-room-code').value.trim().toLowerCase();
+  if (code.length < 4) return;
+  roomId = code;
+  worldSeed = null;
+  showLobby();
+});
+
+document.getElementById('input-room-code').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('btn-join-room').click();
+});
+
+// Lobby screen handlers
+document.getElementById('btn-enter-world').addEventListener('click', () => {
+  playerName = document.getElementById('input-player-name').value.trim() || 'Camper';
+  document.getElementById('landing-screen').style.display = 'none';
+  document.getElementById('lobby-screen').style.display = 'none';
+  document.getElementById('game-screen').style.display = 'block';
+  startGame(worldSeed || 42);
+});
+
+document.querySelectorAll('#lobby-tent-colors button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#lobby-tent-colors button').forEach(b => b.style.borderColor = 'transparent');
+    btn.style.borderColor = '#fff';
+    lobbyTentColor = btn.dataset.color;
+  });
+});
+
+document.getElementById('lobby-tent-style').addEventListener('change', (e) => {
+  lobbyTentStyle = e.target.value;
+});
+
+function showLobby() {
+  document.getElementById('landing-screen').style.display = 'none';
+  document.getElementById('lobby-screen').style.display = 'flex';
+  document.getElementById('lobby-room-id').textContent = roomId;
+  document.getElementById('lobby-seed-display').textContent = worldSeed ? 'seed: ' + worldSeed : 'joining...';
+  fetchTurnCredentials().then(() => connectSignaling());
+}
+
+function connectSignaling() {
+  const wsUrl = SIGNAL_SERVER.replace('https://', 'wss://') + '/room/' + roomId;
+  signalingWs = new WebSocket(wsUrl);
+
+  signalingWs.addEventListener('open', () => {
+    signalingWs.send(JSON.stringify({
+      type: 'join',
+      id: localPlayerId,
+      name: playerName || 'Camper',
+      color: lobbyTentColor,
+      tentStyle: lobbyTentStyle,
+      tentColor: lobbyTentColor,
+      seed: worldSeed,
+    }));
+  });
+
+  signalingWs.addEventListener('message', (event) => {
+    const msg = JSON.parse(event.data);
+    mpLog('← ' + msg.type + (msg.from ? ' from:' + msg.from.substring(0,6) : '') + (msg.id ? ' id:' + msg.id.substring(0,6) : '') + (msg.seed ? ' seed:' + msg.seed : ''));
+
+    switch (msg.type) {
+      case 'room-info': {
+        if (msg.seed) {
+          worldSeed = msg.seed;
+          document.getElementById('lobby-seed-display').textContent = 'seed: ' + worldSeed;
+        }
+        break;
+      }
+      case 'peer-joined': {
+        updateLobbyPeers(msg);
+        if (msg.seed) worldSeed = msg.seed;
+        // Only initiate if our ID is lexically greater (prevents both sides offering)
+        createPeerConnection(msg.id, localPlayerId > msg.id);
+        break;
+      }
+      case 'peer-left': {
+        delete peerConnections[msg.id];
+        delete dataChannels[msg.id];
+        if (window.removeOtherPlayer) window.removeOtherPlayer(msg.id);
+        break;
+      }
+      case 'offer': {
+        handleOffer(msg);
+        break;
+      }
+      case 'answer': {
+        handleAnswer(msg);
+        break;
+      }
+      case 'ice-candidate': {
+        handleIceCandidate(msg);
+        break;
+      }
+    }
+  });
+}
+
+function updateLobbyPeers(msg) {
+  const el = document.getElementById('lobby-peers');
+  const existing = el.textContent;
+  el.textContent = (existing ? existing + '\n' : '') + (msg.name || msg.id) + ' joined';
+}
+
+// --- WebRTC ---
+const rtcConfig = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ]
+};
+
+async function fetchTurnCredentials() {
+  const resp = await fetch(SIGNAL_SERVER + '/turn-creds');
+  const data = await resp.json();
+  if (data.iceServers) {
+    rtcConfig.iceServers = data.iceServers;
+    mpLog('TURN creds loaded');
+  }
+}
+
+async function createPeerConnection(peerId, initiator) {
+  if (peerConnections[peerId]) return peerConnections[peerId];
+  mpLog('PC create: ' + peerId.substring(0,6) + (initiator ? ' (initiator)' : ''));
+  const pc = new RTCPeerConnection(rtcConfig);
+  peerConnections[peerId] = pc;
+  pendingCandidates[peerId] = [];
+
+  pc.oniceconnectionstatechange = () => {
+    mpLog('ICE: ' + pc.iceConnectionState + ' ' + peerId.substring(0,6));
+  };
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      signalingWs.send(JSON.stringify({
+        type: 'ice-candidate',
+        target: peerId,
+        candidate: event.candidate,
+      }));
+    }
+  };
+
+  pc.ondatachannel = (event) => {
+    setupDataChannel(peerId, event.channel);
+  };
+
+  if (initiator) {
+    const dc = pc.createDataChannel('game');
+    setupDataChannel(peerId, dc);
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    signalingWs.send(JSON.stringify({
+      type: 'offer',
+      target: peerId,
+      sdp: offer,
+    }));
+  }
+
+  return pc;
+}
+
+function setupDataChannel(peerId, channel) {
+  dataChannels[peerId] = channel;
+  channel.onopen = () => {
+    mpLog('DC open: ' + peerId.substring(0,6));
+    if (window.globeRotation) broadcastHello(window.globeRotation);
+  };
+  channel.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.type === 'hello') mpLog('DC msg: hello from ' + peerId.substring(0,6));
+    handleGameMessage(peerId, data);
+  };
+  channel.onclose = () => {
+    mpLog('DC closed: ' + peerId.substring(0,6));
+    delete dataChannels[peerId];
+    if (window.removeOtherPlayer) window.removeOtherPlayer(peerId);
+  };
+}
+
+async function handleOffer(msg) {
+  let pc = peerConnections[msg.from];
+  if (!pc) pc = await createPeerConnection(msg.from, false);
+  mpLog('setRemoteDesc (offer) ' + msg.from.substring(0,6));
+  await pc.setRemoteDescription(msg.sdp);
+  mpLog('flushing ' + (pendingCandidates[msg.from] || []).length + ' pending ICE');
+  for (const c of pendingCandidates[msg.from] || []) {
+    await pc.addIceCandidate(c);
+  }
+  pendingCandidates[msg.from] = [];
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  signalingWs.send(JSON.stringify({
+    type: 'answer',
+    target: msg.from,
+    sdp: answer,
+  }));
+}
+
+async function handleAnswer(msg) {
+  const pc = peerConnections[msg.from];
+  if (pc) {
+    await pc.setRemoteDescription(msg.sdp);
+    for (const c of pendingCandidates[msg.from] || []) {
+      await pc.addIceCandidate(c);
+    }
+    pendingCandidates[msg.from] = [];
+  }
+}
+
+async function handleIceCandidate(msg) {
+  const pc = peerConnections[msg.from];
+  if (pc && pc.remoteDescription) {
+    await pc.addIceCandidate(msg.candidate);
+  } else {
+    if (!pendingCandidates[msg.from]) pendingCandidates[msg.from] = [];
+    pendingCandidates[msg.from].push(msg.candidate);
+  }
+}
+
+function handleGameMessage(peerId, msg) {
+  if (msg.type === 'pos') {
+    const q = new THREE.Quaternion(msg.qx, msg.qy, msg.qz, msg.qw);
+    if (window.updateOtherPlayer) {
+      if (!window.otherPlayers[peerId]) {
+        window.addOtherPlayer(peerId, 0x2266aa, q);
+      }
+      window.updateOtherPlayer(peerId, q, msg.facing);
+    }
+  }
+  if (msg.type === 'hello') {
+    if (window.addOtherPlayer && !window.otherPlayers[peerId]) {
+      window.addOtherPlayer(peerId, parseInt(msg.color, 16) || 0x2266aa, new THREE.Quaternion(msg.qx, msg.qy, msg.qz, msg.qw));
+    }
+  }
+}
+
+function broadcastPosition(globeRot, facing) {
+  const msg = JSON.stringify({
+    type: 'pos',
+    qx: globeRot.x, qy: globeRot.y, qz: globeRot.z, qw: globeRot.w,
+    facing,
+  });
+  for (const id in dataChannels) {
+    const dc = dataChannels[id];
+    if (dc.readyState === 'open') dc.send(msg);
+  }
+}
+
+function broadcastHello(globeRot) {
+  const msg = JSON.stringify({
+    type: 'hello',
+    color: lobbyTentColor,
+    qx: globeRot.x, qy: globeRot.y, qz: globeRot.z, qw: globeRot.w,
+  });
+  for (const id in dataChannels) {
+    const dc = dataChannels[id];
+    if (dc.readyState === 'open') dc.send(msg);
+  }
+}
+
+// --- GAME INITIALIZATION (called after lobby) ---
+function startGame(seed) {
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+document.getElementById('game-screen').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x68b8e8);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500);
+
+// --- LIGHTING ---
+const sun = new THREE.DirectionalLight(0xfff4e0, 1.2);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -40;
+sun.shadow.camera.right = 40;
+sun.shadow.camera.top = 40;
+sun.shadow.camera.bottom = -40;
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 100;
+sun.shadow.bias = -0.0005;
+sun.shadow.normalBias = 0.02;
+scene.add(sun);
+scene.add(sun.target);
+
+const moon = new THREE.DirectionalLight(0x8888ff, 0.3);
+moon.castShadow = true;
+moon.shadow.mapSize.set(1024, 1024);
+moon.shadow.camera.left = -15;
+moon.shadow.camera.right = 15;
+moon.shadow.camera.top = 15;
+moon.shadow.camera.bottom = -15;
+moon.shadow.camera.near = 5;
+moon.shadow.camera.far = 80;
+moon.shadow.bias = -0.0005;
+moon.shadow.normalBias = 0.02;
+scene.add(moon);
+scene.add(moon.target);
+
+// Visual sun and moon spheres
+const sunSphere = new THREE.Mesh(
+  new THREE.SphereGeometry(1.5, 16, 12),
+  new THREE.MeshBasicMaterial({ color: 0xffee88 })
+);
+scene.add(sunSphere);
+const moonSphere = new THREE.Mesh(
+  new THREE.SphereGeometry(1.0, 16, 12),
+  new THREE.MeshBasicMaterial({ color: 0xddeeff })
+);
+scene.add(moonSphere);
+
+const hemi = new THREE.HemisphereLight(0x88bbff, 0x446622, 0.6);
+scene.add(hemi);
+
+const ambient = new THREE.AmbientLight(0x404050, 0.3);
+scene.add(ambient);
+
+const GLOBE_RADIUS = 20;
+
+// Stars
+const starCount = 500;
+const starGeo = new THREE.BufferGeometry();
+const starPositions = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount; i++) {
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  const r = 150;
+  starPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+  starPositions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+  starPositions[i * 3 + 2] = r * Math.cos(phi);
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5, transparent: true, opacity: 0 });
+const stars = new THREE.Points(starGeo, starMat);
+scene.add(stars);
+
+// Fireflies
+const fireflyCount = 20;
+const fireflyGeo = new THREE.BufferGeometry();
+const fireflyPositions = new Float32Array(fireflyCount * 3);
+const fireflyData = [];
+for (let i = 0; i < fireflyCount; i++) {
+  const u = Math.random();
+  const v = Math.random();
+  const lat = Math.asin(2 * u - 1);
+  const lon = 2 * Math.PI * v;
+  const pos = latLonToWorld(lat, lon);
+  const normal = pos.clone().normalize();
+  const height = 0.5 + Math.random() * 2;
+  fireflyPositions[i * 3] = pos.x + normal.x * height;
+  fireflyPositions[i * 3 + 1] = pos.y + normal.y * height;
+  fireflyPositions[i * 3 + 2] = pos.z + normal.z * height;
+  fireflyData.push({ phase: Math.random() * Math.PI * 2, speed: 0.5 + Math.random() * 1.5, drift: Math.random() * 0.3 });
+}
+fireflyGeo.setAttribute('position', new THREE.BufferAttribute(fireflyPositions, 3));
+const fireflyMat = new THREE.PointsMaterial({ color: 0xccff44, size: 0.15, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+const fireflies = new THREE.Points(fireflyGeo, fireflyMat);
+scene.add(fireflies);
+
+// --- GLOBE PIVOT (everything on the globe goes in here) ---
+const globePivot = new THREE.Group();
+scene.add(globePivot);
+
+const globeGeo = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
+const globeMat = new THREE.MeshStandardMaterial({
+  color: 0xffffff,
+  roughness: 0.85,
+  flatShading: false,
+});
+const globe = new THREE.Mesh(globeGeo, globeMat);
+globe.receiveShadow = true;
+globePivot.add(globe);
+
+// Atmosphere glow
+const atmosGeo = new THREE.SphereGeometry(GLOBE_RADIUS * 1.2, 64, 64);
+const atmosMat = new THREE.ShaderMaterial({
+  uniforms: {
+    c: { value: 0.4 },
+    p: { value: 4.0 },
+    glowColor: { value: new THREE.Color(0x4488ff) },
+    viewVector: { value: new THREE.Vector3() }
+  },
+  vertexShader: `
+    uniform vec3 viewVector;
+    uniform float c;
+    uniform float p;
+    varying float intensity;
+    void main() {
+      vec3 vNormal = normalize(normalMatrix * normal);
+      vec3 vNormel = normalize(normalMatrix * viewVector);
+      intensity = pow(max(c - dot(vNormal, vNormel), 0.0), p);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 glowColor;
+    varying float intensity;
+    void main() {
+      float i = min(intensity, 1.0) * 2.0;
+      vec3 glow = glowColor * i;
+      gl_FragColor = vec4(glow, min(i, 0.8));
+    }
+  `,
+  side: THREE.BackSide,
+  blending: THREE.AdditiveBlending,
+  transparent: true,
+  depthWrite: false,
+});
+const atmosphere = new THREE.Mesh(atmosGeo, atmosMat);
+scene.add(atmosphere);
+
+// --- SEEDED RANDOM ---
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rng = mulberry32(seed);
+
+// --- UTILITY: place on globe surface ---
+function placeOnGlobe(obj, lat, lon, offset = 0) {
+  const pos = latLonToWorld(lat, lon);
+  const normal = pos.clone().normalize();
+  obj.position.copy(pos).addScaledVector(normal, offset);
+  const up = new THREE.Vector3(0, 1, 0);
+  const quat = new THREE.Quaternion().setFromUnitVectors(up, normal);
+  obj.quaternion.copy(quat);
+}
+
+function latLonToWorld(lat, lon) {
+  const x = GLOBE_RADIUS * Math.cos(lat) * Math.cos(lon);
+  const y = GLOBE_RADIUS * Math.sin(lat);
+  const z = GLOBE_RADIUS * Math.cos(lat) * Math.sin(lon);
+  return new THREE.Vector3(x, y, z);
+}
+
+function randomPointOnSphere() {
+  const u = rng();
+  const v = rng();
+  const lat = Math.asin(2 * u - 1);
+  const lon = 2 * Math.PI * v;
+  return { lat, lon };
+}
+
+// --- TREES ---
+function makeTree(height, trunkColor, foliageColor) {
+  const group = new THREE.Group();
+
+  const trunkGeo = new THREE.CylinderGeometry(height * 0.025, height * 0.04, height * 0.5, 6);
+  const trunkMat = new THREE.MeshStandardMaterial({ color: trunkColor, roughness: 0.9 });
+  const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+  trunk.position.y = height * 0.25;
+  trunk.castShadow = true;
+  group.add(trunk);
+
+  const layers = 4 + Math.floor(rng() * 3);
+  for (let i = 0; i < layers; i++) {
+    const layerHeight = height * 0.15;
+    const radius = (height * 0.18) * (1 - i * 0.1);
+    const y = height * 0.45 + i * layerHeight * 0.65;
+    const coneGeo = new THREE.ConeGeometry(radius, layerHeight, 7);
+    const shade = new THREE.Color(foliageColor).offsetHSL(0, 0, (rng() - 0.5) * 0.05);
+    const coneMat = new THREE.MeshStandardMaterial({ color: shade, roughness: 0.8, flatShading: true });
+    const cone = new THREE.Mesh(coneGeo, coneMat);
+    cone.position.y = y;
+    cone.rotation.y = rng() * Math.PI;
+    cone.castShadow = true;
+    group.add(cone);
+  }
+
+  return group;
+}
+
+const collidables = [];
+const trees = [];
+for (let i = 0; i < 120; i++) {
+  const { lat, lon } = randomPointOnSphere();
+  const height = 3 + rng() * 3;
+  const trunkColor = new THREE.Color().setHSL(0.07, 0.5 + rng() * 0.2, 0.2 + rng() * 0.1);
+  const foliageColor = new THREE.Color().setHSL(0.35 + rng() * 0.05, 0.6 + rng() * 0.15, 0.18 + rng() * 0.08);
+  const tree = makeTree(height, trunkColor, foliageColor);
+  placeOnGlobe(tree, lat, lon, -0.15);
+  globePivot.add(tree);
+  trees.push({ obj: tree, lat, lon });
+  collidables.push({ lat, lon, radius: 0.08 });
+}
+
+// Dense forest area
+const forestCenterLat = -0.6;
+const forestCenterLon = 3.5;
+for (let i = 0; i < 60; i++) {
+  const lat = forestCenterLat + (rng() - 0.5) * 1.0;
+  const lon = forestCenterLon + (rng() - 0.5) * 1.0;
+  const height = 3.5 + rng() * 3.5;
+  const trunkColor = new THREE.Color().setHSL(0.07, 0.5 + rng() * 0.2, 0.15 + rng() * 0.1);
+  const foliageColor = new THREE.Color().setHSL(0.35 + rng() * 0.04, 0.65 + rng() * 0.15, 0.14 + rng() * 0.06);
+  const tree = makeTree(height, trunkColor, foliageColor);
+  placeOnGlobe(tree, lat, lon, -0.15);
+  globePivot.add(tree);
+  trees.push({ obj: tree, lat, lon });
+  collidables.push({ lat, lon, radius: 0.08 });
+}
+
+// --- ROCKS ---
+const rockData = [];
+for (let i = 0; i < 40; i++) {
+  const { lat, lon } = randomPointOnSphere();
+  const size = 0.2 + rng() * 0.5;
+  const geo = new THREE.DodecahedronGeometry(size, 0);
+  const shade = 0.4 + rng() * 0.2;
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(shade, shade * 0.95, shade * 0.85),
+    roughness: 0.9,
+    flatShading: true,
+  });
+  const rock = new THREE.Mesh(geo, mat);
+  rock.scale.set(1, 0.5 + rng() * 0.5, 1);
+  rock.castShadow = true;
+  placeOnGlobe(rock, lat, lon);
+  globePivot.add(rock);
+  rockData.push({ obj: rock, lat, lon, radius: size * 0.8 });
+  collidables.push({ lat, lon, radius: size * 0.8 });
+}
+
+// --- LAKES ---
+const lakeData = [];
+
+function buildLake(lat, lon, radius) {
+  lakeData.push({ lat, lon, radius });
+}
+
+// --- RIVER ---
+const riverPaths = [];
+
+function buildRiver(startLat, startLon, endLat, endLon, segments) {
+  const waterWidth = 1.2;
+  const pathPoints = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const lat = startLat + (endLat - startLat) * t + Math.sin(t * Math.PI * 6) * 0.2 + Math.sin(t * Math.PI * 14) * 0.08 + Math.sin(t * Math.PI * 3) * 0.12;
+    const lon = startLon + (endLon - startLon) * t + Math.cos(t * Math.PI * 5) * 0.15 + Math.cos(t * Math.PI * 11) * 0.05 + Math.cos(t * Math.PI * 2.5) * 0.1;
+    pathPoints.push({ lat, lon });
+  }
+  const maxGap = 0.15;
+  const dense = [pathPoints[0]];
+  for (let i = 1; i < pathPoints.length; i++) {
+    const prev = pathPoints[i - 1];
+    const cur = pathPoints[i];
+    const a = latLonToWorld(prev.lat, prev.lon);
+    const b = latLonToWorld(cur.lat, cur.lon);
+    const dist = a.distanceTo(b);
+    const subdivs = Math.max(1, Math.ceil(dist / maxGap));
+    for (let s = 1; s <= subdivs; s++) {
+      const t = s / subdivs;
+      dense.push({ lat: prev.lat + (cur.lat - prev.lat) * t, lon: prev.lon + (cur.lon - prev.lon) * t });
+    }
+  }
+  riverPaths.push({ points: dense, width: waterWidth });
+}
+
+const lakePosArray = [];
+// One big proper lake
+const bigLakeLat = 0.5;
+const bigLakeLon = 1.2;
+buildLake(bigLakeLat, bigLakeLon, 18.0);
+lakePosArray.push({ lat: bigLakeLat, lon: bigLakeLon });
+
+// A few smaller ponds
+for (let i = 0; i < 3; i++) {
+  const { lat, lon } = randomPointOnSphere();
+  const radius = 1.5 + rng() * 1.5;
+  buildLake(lat, lon, radius);
+  lakePosArray.push({ lat, lon });
+}
+
+// One river: leaves one end of the lake, wraps around the globe, reconnects to the other end
+buildRiver(bigLakeLat + 0.3, bigLakeLon, bigLakeLat - 0.3, bigLakeLon + Math.PI * 2, 500);
+
+// Remove trees in water and spread out trees too close together
+for (let i = trees.length - 1; i >= 0; i--) {
+  const treePos = latLonToWorld(trees[i].lat, trees[i].lon);
+  let inWater = false;
+  for (const lake of lakeData) {
+    const lakePos = latLonToWorld(lake.lat, lake.lon);
+    const dist = treePos.distanceTo(lakePos);
+    const angle = Math.atan2(treePos.z - lakePos.z, treePos.x - lakePos.x);
+    const irregularRadius = lake.radius * (0.7 + 0.3 * Math.sin(angle * 3) + 0.15 * Math.sin(angle * 7 + 1));
+    if (dist < irregularRadius) { inWater = true; break; }
+  }
+  if (!inWater) {
+    for (const river of riverPaths) {
+      for (let rIdx = 0; rIdx < river.points.length; rIdx += 10) {
+        if (treePos.distanceTo(latLonToWorld(river.points[rIdx].lat, river.points[rIdx].lon)) < river.width + 0.3) { inWater = true; break; }
+      }
+      if (inWater) break;
+    }
+  }
+  if (inWater) {
+    globePivot.remove(trees[i].obj);
+    trees.splice(i, 1);
+    continue;
+  }
+  for (let j = i - 1; j >= 0; j--) {
+    const otherPos = latLonToWorld(trees[j].lat, trees[j].lon);
+    if (treePos.distanceTo(otherPos) < 0.8) {
+      const pushLat = trees[i].lat + (trees[i].lat - trees[j].lat) * 0.75;
+      const pushLon = trees[i].lon + (trees[i].lon - trees[j].lon) * 0.75;
+      trees[i].lat = pushLat;
+      trees[i].lon = pushLon;
+      placeOnGlobe(trees[i].obj, pushLat, pushLon, -0.15);
+      break;
+    }
+  }
+}
+// Remove rocks in water
+for (let i = rockData.length - 1; i >= 0; i--) {
+  const rockPos = latLonToWorld(rockData[i].lat, rockData[i].lon);
+  let inWater = false;
+  for (const lake of lakeData) {
+    const lakePos = latLonToWorld(lake.lat, lake.lon);
+    const dist = rockPos.distanceTo(lakePos);
+    const angle = Math.atan2(rockPos.z - lakePos.z, rockPos.x - lakePos.x);
+    const irregularRadius = lake.radius * (0.7 + 0.3 * Math.sin(angle * 3) + 0.15 * Math.sin(angle * 7 + 1));
+    if (dist < irregularRadius) { inWater = true; break; }
+  }
+  if (inWater) {
+    globePivot.remove(rockData[i].obj);
+    rockData.splice(i, 1);
+  }
+}
+// Rebuild collidables from current tree and rock positions
+collidables.length = 0;
+for (const t of trees) { collidables.push({ lat: t.lat, lon: t.lon, radius: 0.08 }); }
+for (const r of rockData) { collidables.push({ lat: r.lat, lon: r.lon, radius: r.radius }); }
+
+// --- FLOWERS ---
+for (let i = 0; i < 60; i++) {
+  const { lat, lon } = randomPointOnSphere();
+  const flowerPos = latLonToWorld(lat, lon);
+  let inWater = false;
+  for (const lake of lakeData) {
+    const lakePos = latLonToWorld(lake.lat, lake.lon);
+    const dist = flowerPos.distanceTo(lakePos);
+    const angle = Math.atan2(flowerPos.z - lakePos.z, flowerPos.x - lakePos.x);
+    const irregularRadius = lake.radius * (0.7 + 0.3 * Math.sin(angle * 3) + 0.15 * Math.sin(angle * 7 + 1));
+    if (dist < irregularRadius) { inWater = true; break; }
+  }
+  if (!inWater) {
+    for (const river of riverPaths) {
+      for (const rp of river.points) {
+        if (flowerPos.distanceTo(latLonToWorld(rp.lat, rp.lon)) < river.width) { inWater = true; break; }
+      }
+      if (inWater) break;
+    }
+  }
+  if (inWater) { i--; continue; }
+  const group = new THREE.Group();
+  const stemGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.3, 3);
+  const stemMat = new THREE.MeshStandardMaterial({ color: 0x3d7a2a });
+  const stem = new THREE.Mesh(stemGeo, stemMat);
+  stem.position.y = 0.15;
+  group.add(stem);
+  const petalColor = [0xff6b9d, 0xffd93d, 0xffffff, 0xc084fc, 0xff8c42][Math.floor(rng() * 5)];
+  const petalGeo = new THREE.SphereGeometry(0.08, 5, 4);
+  const petalMat = new THREE.MeshStandardMaterial({ color: petalColor });
+  const petal = new THREE.Mesh(petalGeo, petalMat);
+  petal.position.y = 0.32;
+  petal.scale.y = 0.6;
+  group.add(petal);
+  placeOnGlobe(group, lat, lon);
+  globePivot.add(group);
+}
+
+// --- DEFORM GLOBE (hills, lake basins, river channels) ---
+// Simple noise function for hills
+function noise2D(x, y) {
+  const n = Math.sin(x * 1.3 + y * 0.7) * 0.5 + Math.sin(x * 0.5 - y * 1.1) * 0.3 + Math.sin(x * 2.1 + y * 1.9) * 0.2;
+  return n;
+}
+
+const globePos = globeGeo.attributes.position;
+const vertCount = globePos.count;
+const colors = new Float32Array(vertCount * 3);
+const baseGreen = new THREE.Color(0x4a8c3f);
+const sandColor = new THREE.Color(0xe8c870);
+const waterLevel = [];
+
+for (let v = 0; v < vertCount; v++) {
+  const vx = globePos.getX(v);
+  const vy = globePos.getY(v);
+  const vz = globePos.getZ(v);
+  const vertPos = new THREE.Vector3(vx, vy, vz);
+  const vertNorm = vertPos.clone().normalize();
+
+  // Hills: displace outward based on noise
+  const hillAmount = noise2D(vx * 0.3, vz * 0.3) * 0.8 + noise2D(vx * 0.7, vy * 0.5) * 0.4;
+  let displacement = Math.max(0, hillAmount) * 0.7;
+
+  // One big foothill
+  const foothillPos = latLonToWorld(-0.3, 2.5);
+  const foothillDist = vertPos.distanceTo(foothillPos);
+  const foothillRadius = 6.0;
+  if (foothillDist < foothillRadius) {
+    const t = 1 - foothillDist / foothillRadius;
+    displacement += t * t * 5.0;
+  }
+
+  // Lake depressions: irregular shapes using noise-modulated radius
+  let isWater = false;
+  for (const lake of lakeData) {
+    const lakePos = latLonToWorld(lake.lat, lake.lon);
+    const dist = vertPos.distanceTo(lakePos);
+    const angle = Math.atan2(vertPos.z - lakePos.z, vertPos.x - lakePos.x);
+    const irregularRadius = lake.radius * (0.7 + 0.3 * Math.sin(angle * 3) + 0.15 * Math.sin(angle * 7 + 1));
+    if (dist < irregularRadius) {
+      const t = 1 - dist / irregularRadius;
+      const depthScale = lake.radius > 4 ? 5.0 : 1.5;
+      displacement = -depthScale * t * t;
+      isWater = true;
+    } else if (dist < irregularRadius + 0.6) {
+      const t = 1 - (dist - irregularRadius) / 0.6;
+      displacement = Math.min(displacement, -0.3 * t);
+      isWater = false;
+      colors[v * 3] = sandColor.r;
+      colors[v * 3 + 1] = sandColor.g;
+      colors[v * 3 + 2] = sandColor.b;
+      continue;
+    }
+  }
+
+  // River channels
+  for (const river of riverPaths) {
+    for (let i = 0; i < river.points.length; i++) {
+      const rp = latLonToWorld(river.points[i].lat, river.points[i].lon);
+      const dist = vertPos.distanceTo(rp);
+      if (dist < river.width + 0.3) {
+        const t = Math.max(0, 1 - dist / (river.width + 0.3));
+        displacement = Math.min(displacement, -1.2 * t);
+        if (dist < river.width) isWater = true;
+      }
+      if (dist < river.width + 0.6 && dist >= river.width + 0.3) {
+        const t = 1 - (dist - river.width - 0.3) / 0.3;
+        if (t > 0) {
+          colors[v * 3] = baseGreen.r + (sandColor.r - baseGreen.r) * t;
+          colors[v * 3 + 1] = baseGreen.g + (sandColor.g - baseGreen.g) * t;
+          colors[v * 3 + 2] = baseGreen.b + (sandColor.b - baseGreen.b) * t;
+          continue;
+        }
+      }
+    }
+  }
+
+  const newPos = vertPos.clone().addScaledVector(vertNorm, displacement);
+  globePos.setXYZ(v, newPos.x, newPos.y, newPos.z);
+
+  if (isWater) {
+    colors[v * 3] = sandColor.r * 0.85;
+    colors[v * 3 + 1] = sandColor.g * 0.85;
+    colors[v * 3 + 2] = sandColor.b * 0.5;
+  } else if (colors[v * 3] === 0) {
+    const hillTint = Math.max(0, hillAmount) * 0.15;
+    colors[v * 3] = baseGreen.r + hillTint * 0.3;
+    colors[v * 3 + 1] = baseGreen.g + hillTint;
+    colors[v * 3 + 2] = baseGreen.b + hillTint * 0.2;
+  }
+
+  waterLevel.push(isWater);
+}
+
+globeGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+globeMat.vertexColors = true;
+globeMat.needsUpdate = true;
+globePos.needsUpdate = true;
+globeGeo.computeVertexNormals();
+
+// Water sphere - sits just below ground level, visible wherever terrain dips
+const waterSphere = new THREE.Mesh(
+  new THREE.SphereGeometry(GLOBE_RADIUS - 0.25, 48, 48),
+  new THREE.MeshStandardMaterial({
+    color: 0x1a6b8a,
+    roughness: 0.05,
+    metalness: 0.4,
+    transparent: true,
+    opacity: 0.9,
+  })
+);
+globePivot.add(waterSphere);
+
+// --- PLAYER TERRAIN FOLLOWING ---
+const raycaster = new THREE.Raycaster();
+
+// --- PLAYER ---
+let playerFacing = 0;
+let walkCycle = 0;
+
+function buildPlayer() {
+  const group = new THREE.Group();
+
+  const bodyGeo = new THREE.CapsuleGeometry(0.22, 0.3, 4, 8);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xd35f3e, roughness: 0.7 });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = 0.6;
+  body.castShadow = true;
+  group.add(body);
+
+  const headGeo = new THREE.SphereGeometry(0.18, 8, 6);
+  const headMat = new THREE.MeshStandardMaterial({ color: 0xf4c89b, roughness: 0.6 });
+  const head = new THREE.Mesh(headGeo, headMat);
+  head.position.y = 1.05;
+  head.castShadow = true;
+  group.add(head);
+
+  const noseGeo = new THREE.SphereGeometry(0.05, 6, 4);
+  const noseMat = new THREE.MeshStandardMaterial({ color: 0xf4a080, roughness: 0.6 });
+  const nose = new THREE.Mesh(noseGeo, noseMat);
+  nose.position.set(0, 1.03, 0.17);
+  group.add(nose);
+
+  const beardGeo = new THREE.SphereGeometry(0.18, 7, 5);
+  const beardMat = new THREE.MeshStandardMaterial({ color: 0xaa2200, roughness: 0.85 });
+  const beard = new THREE.Mesh(beardGeo, beardMat);
+  beard.position.set(0, 0.82, 0.15);
+  beard.scale.set(1.1, 1.5, 0.7);
+  beard.rotation.x = -0.2;
+  beard.castShadow = true;
+  group.add(beard);
+
+  const hatGeo = new THREE.CylinderGeometry(0.12, 0.2, 0.14, 8);
+  const hatMat = new THREE.MeshStandardMaterial({ color: 0x5c3d1e, roughness: 0.8 });
+  const hat = new THREE.Mesh(hatGeo, hatMat);
+  hat.position.y = 1.2;
+  hat.castShadow = true;
+  group.add(hat);
+
+  const brimGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.03, 8);
+  const brim = new THREE.Mesh(brimGeo, hatMat);
+  brim.position.y = 1.14;
+  brim.castShadow = true;
+  group.add(brim);
+
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x3d5a80, roughness: 0.8 });
+  const rightLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.2, 3, 6), legMat);
+  rightLeg.geometry.translate(0, -0.18, 0);
+  rightLeg.position.set(-0.1, 0.38, 0);
+  rightLeg.castShadow = true;
+  group.add(rightLeg);
+  group.userData.rightLeg = rightLeg;
+
+  const leftLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.2, 3, 6), legMat);
+  leftLeg.geometry.translate(0, -0.18, 0);
+  leftLeg.position.set(0.1, 0.38, 0);
+  leftLeg.castShadow = true;
+  group.add(leftLeg);
+  group.userData.leftLeg = leftLeg;
+
+  const armMat = new THREE.MeshStandardMaterial({ color: 0xd35f3e, roughness: 0.7 });
+
+  const rightShoulder = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 4), armMat);
+  rightShoulder.position.set(-0.2, 0.75, 0);
+  rightShoulder.castShadow = true;
+  group.add(rightShoulder);
+
+  const leftShoulder = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 4), armMat);
+  leftShoulder.position.set(0.2, 0.75, 0);
+  leftShoulder.castShadow = true;
+  group.add(leftShoulder);
+
+  const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.2, 3, 6), armMat);
+  rightArm.geometry.translate(0, -0.16, 0);
+  rightArm.position.set(-0.24, 0.78, 0);
+  rightArm.rotation.z = -0.15;
+  rightArm.castShadow = true;
+  group.add(rightArm);
+  group.userData.rightArm = rightArm;
+
+  const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.2, 3, 6), armMat);
+  leftArm.geometry.translate(0, -0.16, 0);
+  leftArm.position.set(0.24, 0.78, 0);
+  leftArm.rotation.z = 0.15;
+  leftArm.castShadow = true;
+  group.add(leftArm);
+  group.userData.leftArm = leftArm;
+
+  const packGeo = new THREE.BoxGeometry(0.28, 0.32, 0.18);
+  const packMat = new THREE.MeshStandardMaterial({ color: 0x3d6b35, roughness: 0.8 });
+  const pack = new THREE.Mesh(packGeo, packMat);
+  pack.position.set(0, 0.62, -0.22);
+  pack.castShadow = true;
+  group.add(pack);
+
+  const packFlap = new THREE.Mesh(
+    new THREE.BoxGeometry(0.26, 0.06, 0.16),
+    new THREE.MeshStandardMaterial({ color: 0x2d5528, roughness: 0.8 })
+  );
+  packFlap.position.set(0, 0.8, -0.22);
+  group.add(packFlap);
+
+  const sleepingBag = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.07, 0.07, 0.28, 8),
+    new THREE.MeshStandardMaterial({ color: 0x4488aa, roughness: 0.7 })
+  );
+  sleepingBag.position.set(0, 0.88, -0.22);
+  sleepingBag.rotation.z = Math.PI / 2;
+  sleepingBag.castShadow = true;
+  group.add(sleepingBag);
+
+  return group;
+}
+
+const player = buildPlayer();
+player.position.set(0, GLOBE_RADIUS - 0.05, 0);
+scene.add(player);
+
+// --- OTHER PLAYERS ---
+const otherPlayers = {};
+
+function addOtherPlayer(id, color, startGlobeRotation) {
+  const mesh = buildPlayer();
+  mesh.traverse(c => { if (c.isMesh && c.material) { c.material = c.material.clone(); } });
+  mesh.traverse(c => { if (c.isMesh && c.material && c.material.color && c.material.color.r > 0.7 && c.material.color.g < 0.5) c.material.color.set(color); });
+  scene.add(mesh);
+  otherPlayers[id] = {
+    mesh,
+    currentGlobeRotation: startGlobeRotation.clone(),
+    targetGlobeRotation: startGlobeRotation.clone(),
+    prevGlobeRotation: startGlobeRotation.clone(),
+    currentFacing: 0,
+    targetFacing: 0,
+    prevFacing: 0,
+    interpT: 1,
+    lastUpdateTime: performance.now(),
+    walkCycle: 0,
+    isWalking: false,
+  };
+  return otherPlayers[id];
+}
+
+function removeOtherPlayer(id) {
+  const p = otherPlayers[id];
+  if (!p) return;
+  scene.remove(p.mesh);
+  delete otherPlayers[id];
+}
+
+function updateOtherPlayer(id, globeRotation, facing, immediate) {
+  const p = otherPlayers[id];
+  if (!p) return;
+  if (immediate) {
+    p.prevGlobeRotation.copy(globeRotation);
+    p.currentGlobeRotation.copy(globeRotation);
+    p.targetGlobeRotation.copy(globeRotation);
+    p.currentFacing = facing;
+    p.targetFacing = facing;
+    p.prevFacing = facing;
+    p.interpT = 1;
+    p.isWalking = true;
+    return;
+  }
+  p.prevGlobeRotation.copy(p.currentGlobeRotation);
+  p.targetGlobeRotation.copy(globeRotation);
+  p.prevFacing = p.currentFacing;
+  p.targetFacing = facing;
+  p.interpT = 0;
+  p.isWalking = p.targetGlobeRotation.angleTo(p.prevGlobeRotation) > 0.0001;
+  p.lastUpdateTime = performance.now();
+}
+
+function animateOtherPlayers(delta) {
+  const INTERP_DURATION = 0.1;
+  globePivot.updateMatrixWorld(true);
+  for (const id in otherPlayers) {
+    const p = otherPlayers[id];
+    const m = p.mesh;
+
+    p.interpT = Math.min(p.interpT + delta / INTERP_DURATION, 1);
+    p.currentGlobeRotation.slerpQuaternions(p.prevGlobeRotation, p.targetGlobeRotation, p.interpT);
+
+    let facingDiff = p.targetFacing - p.prevFacing;
+    if (facingDiff > Math.PI) facingDiff -= 2 * Math.PI;
+    if (facingDiff < -Math.PI) facingDiff += 2 * Math.PI;
+    p.currentFacing = p.prevFacing + facingDiff * p.interpT;
+
+    const gDir = new THREE.Vector3(0, 1, 0).applyQuaternion(p.currentGlobeRotation.clone().invert());
+    const wDir = gDir.applyQuaternion(globeRotation);
+
+    const rayOrigin = wDir.clone().multiplyScalar(GLOBE_RADIUS + 10);
+    const rayD = wDir.clone().negate();
+    const ray = new THREE.Raycaster(rayOrigin, rayD, 0, GLOBE_RADIUS * 3);
+    const hits = ray.intersectObject(globe, false);
+    if (hits.length > 0) {
+      m.position.copy(hits[0].point);
+    } else {
+      m.position.copy(wDir.clone().multiplyScalar(GLOBE_RADIUS));
+    }
+
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), wDir);
+    const fwdLocal = new THREE.Vector3(Math.sin(p.currentFacing), 0, Math.cos(p.currentFacing));
+    const fwdGlobe = fwdLocal.applyQuaternion(p.currentGlobeRotation.clone().invert());
+    const fwdWorld = fwdGlobe.applyQuaternion(globeRotation);
+    fwdWorld.addScaledVector(wDir, -fwdWorld.dot(wDir));
+    fwdWorld.normalize();
+    const localFwd = fwdWorld.clone().applyQuaternion(m.quaternion.clone().invert());
+    const fAngle = Math.atan2(localFwd.x, localFwd.z);
+    m.rotateY(fAngle + Math.PI);
+
+    if (p.isWalking && p.interpT < 1) {
+      p.walkCycle += delta * 8;
+      const swing = Math.sin(p.walkCycle) * 0.5;
+      m.userData.leftLeg.rotation.x = swing;
+      m.userData.rightLeg.rotation.x = -swing;
+      m.userData.leftArm.rotation.x = -swing * 0.4;
+      m.userData.rightArm.rotation.x = swing * 0.4;
+      m.rotateZ(Math.sin(p.walkCycle) * 0.04);
+    } else {
+      p.walkCycle = 0;
+      m.userData.leftLeg.rotation.x *= 0.85;
+      m.userData.rightLeg.rotation.x *= 0.85;
+      m.userData.leftArm.rotation.x *= 0.85;
+      m.userData.rightArm.rotation.x *= 0.85;
+    }
+  }
+}
+
+// Expose for networking layer
+window.addOtherPlayer = addOtherPlayer;
+window.removeOtherPlayer = removeOtherPlayer;
+window.updateOtherPlayer = updateOtherPlayer;
+window.otherPlayers = otherPlayers;
+
+// --- NPC (uses OtherPlayers system) ---
+const npcGlobeRotation = new THREE.Quaternion();
+npcGlobeRotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.6);
+npcGlobeRotation.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 0.15));
+let npcFacing = Math.random() * Math.PI * 2;
+let npcWanderTimer = 0;
+let npcWanderDir = npcFacing;
+let npcWanderPause = 0;
+addOtherPlayer('npc', 0x2266aa, npcGlobeRotation);
+
+// --- CAMERA SETUP ---
+camera.position.set(0, GLOBE_RADIUS + 6, 6);
+camera.lookAt(0, GLOBE_RADIUS + 1, 0);
+
+// --- INPUT ---
+const keys = {};
+document.addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; });
+document.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+
+let leverY = 0, leverX = 0, leverActive = false, leverTouchId = null;
+let controlMode = 'pan';
+let invertX = false;
+const leverZone = document.getElementById('lever-zone');
+const leverRange = 10;
+const joystickRange = 20;
+
+document.getElementById('control-mode').addEventListener('change', (e) => {
+  controlMode = e.target.value;
+  document.getElementById('joystick-base').style.display = controlMode === 'joystick' ? 'block' : 'none';
+  document.getElementById('lever-track').style.display = controlMode === 'pan' ? 'block' : 'none';
+  saveSettings();
+});
+document.getElementById('invert-x').addEventListener('change', (e) => {
+  invertX = e.target.checked;
+  saveSettings();
+});
+
+leverZone.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (isSleeping) return;
+  leverTouchId = e.changedTouches[0].identifier;
+  leverActive = true;
+  updateLever(e.changedTouches[0]);
+});
+leverZone.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    if (t.identifier === leverTouchId) updateLever(t);
+  }
+});
+leverZone.addEventListener('touchend', (e) => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === leverTouchId) {
+      leverActive = false;
+      leverTouchId = null;
+      leverY = 0;
+      leverX = 0;
+      leverZone.style.transform = '';
+    }
+  }
+});
+
+function updateLever(touch) {
+  const rect = document.getElementById('lever-wrapper').getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  let dy = touch.clientY - cy;
+  let dx = touch.clientX - cx;
+  if (controlMode === 'pan') {
+    if (dy > leverRange) dy = leverRange;
+    if (dy < -leverRange) dy = -leverRange;
+    leverY = dy / leverRange;
+    leverX = 0;
+    leverZone.style.transform = `translateY(${dy}px)`;
+  } else {
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const maxDist = joystickRange;
+    if (dist > maxDist) { dx = dx / dist * maxDist; dy = dy / dist * maxDist; }
+    const rawX = dx / maxDist;
+    const rawY = dy / maxDist;
+    // Dead zone: only ignore left/right if X movement is tiny (< 3px)
+    if (Math.abs(dx) > 3) {
+      leverX = rawX;
+    } else {
+      leverX = 0;
+    }
+    leverY = rawY;
+    leverZone.style.transform = `translate(${dx}px, ${dy}px)`;
+  }
+}
+
+// --- CAMERA ORBIT STATE ---
+let cameraAngle = Math.PI;
+let cameraTargetAngle = Math.PI;
+let cameraDistance = 6;
+let cameraHeight = 6;
+let cameraManual = false;
+let lastTouchAngle = null;
+let pinchStartDist = null;
+let pinchStartZoom = null;
+let pinchStartAvgY = null;
+let pinchStartHeight = null;
+let pinchStartAvgX = null;
+let pinchStartAngle = null;
+
+// Mouse/touch drag to orbit camera
+let isDragging = false;
+let dragStartX = 0;
+let dragStartY = 0;
+let dragStartAngle = 0;
+let dragStartHeight = 0;
+
+renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+renderer.domElement.addEventListener('mousedown', (e) => {
+  if (e.target !== renderer.domElement) return;
+  isDragging = true;
+  dragStartX = e.clientX;
+  dragStartAngle = cameraAngle;
+  dragStartY = e.clientY;
+  dragStartHeight = cameraHeight;
+});
+window.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  const dx = e.clientX - dragStartX;
+  const dy = e.clientY - dragStartY;
+  cameraAngle = dragStartAngle + dx * 0.01 * (invertX ? -1 : 1);
+  cameraTargetAngle = cameraAngle;
+  cameraHeight = Math.max(1, Math.min(12, dragStartHeight + dy * 0.02));
+});
+window.addEventListener('mouseup', () => { isDragging = false; });
+
+// Touch orbit (single finger on canvas, not joystick)
+let orbitTouchId = null;
+let orbitStartX = 0;
+let orbitStartY = 0;
+let orbitStartAngle = 0;
+let orbitStartHeight = 0;
+
+renderer.domElement.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1 && !leverActive) {
+    const touch = e.touches[0];
+    const joyRect = document.getElementById('lever-zone').getBoundingClientRect();
+    if (touch.clientX > joyRect.right || touch.clientY < joyRect.top) {
+      orbitTouchId = touch.identifier;
+      orbitStartX = touch.clientX;
+      orbitStartY = touch.clientY;
+      orbitStartAngle = cameraAngle;
+      orbitStartHeight = cameraHeight;
+    }
+  }
+  // When lever is active and a NEW touch lands on the canvas, use it for orbit
+  if (leverActive && e.changedTouches.length > 0 && orbitTouchId === null) {
+    for (const touch of e.changedTouches) {
+      if (touch.identifier !== leverTouchId) {
+        orbitTouchId = touch.identifier;
+        orbitStartX = touch.clientX;
+        orbitStartY = touch.clientY;
+        orbitStartAngle = cameraAngle;
+        orbitStartHeight = cameraHeight;
+        break;
+      }
+    }
+  }
+  if (e.touches.length === 2 && !leverActive) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    pinchStartDist = Math.sqrt(dx * dx + dy * dy);
+    pinchStartZoom = cameraDistance;
+    pinchStartAvgY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    pinchStartHeight = cameraHeight;
+    pinchStartAvgX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    pinchStartAngle = cameraAngle;
+  }
+});
+renderer.domElement.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 2 && pinchStartDist && !leverActive) {
+    e.preventDefault();
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const scale = pinchStartDist / dist;
+    cameraDistance = Math.max(4, Math.min(60, pinchStartZoom * scale));
+    // Pan via midpoint horizontal movement
+    const avgX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    cameraAngle = pinchStartAngle + (avgX - pinchStartAvgX) * 0.01 * (invertX ? -1 : 1);
+    cameraTargetAngle = cameraAngle;
+    // Tilt only with deliberate two-finger vertical drag (avgY moved > 30px)
+    const avgY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    const tiltDelta = avgY - pinchStartAvgY;
+    if (Math.abs(tiltDelta) > 30) {
+      cameraHeight = Math.max(1, Math.min(12, pinchStartHeight + (tiltDelta - Math.sign(tiltDelta) * 30) * 0.03));
+    }
+    return;
+  }
+  for (const touch of e.changedTouches) {
+    if (touch.identifier === orbitTouchId) {
+      const dx = touch.clientX - orbitStartX;
+      cameraAngle = orbitStartAngle + dx * 0.01 * (invertX ? -1 : 1);
+      cameraTargetAngle = cameraAngle;
+    }
+  }
+});
+renderer.domElement.addEventListener('touchend', (e) => {
+  for (const touch of e.changedTouches) {
+    if (touch.identifier === orbitTouchId) orbitTouchId = null;
+  }
+  if (e.touches.length < 2) {
+    pinchStartDist = null; pinchStartAvgY = null; pinchStartAvgX = null;
+    // Reset orbit tracking to remaining finger to prevent snap
+    if (e.touches.length === 1 && !leverActive) {
+      const remaining = e.touches[0];
+      orbitTouchId = remaining.identifier;
+      orbitStartX = remaining.clientX;
+      orbitStartAngle = cameraAngle;
+      orbitStartHeight = cameraHeight;
+    }
+  }
+});
+
+// Scroll/keyboard zoom
+renderer.domElement.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  cameraDistance = Math.max(4, Math.min(60, cameraDistance + e.deltaY * 0.01));
+}, { passive: false });
+document.addEventListener('keydown', (e) => {
+  if (e.key === '=' || e.key === '+') cameraDistance = Math.max(4, cameraDistance - 0.5);
+  if (e.key === '-') cameraDistance = Math.min(60, cameraDistance + 0.5);
+});
+
+// --- OPTIONS MENU ---
+document.getElementById('sidebar-toggle').addEventListener('click', () => {
+  document.getElementById('controls').classList.toggle('open');
+});
+document.addEventListener('click', (e) => {
+  const controls = document.getElementById('controls');
+  const toggle = document.getElementById('sidebar-toggle');
+  if (controls.classList.contains('open') && !controls.contains(e.target) && !toggle.contains(e.target)) {
+    controls.classList.remove('open');
+  }
+});
+
+const timeSlider = document.getElementById('time-slider');
+const timeDisplay = document.getElementById('time-display');
+let timeOfDay = 8 + (seed % 800) / 100;
+let moonlightStrength = 0.5;
+let fogDensity = 0;
+let tentColor = 0xcc5522;
+let tentStyle = 'aframe';
+let timePaused = false;
+
+// Load saved settings from localStorage
+(function loadSettings() {
+  const saved = localStorage.getItem('campout-settings');
+  if (!saved) return;
+  const s = JSON.parse(saved);
+  if (s.moonlight !== undefined) { moonlightStrength = s.moonlight; document.getElementById('moonlight-slider').value = s.moonlight * 100; }
+  if (s.fog !== undefined) { fogDensity = s.fog; document.getElementById('fog-slider').value = s.fog * 100; }
+  if (s.controlMode) { controlMode = s.controlMode; document.getElementById('control-mode').value = s.controlMode; document.getElementById('joystick-base').style.display = s.controlMode === 'joystick' ? 'block' : 'none'; document.getElementById('lever-track').style.display = s.controlMode === 'pan' ? 'block' : 'none'; }
+  if (s.tentColor) { tentColor = parseInt(s.tentColor, 16); }
+  if (s.tentStyle) { tentStyle = s.tentStyle; document.getElementById('tent-style').value = s.tentStyle; }
+  if (s.timePaused) { timePaused = s.timePaused; document.getElementById('time-pause').checked = s.timePaused; }
+  if (s.invertX) { invertX = s.invertX; document.getElementById('invert-x').checked = s.invertX; }
+  const h = Math.floor(timeOfDay); const m = Math.floor((timeOfDay - h) * 60);
+  document.getElementById('time-display').textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+})();
+
+function saveSettings() {
+  localStorage.setItem('campout-settings', JSON.stringify({
+    moonlight: moonlightStrength, fog: fogDensity,
+    controlMode, tentColor: tentColor.toString(16), tentStyle, timePaused, invertX
+  }));
+}
+
+timeSlider.addEventListener('input', (e) => {
+  timeOfDay = parseFloat(e.target.value);
+  const h = Math.floor(timeOfDay);
+  const m = Math.floor((timeOfDay - h) * 60);
+  timeDisplay.textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  saveSettings();
+});
+
+document.getElementById('moonlight-slider').addEventListener('input', (e) => {
+  moonlightStrength = parseInt(e.target.value) / 100;
+  saveSettings();
+});
+
+document.getElementById('fog-slider').addEventListener('input', (e) => {
+  fogDensity = parseInt(e.target.value) / 100;
+  saveSettings();
+});
+
+document.getElementById('time-pause').addEventListener('change', (e) => {
+  timePaused = e.target.checked;
+  saveSettings();
+});
+
+// --- FLASHLIGHT ---
+let flashlightOn = false;
+const flashlight = new THREE.SpotLight(0xffffff, 0, 25, Math.PI * 0.08, 0.15, 0.5);
+flashlight.position.set(0.3, GLOBE_RADIUS + 0.6, 0.2);
+flashlight.target.position.set(0, GLOBE_RADIUS, 3);
+flashlight.castShadow = true;
+scene.add(flashlight);
+scene.add(flashlight.target);
+
+document.getElementById('btn-flashlight').addEventListener('click', () => {
+  if (isSleeping) return;
+  flashlightOn = !flashlightOn;
+  document.getElementById('btn-flashlight').style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
+});
+document.getElementById('btn-flashlight').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (isSleeping) return;
+  flashlightOn = !flashlightOn;
+  document.getElementById('btn-flashlight').style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
+});
+
+// --- PITCH CAMP ---
+let campPitched = false;
+let campGroup = null;
+
+// Fire animation state
+let campCoals = [];
+let campFireGeo = null;
+let campFireAlphas = null;
+let campFireLifespan = null;
+let campSmokeGeo = null;
+let campSmokeVelocities = [];
+let campFireLight = null;
+let campFireLight2 = null;
+
+function respawnCampFireParticle(positions, i, randomHeight) {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 0.08 + Math.random() * 0.3;
+  positions[i * 3] = Math.cos(angle) * dist;
+  positions[i * 3 + 1] = randomHeight ? Math.random() * 0.5 : 0;
+  positions[i * 3 + 2] = Math.sin(angle) * dist;
+  const r = Math.random();
+  if (r < 0.01) {
+    campFireLifespan[i] = 0.4 + Math.random() * 2.5;
+    campFireAlphas[i] = 1;
+  } else if (r < 0.08) {
+    campFireLifespan[i] = 0.5 + Math.random() * 0.4;
+    campFireAlphas[i] = 0;
+  } else {
+    campFireLifespan[i] = 0.15 + Math.random() * 0.25;
+    campFireAlphas[i] = 0;
+  }
+}
+
+const tentColorsDiv = document.getElementById('tent-colors');
+tentColorsDiv.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-color]');
+  if (!btn) return;
+  tentColor = parseInt(btn.dataset.color, 16);
+  tentColorsDiv.querySelectorAll('button').forEach(b => b.style.borderColor = 'transparent');
+  btn.style.borderColor = '#fff';
+  if (campPitched) { pitchCamp(); pitchCamp(); }
+  saveSettings();
+});
+document.getElementById('tent-style').addEventListener('change', (e) => {
+  tentStyle = e.target.value;
+  if (campPitched) { pitchCamp(); pitchCamp(); }
+  saveSettings();
+});
+
+function pitchCamp() {
+  if (isSleeping) return;
+  if (campPitched && campGroup) {
+    globePivot.remove(campGroup);
+    campPitched = false;
+    document.getElementById('btn-pitch').style.borderColor = 'rgba(255,255,255,0.3)';
+    return;
+  }
+  campGroup = new THREE.Group();
+
+  const tentMat = new THREE.MeshStandardMaterial({ color: tentColor, roughness: 0.7 });
+  if (tentStyle === 'aframe') {
+    const shape = new THREE.Shape();
+    shape.moveTo(-0.6, 0);
+    shape.lineTo(0, 0.9);
+    shape.lineTo(0.6, 0);
+    shape.closePath();
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: 1.2, bevelEnabled: false });
+    const tent = new THREE.Mesh(geo, tentMat);
+    tent.position.set(-0.8, -0.1, -0.6);
+    tent.scale.setScalar(1.25);
+    tent.castShadow = true;
+    tent.userData.needsRaycast = true;
+    tent.userData.groundSink = 0.1;
+    campGroup.add(tent);
+  } else if (tentStyle === 'dome') {
+    const geo = new THREE.SphereGeometry(0.8, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+    const tent = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: tentColor, roughness: 0.7, side: THREE.DoubleSide }));
+    tent.position.set(-0.8, -0.1, 0);
+    tent.scale.setScalar(1.25);
+    tent.castShadow = true;
+    tent.userData.needsRaycast = true;
+    tent.userData.groundSink = 0.1;
+    campGroup.add(tent);
+  } else if (tentStyle === 'cabin') {
+    const geo = new THREE.ConeGeometry(0.7, 1.4, 8);
+    geo.translate(0, 0.7, 0);
+    const tent = new THREE.Mesh(geo, tentMat);
+    tent.position.set(-0.8, -0.1, 0);
+    tent.scale.setScalar(1.25);
+    tent.castShadow = true;
+    tent.userData.needsRaycast = true;
+    tent.userData.groundSink = 0.1;
+    campGroup.add(tent);
+  } else if (tentStyle === 'tunnel') {
+    const geo = new THREE.CylinderGeometry(0.6, 0.6, 1.4, 10, 1, false);
+    const tent = new THREE.Mesh(geo, tentMat);
+    tent.position.set(-0.8, 0, 0);
+    tent.scale.setScalar(1.25);
+    tent.rotation.x = Math.PI / 2;
+    tent.castShadow = true;
+    tent.userData.needsRaycast = true;
+    tent.userData.groundSink = 0.6 * 1.25 * 0.5;
+    campGroup.add(tent);
+    tent.userData.needsRaycast = true;
+    tent.userData.groundSink = 0.1;
+    campGroup.add(tent);
+  }
+
+  // Fireplace - ported from camping-sim (physics-based fire)
+  const fireOffset = new THREE.Vector3(1.5, 0, 0);
+  const fireAnchor = new THREE.Group();
+  fireAnchor.position.copy(fireOffset);
+  campGroup.add(fireAnchor);
+
+  for (let i = 0; i < 14; i++) {
+    const size = 0.08 + rng() * 0.12;
+    const segments = 3 + Math.floor(rng() * 4);
+    const rockGeo = new THREE.SphereGeometry(size, segments, segments);
+    const shade = 0.25 + rng() * 0.25;
+    const rockMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(shade + rng() * 0.05, shade, shade - rng() * 0.03),
+      roughness: 0.8 + rng() * 0.2,
+    });
+    const rock = new THREE.Mesh(rockGeo, rockMat);
+    const a = (i / 14) * Math.PI * 2 + (rng() - 0.5) * 0.3;
+    const dist = 0.55 + rng() * 0.2;
+    rock.position.set(Math.cos(a) * dist, 0, Math.sin(a) * dist);
+    rock.scale.set(0.8 + rng() * 0.5, 0.4 + rng() * 0.4, 0.8 + rng() * 0.5);
+    rock.rotation.set(rng() * 0.4, rng() * Math.PI, rng() * 0.4);
+    rock.castShadow = true;
+    rock.userData.needsRaycast = true;
+    fireAnchor.add(rock);
+  }
+
+  for (let i = 0; i < 5; i++) {
+    const logGeo = new THREE.CylinderGeometry(0.06, 0.08, 0.7, 5);
+    const logMat = new THREE.MeshStandardMaterial({ color: 0x3d2810, roughness: 1.0 });
+    const log = new THREE.Mesh(logGeo, logMat);
+    const angle = (i / 5) * Math.PI * 2;
+    log.position.set(Math.cos(angle) * 0.25, 0.08, Math.sin(angle) * 0.25);
+    log.rotation.z = Math.PI / 2 - 0.2;
+    log.rotation.y = angle;
+    log.userData.needsRaycast = true;
+    fireAnchor.add(log);
+  }
+
+  campCoals = [];
+  for (let i = 0; i < 20; i++) {
+    const size = 0.03 + rng() * 0.06;
+    const coalGeo = new THREE.SphereGeometry(size, 4, 3);
+    const coalMat = new THREE.MeshStandardMaterial({
+      color: 0x1a0800,
+      emissive: 0xff3300,
+      emissiveIntensity: 0.3 + rng() * 0.7,
+      roughness: 1.0,
+    });
+    const coal = new THREE.Mesh(coalGeo, coalMat);
+    const angle = rng() * Math.PI * 2;
+    const dist = rng() * 0.4;
+    coal.position.set(Math.cos(angle) * dist, 0.05 + rng() * 0.1, Math.sin(angle) * dist);
+    coal.scale.y = 0.4 + rng() * 0.4;
+    campCoals.push(coal);
+    fireAnchor.add(coal);
+  }
+
+  // Fire particles
+  campFireGeo = new THREE.BufferGeometry();
+  const firePositions = new Float32Array(56 * 3);
+  campFireAlphas = new Float32Array(56);
+  campFireLifespan = new Float32Array(56);
+  for (let i = 0; i < 56; i++) {
+    respawnCampFireParticle(firePositions, i, true);
+  }
+  campFireGeo.setAttribute('position', new THREE.BufferAttribute(firePositions, 3));
+  const fireParticleMat = new THREE.PointsMaterial({
+    color: 0xff6600, size: 0.25, transparent: true, opacity: 0.8,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const fireParticles = new THREE.Points(campFireGeo, fireParticleMat);
+  fireParticles.position.set(0, 0.2, 0);
+  fireAnchor.add(fireParticles);
+
+  // Smoke particles
+  campSmokeGeo = new THREE.BufferGeometry();
+  const smokePositions = new Float32Array(30 * 3);
+  campSmokeVelocities = [];
+  for (let i = 0; i < 30; i++) {
+    smokePositions[i * 3] = (rng() - 0.5) * 0.3;
+    smokePositions[i * 3 + 1] = 1.5 + rng() * 2;
+    smokePositions[i * 3 + 2] = (rng() - 0.5) * 0.3;
+    campSmokeVelocities.push({
+      x: (rng() - 0.5) * 0.005,
+      y: 0.01 + rng() * 0.015,
+      z: (rng() - 0.5) * 0.005,
+    });
+  }
+  campSmokeGeo.setAttribute('position', new THREE.BufferAttribute(smokePositions, 3));
+  const smokeMat = new THREE.PointsMaterial({
+    color: 0x888888, size: 0.4, transparent: true, opacity: 0.3, depthWrite: false,
+  });
+  const campSmoke = new THREE.Points(campSmokeGeo, smokeMat);
+  campSmoke.position.set(0, 0.3, 0);
+  fireAnchor.add(campSmoke);
+
+  campFireLight = new THREE.PointLight(0xff6622, 2, 8);
+  campFireLight.position.set(0, 0.8, 0);
+  campFireLight.castShadow = true;
+  fireAnchor.add(campFireLight);
+  campFireLight2 = new THREE.PointLight(0xff4400, 1, 5);
+  campFireLight2.position.set(0.2, 0.5, 0.1);
+  fireAnchor.add(campFireLight2);
+
+  // Place on globe surface using raycast for proper terrain height
+  const inverseRot = globeRotation.clone().invert();
+  const surfaceNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(inverseRot);
+  const pos = surfaceNormal.clone().multiplyScalar(GLOBE_RADIUS);
+
+  // Raycast from well above to find actual deformed terrain surface
+  globe.updateMatrixWorld();
+  const rayOrigin = pos.clone().addScaledVector(surfaceNormal, 10);
+  const rayDir = surfaceNormal.clone().negate();
+  const campRay = new THREE.Raycaster(rayOrigin, rayDir, 0, 20);
+  const campHits = campRay.intersectObject(globe, false);
+  if (campHits.length > 0) {
+    campGroup.position.copy(campHits[0].point);
+    const hitNormal = campHits[0].face.normal.clone().transformDirection(globe.matrixWorld).normalize();
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), hitNormal);
+    campGroup.quaternion.copy(quat);
+  } else {
+    campGroup.position.copy(pos);
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), surfaceNormal);
+    campGroup.quaternion.copy(quat);
+  }
+
+  globePivot.add(campGroup);
+
+  // Raycast each fire element to sit on terrain
+  campGroup.updateMatrixWorld(true);
+  fireAnchor.updateMatrixWorld(true);
+
+  // Raycast the fire anchor center first
+  const fireWorldPos = new THREE.Vector3();
+  fireAnchor.getWorldPosition(fireWorldPos);
+  const fireNorm = fireWorldPos.clone().normalize();
+  const fireRayOrig = fireWorldPos.clone().addScaledVector(fireNorm, 3);
+  const fireRayD = fireNorm.clone().negate();
+  const fireRay = new THREE.Raycaster(fireRayOrig, fireRayD, 0, 10);
+  const fireHits = fireRay.intersectObject(globe, false);
+  if (fireHits.length > 0) {
+    const localHit = campGroup.worldToLocal(fireHits[0].point.clone());
+    fireAnchor.position.y = localHit.y;
+    fireAnchor.updateMatrixWorld(true);
+  }
+
+  // Raycast tent elements to terrain
+  for (const child of campGroup.children) {
+    if (!child.userData.needsRaycast) continue;
+    if (child === fireAnchor) continue;
+    child.userData.baseQuaternion = child.quaternion.clone();
+    const worldPos = new THREE.Vector3();
+    child.getWorldPosition(worldPos);
+    const normal = worldPos.clone().normalize();
+    const rayOrigin = worldPos.clone().addScaledVector(normal, 3);
+    const rayDir = normal.clone().negate();
+    const ray = new THREE.Raycaster(rayOrigin, rayDir, 0, 10);
+    const hits = ray.intersectObject(globe, false);
+    if (hits.length > 0) {
+      const localHit = campGroup.worldToLocal(hits[0].point.clone());
+      const sink = child.userData.groundSink || 0;
+      child.position.y = localHit.y - sink;
+      // Orient tent to match terrain slope: compose slope with original rotation
+      const hitNormal = hits[0].face.normal.clone().transformDirection(globe.matrixWorld).normalize();
+      const invGroupQuat = campGroup.getWorldQuaternion(new THREE.Quaternion()).invert();
+      const localNormal = hitNormal.clone().applyQuaternion(invGroupQuat);
+      const slopeQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), localNormal);
+      child.quaternion.copy(slopeQuat).multiply(child.userData.baseQuaternion);
+    }
+  }
+
+  for (const child of fireAnchor.children) {
+    if (!child.userData.needsRaycast) continue;
+    const worldPos = new THREE.Vector3();
+    child.getWorldPosition(worldPos);
+    const normal = worldPos.clone().normalize();
+    const rayOrigin = worldPos.clone().addScaledVector(normal, 3);
+    const rayDir = normal.clone().negate();
+    const ray = new THREE.Raycaster(rayOrigin, rayDir, 0, 10);
+    const hits = ray.intersectObject(globe, false);
+    if (hits.length > 0) {
+      const localHit = fireAnchor.worldToLocal(hits[0].point.clone());
+      child.position.y = localHit.y;
+    }
+  }
+
+  campPitched = true;
+  campGlobeRotation = globeRotation.clone();
+  document.getElementById('btn-pitch').style.borderColor = '#f0c040';
+}
+
+// Sleep state
+let isSleeping = false;
+let walkingToTent = false;
+let campGlobeRotation = null;
+const tapRaycaster = new THREE.Raycaster();
+const tapMouse = new THREE.Vector2();
+
+renderer.domElement.addEventListener('click', (e) => {
+  if (!campPitched || !campGroup) return;
+  tapMouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  tapMouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  tapRaycaster.setFromCamera(tapMouse, camera);
+  const hits = tapRaycaster.intersectObjects(campGroup.children, true);
+  if (hits.length > 0) {
+    if (isSleeping) {
+      wakeUp();
+    } else {
+      walkingToTent = true;
+    }
+  }
+});
+
+function enterTent() {
+  isSleeping = true;
+  walkingToTent = false;
+  player.visible = false;
+  document.getElementById('controls-row').style.opacity = '0.3';
+  document.getElementById('controls-row').style.pointerEvents = 'none';
+  sleepZTimer = 0;
+  sleepZSprites = [];
+}
+
+let sleepZTimer = 0;
+let sleepZSprites = [];
+
+function makeZSprite(size) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.font = `bold ${40 + size * 10}px sans-serif`;
+  ctx.fillStyle = '#0000ff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Z', 32, 32);
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 1, depthWrite: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(0.3 + size * 0.15, 0.3 + size * 0.15, 1);
+  return sprite;
+}
+
+function wakeUp() {
+  isSleeping = false;
+  player.visible = true;
+  document.getElementById('controls-row').style.opacity = '';
+  document.getElementById('controls-row').style.pointerEvents = '';
+  for (const z of sleepZSprites) { globePivot.remove(z.sprite); }
+  sleepZSprites = [];
+}
+
+document.getElementById('btn-pitch').addEventListener('click', pitchCamp);
+document.getElementById('btn-pitch').addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  pitchCamp();
+});
+
+function updateDayNight() {
+  const hour = timeOfDay;
+
+  // Sun/moon orbit: sun rises at 6, overhead at 12, sets at 18
+  // Full circle over 24 hours, 0h = directly below (nadir)
+  // Sun orbit: rises at 6, sets at 21 (summer timing)
+  // Map 6-21 (15h of daylight) to 0-PI for the sun arc above horizon
+  // Map 21-6 (9h of night) to PI-2PI for below horizon
+  let sunAngle;
+  if (hour >= 6 && hour <= 21) {
+    sunAngle = ((hour - 6) / 15) * Math.PI;
+  } else {
+    const nightHour = hour >= 21 ? hour - 21 : hour + 3;
+    sunAngle = Math.PI + (nightHour / 9) * Math.PI;
+  }
+  const orbitRadius = 40;
+  const sunX = Math.cos(sunAngle) * orbitRadius;
+  const sunY = GLOBE_RADIUS + Math.sin(sunAngle) * orbitRadius;
+  const sunZ = 0;
+
+  sun.position.set(sunX, sunY, sunZ);
+  sun.target.position.set(0, GLOBE_RADIUS, 0);
+  sunSphere.position.copy(sun.position);
+
+  // Moon is opposite the sun
+  moon.position.set(-sunX, GLOBE_RADIUS + Math.sin(sunAngle + Math.PI) * orbitRadius, 0);
+  moon.target.position.set(0, GLOBE_RADIUS, 0);
+  moonSphere.position.copy(moon.position);
+
+  // Intensity based on altitude
+  const sunAltitude = Math.sin(sunAngle);
+  let sunIntensity, skyColor, ambientIntensity;
+
+  if (sunAltitude < -0.15) {
+    sunIntensity = 0;
+    skyColor = new THREE.Color(0x0a0a1e);
+    ambientIntensity = 0.05 + moonlightStrength * 0.15;
+    moon.intensity = 0.2 + moonlightStrength * 0.3;
+    moonSphere.visible = true;
+    moonSphere.material.opacity = 1;
+    moonSphere.material.transparent = false;
+    moonSphere.material.color.set(0xddeeff);
+    sunSphere.visible = true;
+    sunSphere.material.opacity = 0;
+    sunSphere.material.transparent = true;
+  } else if (sunAltitude < 0.15) {
+    const t = (sunAltitude + 0.15) / 0.3;
+    sunIntensity = t * 1.2;
+    skyColor = new THREE.Color(0x0a0a1e).lerp(new THREE.Color(0xffaa55), t).lerp(new THREE.Color(0x68b8e8), Math.max(0, t - 0.5) * 2);
+    ambientIntensity = 0.1 + t * 0.2;
+    moon.intensity = (1 - t) * (0.2 + moonlightStrength * 0.3);
+    moonSphere.visible = true;
+    moonSphere.material.transparent = true;
+    moonSphere.material.opacity = Math.max(0, 1 - t * 1.5);
+    moonSphere.material.color.copy(new THREE.Color(0xddeeff).lerp(new THREE.Color(0x68b8e8), Math.min(t * 2, 1.0)));
+    sunSphere.visible = true;
+    sunSphere.material.transparent = true;
+    sunSphere.material.opacity = Math.min(1, t * 2);
+  } else {
+    sunIntensity = 1.2;
+    skyColor = new THREE.Color(0x68b8e8);
+    ambientIntensity = 0.3;
+    moon.intensity = 0;
+    moonSphere.visible = true;
+    moonSphere.material.opacity = 0;
+    moonSphere.material.transparent = true;
+    sunSphere.visible = true;
+    sunSphere.material.opacity = 1;
+    sunSphere.material.transparent = false;
+  }
+
+  sun.intensity = sunIntensity;
+
+  scene.background = skyColor;
+  ambient.intensity = ambientIntensity;
+  hemi.intensity = sun.intensity > 0 ? 0.6 : 0.05 + moonlightStrength * 0.1;
+
+  if (fogDensity > 0) {
+    scene.fog = new THREE.FogExp2(skyColor, fogDensity * 0.15);
+  } else {
+    scene.fog = null;
+  }
+
+  flashlight.intensity = flashlightOn ? 15 : 0;
+  if (flashlightOn) {
+    const handOffsetRight = 0.35;
+    const handHeight = 0.55;
+    flashlight.position.set(
+      Math.sin(playerFacing) * 0.3 + Math.sin(playerFacing - Math.PI/2) * handOffsetRight,
+      player.position.y + handHeight,
+      Math.cos(playerFacing) * 0.3 + Math.cos(playerFacing - Math.PI/2) * handOffsetRight
+    );
+    flashlight.target.position.set(
+      Math.sin(playerFacing) * 5,
+      player.position.y - 0.5,
+      Math.cos(playerFacing) * 5
+    );
+  }
+
+  // Stars visible at night
+  starMat.opacity = sunAltitude < 0 ? Math.min(1, -sunAltitude * 5) : 0;
+
+  // Fireflies visible at dusk/night
+  const fireflyVisibility = sunAltitude < 0.1 ? Math.min(1, (0.1 - sunAltitude) * 5) : 0;
+  fireflyMat.opacity = fireflyVisibility;
+}
+
+// --- ANIMATION ---
+const clock = new THREE.Clock();
+const globeRotation = new THREE.Quaternion();
+globeRotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.6);
+window.globeRotation = globeRotation;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+  if (clock.elapsedTime - (animate._lastFrame || 0) < 1/30) return;
+  animate._lastFrame = clock.elapsedTime;
+  stars.rotation.y += delta * 0.003;
+
+  let moveInput = 0;
+  if (keys['w'] || keys['arrowup']) moveInput = -1;
+  if (keys['s'] || keys['arrowdown']) moveInput = 1;
+  if (controlMode === 'joystick') {
+    if (keys['a'] || keys['arrowleft']) playerFacing += 2.5 * delta;
+    if (keys['d'] || keys['arrowright']) playerFacing -= 2.5 * delta;
+  } else {
+    if (keys['a'] || keys['arrowleft']) cameraAngle += 2.5 * delta;
+    if (keys['d'] || keys['arrowright']) cameraAngle -= 2.5 * delta;
+  }
+  if (leverActive) {
+    moveInput = leverY;
+    walkingToTent = false;
+  }
+
+  // Auto-walk to tent
+  if (walkingToTent && campGlobeRotation) {
+    const target = campGlobeRotation.clone().invert();
+    const current = globeRotation.clone().invert();
+    const angle = current.angleTo(target);
+    if (angle < 0.02) {
+      enterTent();
+    } else {
+      globeRotation.slerp(campGlobeRotation, Math.min(1, 2.0 * delta / angle));
+      moveInput = 0;
+    }
+  }
+
+  if (isSleeping) { moveInput = 0; }
+
+  // Control mode: pan = camera angle drives facing, joystick = leverX turns character
+  if (controlMode === 'pan') {
+    playerFacing = cameraAngle + Math.PI;
+  } else {
+    if (leverActive && Math.abs(leverX) > 0.1) {
+      playerFacing -= leverX * 2.5 * delta;
+    }
+    // Camera follows behind player in joystick mode (unless free-looking)
+    const isFreeLooking = isDragging || orbitTouchId !== null;
+    if (!isFreeLooking) {
+      const targetCamAngle = playerFacing - Math.PI;
+      let angleDiff = targetCamAngle - cameraAngle;
+      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+      if (Math.abs(moveInput) > 0.1) {
+        cameraAngle += angleDiff * 3 * delta;
+      }
+    }
+  }
+
+  const isWalking = Math.abs(moveInput) > 0.1 || walkingToTent;
+  const moveSpeed = 0.2 * delta;
+
+  if (Math.abs(moveInput) > 0.1) {
+    const step = moveSpeed * moveInput;
+    const rotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), step * Math.cos(playerFacing));
+    const rotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -step * Math.sin(playerFacing));
+    const newRotation = globeRotation.clone().premultiply(rotX).premultiply(rotZ);
+
+    const playerWorldPos = new THREE.Vector3(0, GLOBE_RADIUS, 0);
+    let canMove = true;
+    for (const c of collidables) {
+      const newObjPos = latLonToWorld(c.lat, c.lon).applyQuaternion(newRotation);
+      const newDist = playerWorldPos.distanceTo(newObjPos);
+      const minDist = c.radius + 0.5;
+      if (newDist < minDist) {
+        const curObjPos = latLonToWorld(c.lat, c.lon).applyQuaternion(globeRotation);
+        const curDist = playerWorldPos.distanceTo(curObjPos);
+        if (newDist < curDist) {
+          canMove = false;
+          break;
+        }
+      }
+    }
+    if (canMove) {
+      globeRotation.copy(newRotation);
+    } else {
+      // Smooth slide: try progressively larger angle offsets to find a clear path
+      let slid = false;
+      for (const angleOffset of [0.4, -0.4, 0.8, -0.8, 1.2, -1.2, Math.PI/2, -Math.PI/2]) {
+        const slideAngle = playerFacing + angleOffset;
+        const sRotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), step * 0.8 * Math.cos(slideAngle));
+        const sRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -step * 0.8 * Math.sin(slideAngle));
+        const slideRotation = globeRotation.clone().premultiply(sRotX).premultiply(sRotZ);
+        let slideOk = true;
+        for (const c of collidables) {
+          const sObjPos = latLonToWorld(c.lat, c.lon).applyQuaternion(slideRotation);
+          const sDist = playerWorldPos.distanceTo(sObjPos);
+          const curObjPos = latLonToWorld(c.lat, c.lon).applyQuaternion(globeRotation);
+          const curDist = playerWorldPos.distanceTo(curObjPos);
+          if (sDist < c.radius + 0.5 && sDist < curDist) { slideOk = false; break; }
+        }
+        if (slideOk) {
+          globeRotation.copy(slideRotation);
+          slid = true;
+          break;
+        }
+      }
+    }
+  }
+
+  globePivot.quaternion.copy(globeRotation);
+  player.rotation.y = playerFacing;
+
+  // Broadcast position to peers (10 times/sec)
+  if (!animate._lastBroadcast) animate._lastBroadcast = 0;
+  if (clock.elapsedTime - animate._lastBroadcast > 0.1) {
+    animate._lastBroadcast = clock.elapsedTime;
+    broadcastPosition(globeRotation, playerFacing);
+  }
+
+  // Camera: cameraHeight is tilt (1=ground level, 12=overhead), cameraDistance is total distance
+  const tiltFraction = cameraHeight / 12;
+  const playerY = player.position.y;
+  const camY = playerY + tiltFraction * cameraDistance;
+  const camHorizDist = cameraDistance * (1 - tiltFraction * 0.85);
+  const camX = Math.sin(cameraAngle) * camHorizDist;
+  const camZ = Math.cos(cameraAngle) * camHorizDist;
+  camera.position.set(camX, camY, camZ);
+  camera.lookAt(0, playerY + 1, 0);
+  atmosMat.uniforms.viewVector.value.copy(camera.position);
+
+  const isKeyTurning = keys['a'] || keys['d'] || keys['arrowleft'] || keys['arrowright'];
+  const isCameraPanTurning = (isDragging || orbitTouchId !== null) && controlMode === 'pan';
+  const isTurning = isCameraPanTurning || isKeyTurning;
+
+  if (isWalking || isTurning) {
+    walkCycle += delta * (isWalking ? 8 : 12);
+    const swing = Math.sin(walkCycle) * (isWalking ? 0.5 : 0.35);
+    player.userData.leftLeg.rotation.x = swing;
+    player.userData.rightLeg.rotation.x = -swing;
+    player.userData.leftArm.rotation.x = -swing * 0.4;
+    player.userData.rightArm.rotation.x = swing * 0.4;
+    player.rotation.z = Math.sin(walkCycle) * (isWalking ? 0.04 : 0.03);
+  } else {
+    walkCycle = 0;
+    player.userData.leftLeg.rotation.x *= 0.85;
+    player.userData.rightLeg.rotation.x *= 0.85;
+    player.userData.leftArm.rotation.x *= 0.85;
+    player.userData.rightArm.rotation.x *= 0.85;
+    player.rotation.z *= 0.9;
+  }
+
+  // NPC: wander behavior (feeds into OtherPlayers system)
+  npcWanderTimer += delta;
+  if (npcWanderPause > 0) {
+    npcWanderPause -= delta;
+  } else {
+    if (npcWanderTimer > 3 + Math.random() * 4) {
+      npcWanderTimer = 0;
+      npcWanderDir += (Math.random() - 0.5) * 2.0;
+      if (Math.random() < 0.2) npcWanderPause = 1 + Math.random() * 2;
+    }
+
+    let angleDiff = npcWanderDir - npcFacing;
+    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+    npcFacing += angleDiff * Math.min(delta * 3, 1);
+
+    const npcStep = 0.15 * delta;
+    const npcRotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), npcStep * Math.cos(npcFacing));
+    const npcRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -npcStep * Math.sin(npcFacing));
+    npcGlobeRotation.premultiply(npcRotX).premultiply(npcRotZ);
+  }
+  updateOtherPlayer('npc', npcGlobeRotation, npcFacing, true);
+
+  // Animate all other players (NPC + future multiplayer)
+  animateOtherPlayers(delta);
+
+  // Terrain following: raycast downward to find globe surface
+  globe.updateMatrixWorld();
+  raycaster.set(new THREE.Vector3(0, GLOBE_RADIUS + 5, 0), new THREE.Vector3(0, -1, 0));
+  const hits = raycaster.intersectObject(globe, false);
+  if (hits.length > 0) {
+    player.position.y = hits[0].point.y;
+  }
+
+  // Day/night cycle: 10 minutes = full 24h, sleeping = 1h per 10s
+  if (!timePaused) {
+    const timeSpeed = isSleeping ? (3600 / 10) / 3600 : (24 / 600);
+    timeOfDay += timeSpeed * delta;
+    if (timeOfDay >= 24) timeOfDay -= 24;
+    document.getElementById('time-slider').value = timeOfDay;
+    const h = Math.floor(timeOfDay);
+    const m = Math.floor((timeOfDay - h) * 60);
+    document.getElementById('time-display').textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  }
+  updateDayNight();
+
+  // Animate fireflies
+  if (fireflyMat.opacity > 0) {
+    fireflies.quaternion.copy(globeRotation);
+    const fp = fireflyGeo.attributes.position.array;
+    for (let i = 0; i < fireflyCount; i++) {
+      const d = fireflyData[i];
+      fp[i * 3] += Math.sin(clock.elapsedTime * d.speed + d.phase) * d.drift * delta;
+      fp[i * 3 + 1] += Math.sin(clock.elapsedTime * d.speed * 0.7 + d.phase * 2) * 0.2 * delta;
+      fp[i * 3 + 2] += Math.cos(clock.elapsedTime * d.speed * 0.5 + d.phase) * d.drift * delta;
+    }
+    fireflyGeo.attributes.position.needsUpdate = true;
+  }
+
+  // Animate sleep Zs
+  if (isSleeping && campGroup) {
+    sleepZTimer += delta;
+    // Spawn a set of 3 Zs every 5 seconds, staggered 250ms apart
+    if (sleepZTimer > 5) {
+      sleepZTimer = 0;
+      for (let i = 0; i < 3; i++) {
+        setTimeout(() => {
+          if (!isSleeping) return;
+          const sprite = makeZSprite(i);
+          sprite.position.set(
+            (Math.random() - 0.5) * 0.3,
+            1.0 + i * 0.2,
+            (Math.random() - 0.5) * 0.3
+          );
+          const zGroup = new THREE.Group();
+          zGroup.position.copy(campGroup.position);
+          zGroup.quaternion.copy(campGroup.quaternion);
+          zGroup.add(sprite);
+          globePivot.add(zGroup);
+          sleepZSprites.push({ sprite: zGroup, localSprite: sprite, vel: 0.4 + i * 0.1, drift: (Math.random() - 0.5) * 0.3, age: 0 });
+        }, i * 250);
+      }
+    }
+    // Animate existing Zs
+    for (let i = sleepZSprites.length - 1; i >= 0; i--) {
+      const z = sleepZSprites[i];
+      z.age += delta;
+      z.localSprite.position.y += z.vel * delta;
+      z.localSprite.position.x += z.drift * delta;
+      z.localSprite.material.opacity = Math.max(0, 1 - z.age / 3);
+      if (z.age > 3) {
+        globePivot.remove(z.sprite);
+        sleepZSprites.splice(i, 1);
+      }
+    }
+  }
+
+  // Animate fire if camp is pitched
+  if (campPitched && campFireGeo) {
+    const elapsed = clock.elapsedTime;
+
+    // Fire light flicker
+    campFireLight.intensity += (Math.random() - 0.5) * 0.4;
+    campFireLight.intensity = Math.max(0.5, Math.min(4, campFireLight.intensity));
+    campFireLight2.intensity = campFireLight.intensity * 0.6 + (Math.random() - 0.5) * 0.2;
+
+    // Coal pulsing
+    for (let i = 0; i < campCoals.length; i++) {
+      const pulse = 0.3 + Math.sin(elapsed * (1.5 + i * 0.3) + i * 2) * 0.25 + Math.random() * 0.1;
+      campCoals[i].material.emissiveIntensity = pulse;
+    }
+
+    // Fire particle physics
+    const fp = campFireGeo.attributes.position.array;
+    for (let i = 0; i < 56; i++) {
+      const x = fp[i * 3];
+      const y = fp[i * 3 + 1];
+      const z = fp[i * 3 + 2];
+      const distFromCenter = Math.sqrt(x * x + z * z);
+
+      if (campFireAlphas[i] === 1) {
+        fp[i * 3] += (Math.random() - 0.5) * 0.004;
+        fp[i * 3 + 1] += 0.039 + Math.random() * 0.026;
+        fp[i * 3 + 2] += (Math.random() - 0.5) * 0.004;
+      } else if (distFromCenter > 0.06) {
+        const pullStrength = 0.008 + distFromCenter * 0.016;
+        fp[i * 3] -= (x / distFromCenter) * pullStrength;
+        fp[i * 3 + 2] -= (z / distFromCenter) * pullStrength;
+        fp[i * 3 + 1] += 0.008 + (1 - distFromCenter) * 0.01;
+      } else {
+        fp[i * 3] += (Math.random() - 0.5) * 0.004;
+        fp[i * 3 + 1] += 0.016 + Math.random() * 0.01;
+        fp[i * 3 + 2] += (Math.random() - 0.5) * 0.004;
+      }
+
+      if (fp[i * 3 + 1] > campFireLifespan[i]) {
+        respawnCampFireParticle(fp, i, false);
+      }
+    }
+    campFireGeo.attributes.position.needsUpdate = true;
+
+    // Smoke animation
+    const sp = campSmokeGeo.attributes.position.array;
+    for (let i = 0; i < 30; i++) {
+      sp[i * 3] += campSmokeVelocities[i].x;
+      sp[i * 3 + 1] += campSmokeVelocities[i].y;
+      sp[i * 3 + 2] += campSmokeVelocities[i].z;
+      if (sp[i * 3 + 1] > 5) {
+        sp[i * 3] = (Math.random() - 0.5) * 0.3;
+        sp[i * 3 + 1] = 1.5;
+        sp[i * 3 + 2] = (Math.random() - 0.5) * 0.3;
+      }
+    }
+    campSmokeGeo.attributes.position.needsUpdate = true;
+  }
+
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+if (navigator.maxTouchPoints === 0) document.getElementById('lever-wrapper').style.display = 'none';
+
+// Broadcast hello to all connected peers once game starts
+setTimeout(() => broadcastHello(globeRotation), 1000);
+
+// Show room code in settings
+if (roomId) {
+  document.getElementById('room-code-value').textContent = roomId;
+  document.getElementById('room-code-display').style.display = 'block';
+}
+
+} // end startGame
+</script>
+</body>
+</html>

@@ -20,16 +20,9 @@ export function createWinter(THREE, world) {
   const aimButton = document.getElementById('btn-aim');
   const skatesButton = document.getElementById('btn-skates');
   const crosshair = document.getElementById('snow-crosshair');
-  const distancePanel = document.getElementById('aim-distance');
-  const powerSlider = document.getElementById('throw-power');
   function setPower(value) {
     throwPower = THREE.MathUtils.clamp(value, 3, 20);
-    powerSlider.value = throwPower;
-    document.getElementById('throw-power-value').textContent = `${Math.round((throwPower - 3) / 17 * 100)}%`;
   }
-  powerSlider.addEventListener('input', () => setPower(Number(powerSlider.value)));
-  document.getElementById('throw-closer').addEventListener('click', () => setPower(throwPower - 0.75));
-  document.getElementById('throw-farther').addEventListener('click', () => setPower(throwPower + 0.75));
   const snowAmount = { value: 0 };
   // Small static terrain patches let raycasts reject most of the globe cheaply.
   // This matters for dense snowfall and full-orbit previews; triangles stay exact.
@@ -437,6 +430,7 @@ export function createWinter(THREE, world) {
     }
     held = false; lastAction = elapsed; throwPose = 0.3;
     const shot = throwState();
+    setAim(false);
     launch(world.localId, shot.position, shot.velocity);
     world.send({ type: 'snowball', position: shot.position.toArray(), velocity: shot.velocity.toArray() });
   }
@@ -492,11 +486,12 @@ export function createWinter(THREE, world) {
   const PREVIEW_STEPS = 240;
   const arcGeo = new LineGeometry().setPositions(new Float32Array((PREVIEW_STEPS + 1) * 3));
   const arc = new Line2(arcGeo, new LineMaterial({ color: 0xe32636, linewidth: 5, dashed: true,
-    dashSize: 0.24, gapSize: 0.16, alphaToCoverage: true, depthWrite: false, toneMapped: false }));
+    dashSize: 0.24, gapSize: 0.16, alphaToCoverage: true, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+  arc.renderOrder = 1000;
   arc.computeLineDistances();
   arcGeo.instanceCount = 0;
   arc.frustumCulled = false; arc.visible = false; globePivot.add(arc);
-  let previewAt = -10, impactPoint = null;
+  let impactPoint = null;
   let preview = null;
   const previewPoints = new Float32Array((PREVIEW_STEPS + 1) * 3);
   const previewDistances = new Float32Array(PREVIEW_STEPS + 1);
@@ -505,16 +500,15 @@ export function createWinter(THREE, world) {
     arc.material.resolution.set(innerWidth, innerHeight);
     crosshair.style.display = 'none';
     if (!arc.visible) return;
-    if (!preview && elapsed - previewAt >= (mobile ? 0.14 : 0.08)) {
-      previewAt = elapsed;
+    {
       const shot = throwState();
       preview = { position: shot.position, velocity: shot.velocity, count: 0, distance: 0 };
       previewPoints.set(shot.position.toArray(), 0); previewDistances[0] = 0;
     }
     if (preview) {
-      // Finish into staging buffers; never show a half-updated arc or spend an
-      // unbounded frame tracing an orbit on a phone.
-      for (let work = 0; work < (mobile ? 32 : PREVIEW_STEPS); work++) {
+      // A bounded, complete forecast of this frame's exact input. Delaying or
+      // spreading it over frames makes precise drags look like snapped aim.
+      for (let work = 0; work < PREVIEW_STEPS; work++) {
         const i = preview.count, next = advanceFlight(preview.position, preview.velocity);
         const hit = flightHit(preview.position, next, i < 24 ? world.localId : null, inverse);
         if (hit) next.copy(hit.point);
@@ -550,10 +544,10 @@ export function createWinter(THREE, world) {
     }
   }
   function setAim(value) {
-    const next = !!value && enabled && world.canAct();
+    const next = !!value && enabled && held && world.canAct();
     if (next !== aiming) {
-      if (next) aimYaw = world.getFacing();
-      aiming = next; preview = null; previewAt = -10; impactPoint = null;
+      if (next) aimYaw = world.getCameraAngle() + Math.PI;
+      aiming = next; preview = null; impactPoint = null;
       arcGeo.instanceCount = 0; refreshHints();
     }
     if (!aiming) { arc.visible = false; crosshair.style.display = 'none'; }
@@ -683,24 +677,28 @@ export function createWinter(THREE, world) {
     skates = !skates; world.getPlayer().userData.skating = skates;
     refreshHints();
   }
-  // SVG icon definitions - proper ice skate (boot with blade underneath)
-  const skateIcon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 19h14"/><path d="M2 19c0-3 2-5 6-5h4c2 0 4 1 4 3"/><path d="M16 17v-7c0-1-1-2-2-2h-1"/><path d="M10 8v2"/><path d="M6 10c0-2 2-4 4-4"/></svg>';
-  const skateNoIcon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 19h14"/><path d="M2 19c0-3 2-5 6-5h4c2 0 4 1 4 3"/><path d="M16 17v-7c0-1-1-2-2-2h-1"/><path d="M10 8v2"/><path d="M6 10c0-2 2-4 4-4"/><line x1="4" y1="4" x2="20" y2="20" stroke="#e32636" stroke-width="2.5"/></svg>';
+  const icon = paths => `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+  // Tall laced boot, rounded toe, sole, blade supports and an upturned runner.
+  const skatePaths = '<path d="M5 3h7v5c0 2 2 3 5 4l2 .6c1.3.4 2 1.4 2 2.4v1H4V9z" fill="currentColor" fill-opacity=".15"/><path d="M9 6h3M9 9h3M11 12l2-1M7 16v4M17 16v4M3 20h16q3 0 3-3"/>';
+  const skateIcon = icon(skatePaths);
+  const skateNoIcon = icon(skatePaths + '<path d="M3 3l18 18" stroke="#e32636" stroke-width="2.3"/>');
+  // Only the solid half has an arc; the flake half has three branching arms.
+  button.innerHTML = icon('<path d="M12 2a10 10 0 0 1 0 20Z" fill="currentColor" fill-opacity=".3"/><path d="M12 2v20M12 12L3.34 7M12 12l-8.66 5M12 6l-3-2M12 18l-3 2M6.8 9l-.2-3.5M6.8 9l-3.2 1.5M6.8 15l-3.2-1.5M6.8 15l-.2 3.5"/>');
+  const targetIcon = icon('<circle cx="12" cy="12" r="7"/><path d="M12 1v22M1 12h22"/>');
+  aimButton.innerHTML = crosshair.innerHTML = targetIcon;
+  button.setAttribute('aria-label', 'Pack snowball; drag to aim and release to throw');
+  aimButton.setAttribute('aria-label', 'Aim snowball');
+  skatesButton.setAttribute('aria-label', 'Toggle ice skates');
   function refreshHints() {
     const next = [packing > 0, held, aiming, skates, inputMode].join(':');
     if (hintState === next) return;
     hintState = next;
-    const isMobile = inputMode === 'touch';
     // Update button icons - only skates changes based on state
     skatesButton.innerHTML = skates ? skateNoIcon : skateIcon;
     // Update border colors to indicate active states
     button.style.borderColor = packing > 0 ? '#f0c040' : 'rgba(255,255,255,0.15)';
     aimButton.style.borderColor = aiming ? '#f0c040' : 'rgba(255,255,255,0.15)';
     skatesButton.style.borderColor = skates ? '#f0c040' : 'rgba(255,255,255,0.15)';
-    // On mobile, hide aim button when no snowball held
-    if (isMobile) {
-      aimButton.style.display = held ? 'flex' : 'none';
-    }
     aimButton.setAttribute('aria-pressed', String(aiming));
     skatesButton.setAttribute('aria-pressed', String(skates));
   }
@@ -824,20 +822,19 @@ export function createWinter(THREE, world) {
         enabled && peer.mesh.userData.skating, peer.isWalking && peer.interpT < 1);
       if (peer.torch?.visible) peer.mesh.userData.flashlightLens.getWorldPosition(peer.torch.position);
     }
-    // On mobile: no separate aim button, no distance slider - all controlled via snowball button joystick
+    // Touch aiming lives in the snowball joystick.
     const isMobile = inputMode === 'touch';
     aimButton.style.display = enabled && !isMobile ? 'flex' : 'none';
-    distancePanel.style.display = enabled && aiming && canAct && !isMobile ? 'block' : 'none';
     skatesButton.style.display = enabled && (skates || player.userData.onIce) ? 'flex' : 'none';
-    aimButton.disabled = !canAct;
+    aimButton.disabled = !canAct || !held;
     skatesButton.disabled = !canAct;
-    // Ring expands to joystick when holding snowball on mobile, otherwise stays button-sized
+    // Reserve a fixed touch footprint so state changes cannot move the base.
     const snowballRing = document.getElementById('snowball-ring');
     const showJoystick = isMobile && held && canAct;
-    snowballRing.style.width = showJoystick ? '80px' : '48px';
-    snowballRing.style.height = showJoystick ? '80px' : '48px';
+    snowballRing.style.width = isMobile ? '80px' : '48px';
+    snowballRing.style.height = isMobile ? '80px' : '48px';
     snowballRing.style.background = showJoystick ? 'rgba(30,50,70,0.5)' : 'transparent';
-    snowballRing.style.border = showJoystick ? '2px solid rgba(100,140,180,0.4)' : 'none';
+    snowballRing.style.border = `2px solid ${showJoystick ? 'rgba(100,140,180,0.4)' : 'transparent'}`;
     if (!enabled) return;
     const inverse = world.getRotation().clone().invert();
     flightObstacles = world.getObstacles();

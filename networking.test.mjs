@@ -47,9 +47,12 @@ function browser() {
     close() { this.signalingState = 'closed'; }
   }
   const context = vm.createContext({
-    window: {},
+    window: { location: { search: '' } },
+    URLSearchParams,
+    localStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
+    showToast() {},
     document: { getElementById: element, querySelectorAll: () => [], addEventListener() {} },
-    console: { error() {} },
+    console: { error() {}, log() {}, warn() {} },
     WebSocket: Socket, RTCPeerConnection: PC,
     setTimeout: (fn, delay) => { timers.set(++timerId, { fn, delay }); return timerId; },
     clearTimeout: id => timers.delete(id),
@@ -74,6 +77,70 @@ async function admitted() {
 test('complete browser module parses', () => {
   const result = spawnSync(process.execPath, ['--input-type=module', '--check'], { input: moduleSource, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
+});
+
+test('bump packets carry a shared 3D axis and dispatch without changing peer membership', () => {
+  const { context } = browser();
+  const sent = [];
+  const received = [];
+  context.channel = { readyState: 'open', send: data => sent.push(JSON.parse(data)) };
+  context.window.receiveBump = (id, msg) => received.push({ id, msg });
+  vm.runInContext("setupDataChannel('camper', channel); sendBump('camper', { x: 0, y: 0.6, z: 0.8 });", context);
+  assert.deepEqual(sent, [{ type: 'bump', dx: 0, dz: 0, axis: [0, 0.6, 0.8] }]);
+  context.channel.onmessage({ data: JSON.stringify(sent[0]) });
+  assert.equal(received[0].id, 'camper');
+  assert.deepEqual(Array.from(received[0].msg.axis), [0, 0.6, 0.8]);
+  for (const axis of [null, [0, 0, 0], [0, 2, 0], [0, 1], ['0', 1, 0]]) {
+    context.channel.onmessage({ data: JSON.stringify({ type: 'bump', dx: 0, dz: 0, axis }) });
+  }
+  assert.equal(received.length, 1);
+  assert.equal(vm.runInContext('dataChannels.camper === channel', context), true);
+});
+
+test('simultaneous bumps do not restart the reaction or send another impulse', () => {
+  const axis = { clone() { return this; }, negate() { return this; } };
+  let now = 0;
+  let sends = 0;
+  const context = vm.createContext({
+    performance: { now: () => now }, axis,
+    otherPlayers: { camper: {} }, remoteCampStates: {}, isSleeping: false,
+    walkingToTent: true, playerBounceState: null, sendBump() { sends++; },
+  });
+  vm.runInContext(moduleSource.slice(moduleSource.indexOf('const BUMP_DURATION'),
+    moduleSource.indexOf('window.receiveBump =')), context);
+  vm.runInContext("startPlayerBump('camper', axis, true); playerBounceState.elapsed = 0.2; startPlayerBump('camper', axis, false);", context);
+  assert.equal(context.playerBounceState.elapsed, 0.2);
+  assert.equal(context.otherPlayers.camper.bump.elapsed, 0);
+  assert.equal(context.walkingToTent, false);
+  assert.equal(sends, 1);
+  context.playerBounceState = null;
+  now = 700;
+  vm.runInContext("startPlayerBump('camper', axis, true)", context);
+  assert.equal(context.playerBounceState, null);
+  now = 900;
+  vm.runInContext("startPlayerBump('camper', axis, true)", context);
+  assert.equal(sends, 2);
+});
+
+test('retreat starts at contact and travels the same distance at different frame rates', () => {
+  const context = vm.createContext({});
+  vm.runInContext('const BUMP_TRAVEL_TIME = 0.28; ' + moduleSource.slice(
+    moduleSource.indexOf('function bumpTravel('), moduleSource.indexOf('// Apply after the ordinary pose')), context);
+  const travel = context.bumpTravel;
+  assert.equal(travel(0), 0);
+  assert.equal(travel(0.28), 1);
+  assert.equal(travel(2), 1);
+  for (const fps of [30, 60, 144]) {
+    let distance = 0;
+    let previous = 0;
+    for (let frame = 1; frame <= fps; frame++) {
+      const current = travel(frame / fps);
+      assert.ok(current >= previous);
+      distance += 0.32 * (current - previous);
+      previous = current;
+    }
+    assert.ok(Math.abs(distance - 0.32) < 1e-12);
+  }
 });
 
 test('client joins before receiving TURN credentials and waits for server readiness', async () => {
