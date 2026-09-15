@@ -197,7 +197,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v161</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v162</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -1487,8 +1487,11 @@ globePos.needsUpdate = true;
 globeGeo.computeVertexNormals();
 
 // Water sphere - sits just below ground level, visible wherever terrain dips
+const WATER_RADIUS = GLOBE_RADIUS - 0.25;
+const SWIM_DEPTH = 0.72;
+const SWIM_SPEED = 0.12;
 const waterSphere = new THREE.Mesh(
-  new THREE.SphereGeometry(GLOBE_RADIUS - 0.25, 48, 48),
+  new THREE.SphereGeometry(WATER_RADIUS, 48, 48),
   new THREE.MeshStandardMaterial({
     color: 0x1a6b8a,
     roughness: 0.05,
@@ -1501,6 +1504,51 @@ globePivot.add(waterSphere);
 
 // --- PLAYER TERRAIN FOLLOWING ---
 const raycaster = new THREE.Raycaster();
+
+// The same radial depth test works anywhere on the planet, for all campers.
+function updateSwimming(mesh, terrainRadius, moving, delta) {
+  const state = mesh.userData;
+  const depth = WATER_RADIUS - terrainRadius;
+  // Hysteresis keeps tiny shoreline changes from toggling the stroke each frame.
+  state.swimming = depth > (state.swimming ? SWIM_DEPTH - 0.1 : SWIM_DEPTH);
+  const blend = 1 - Math.exp(-8 * delta);
+  state.swimBlend = THREE.MathUtils.lerp(state.swimBlend || 0, state.swimming ? 1 : 0, blend);
+  state.swimMoving = THREE.MathUtils.lerp(state.swimMoving || 0, moving ? 1 : 0, blend);
+  state.swimPhase = ((state.swimPhase || 0) + delta * (3 + 4 * state.swimMoving)) % (Math.PI * 2);
+  const bob = Math.sin(state.swimPhase * 2) * 0.025 * state.swimBlend;
+  // Lift the hips as the body leans forward, keeping the face above the surface.
+  const floatRadius = WATER_RADIUS - SWIM_DEPTH + 0.3 * state.swimMoving * state.swimBlend + bob;
+  return Math.max(terrainRadius, floatRadius);
+}
+
+function resetSwimLimbs(mesh) {
+  mesh.userData.leftArm.rotation.z = 0.15;
+  mesh.userData.rightArm.rotation.z = -0.15;
+  mesh.userData.leftLeg.rotation.z = 0;
+  mesh.userData.rightLeg.rotation.z = 0;
+}
+
+// Blend over the ordinary walking pose so entering/leaving water stays fluid.
+function applySwimPose(mesh) {
+  const s = mesh.userData;
+  const weight = s.swimBlend || 0;
+  if (weight < 0.001) return;
+  const phase = s.swimPhase;
+  const moving = s.swimMoving;
+  mesh.rotateX(0.85 * moving * weight);
+  mesh.rotateZ(Math.sin(phase) * 0.045 * weight);
+  for (const [side, sign] of [['left', 1], ['right', -1]]) {
+    const arm = s[side + 'Arm'];
+    const leg = s[side + 'Leg'];
+    const stroke = phase + (sign < 0 ? Math.PI : 0);
+    const tread = -0.25 + Math.sin(stroke) * 0.3;
+    const paddle = -0.65 + Math.sin(stroke) * 1.15;
+    arm.rotation.x = THREE.MathUtils.lerp(arm.rotation.x, THREE.MathUtils.lerp(tread, paddle, moving), weight);
+    arm.rotation.z = THREE.MathUtils.lerp(sign * 0.15, sign * (0.95 - moving * 0.4 + Math.cos(stroke) * 0.2), weight);
+    leg.rotation.x = THREE.MathUtils.lerp(leg.rotation.x, Math.sin(stroke) * (0.22 + moving * 0.25), weight);
+    leg.rotation.z = sign * (0.12 + Math.cos(stroke) * 0.06) * weight;
+  }
+}
 
 // --- PLAYER ---
 let playerFacing = 0;
@@ -1863,6 +1911,12 @@ function animateOtherPlayers(delta) {
     m.rotateY(fAngle);
 
     const motionAge = (performance.now() - p.motionReceivedAt) / 1000;
+    const swimmingMoving = motionAge < 0.5 && p.motion
+      ? (p.motion.moving ?? p.motion.rate > 0)
+      : p.isWalking && p.interpT < 1;
+    const swimRadius = updateSwimming(m, m.position.length(), swimmingMoving, delta);
+    m.position.copy(wDir).multiplyScalar(swimRadius);
+    resetSwimLimbs(m);
     const torchOn = !!p.motion?.flashlight && m.visible && motionAge < 2;
     p.torch.visible = torchOn;
     p.torch.intensity = torchOn ? 15 : 0;
@@ -1902,6 +1956,8 @@ function animateOtherPlayers(delta) {
       m.userData.leftArm.rotation.x *= 0.85;
       m.userData.rightArm.rotation.x *= 0.85;
     }
+
+    applySwimPose(m);
 
     if (p.bump) {
       p.bump.elapsed = Math.min(BUMP_DURATION, p.bump.elapsed + delta);
@@ -3264,7 +3320,7 @@ function animate() {
       enterTent();
     } else {
       // Constant walk speed toward tent (same as normal walking)
-      const walkSpeed = 0.2 * delta;
+      const walkSpeed = (player.userData.swimming ? SWIM_SPEED : 0.2) * delta;
       const slerpFactor = Math.min(1, walkSpeed / angle);
       globeRotation.slerp(campGlobeRotation, slerpFactor);
       moveInput = 0;
@@ -3294,7 +3350,7 @@ function animate() {
   }
 
   const isWalking = Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1 || walkingToTent;
-  const moveSpeed = 0.2 * delta;
+  const moveSpeed = (player.userData.swimming ? SWIM_SPEED : 0.2) * delta;
 
   if (!playerBounceState && (Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1)) {
     // Forward/back movement
@@ -3423,6 +3479,16 @@ function animate() {
   player.rotation.set(0, playerFacing, 0);
   player.scale.setScalar(1);
 
+  // Resolve terrain and buoyancy before the camera and animation use our height.
+  globePivot.updateMatrixWorld(true);
+  raycaster.set(new THREE.Vector3(0, GLOBE_RADIUS + 5, 0), new THREE.Vector3(0, -1, 0));
+  const hits = raycaster.intersectObject(globe, false);
+  const terrainY = hits.length ? hits[0].point.y : (player.userData.terrainY ?? GLOBE_RADIUS);
+  player.userData.terrainY = terrainY;
+  player.position.y = updateSwimming(player, terrainY, isWalking && !isSleeping, delta);
+  player.userData.groundY = player.position.y;
+  resetSwimLimbs(player);
+
   // Camera: cameraHeight is tilt (1=ground level, 12=overhead), cameraDistance is total distance
   const tiltFraction = cameraHeight / 12;
   const playerY = player.userData.groundY ?? player.position.y;
@@ -3466,6 +3532,7 @@ function animate() {
       swing: Math.max(-0.5, Math.min(0.5, player.userData.leftLeg.rotation.x)),
       roll: Math.max(-0.1, Math.min(0.1, player.rotation.z)),
       flashlight: flashlightOn && !isSleeping,
+      moving: isWalking && !isSleeping,
     });
   }
   
@@ -3478,16 +3545,7 @@ function animate() {
   // Animate connected players.
   animateOtherPlayers(delta);
 
-  // Terrain following: raycast downward to find globe surface
-  globe.updateMatrixWorld();
-  raycaster.set(new THREE.Vector3(0, GLOBE_RADIUS + 5, 0), new THREE.Vector3(0, -1, 0));
-  const hits = raycaster.intersectObject(globe, false);
-  if (hits.length > 0) {
-    player.position.y = hits[0].point.y;
-  } else {
-    player.position.y = player.userData.groundY ?? GLOBE_RADIUS;
-  }
-  player.userData.groundY = player.position.y;
+  applySwimPose(player);
   applyBumpPose(player, playerBounceState, globeRotation);
 
   // Shared room clock continues through dropped frames and background tabs.
