@@ -62,7 +62,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v203</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v204</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -109,7 +109,7 @@ canvas { display: block; }
     <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
     <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v203</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v204</div>
 </div>
 
 <!-- GAME OVER SCREEN -->
@@ -258,7 +258,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v203</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v204</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -272,7 +272,7 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=203';
+import { createWinter } from './winter.js?v=204';
 
 // Toast notification system - defined early since used by WebSocket handlers
 function showToast(message, duration = 5000) {
@@ -2907,9 +2907,9 @@ let flashlightOn = false;
 const btnFlashlight = document.getElementById('btn-flashlight');
 // Keep the button geometry fixed; battery level is the length of an SVG arc.
 btnFlashlight.style.setProperty('border-color', 'transparent', 'important');
-btnFlashlight.insertAdjacentHTML('afterbegin', `<svg aria-hidden="true" viewBox="0 0 54 54" style="position:absolute;top:-3px;left:-3px;width:54px;height:54px;pointer-events:none;transform:rotate(-90deg)"><circle cx="27" cy="27" r="25.5" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="3"/><circle id="flashlight-battery-ring" cx="27" cy="27" r="25.5" fill="none" stroke="#ddd" stroke-width="3"/></svg>`);
+btnFlashlight.insertAdjacentHTML('afterbegin', `<svg aria-hidden="true" viewBox="0 0 48 48" style="position:absolute;top:-3px;left:-3px;width:48px;height:48px;pointer-events:none;transform:rotate(-90deg)"><circle id="flashlight-battery-ring" cx="24" cy="24" r="22.5" fill="none" stroke="#ddd" stroke-width="3"/></svg>`);
 const flashlightBatteryRing = document.getElementById('flashlight-battery-ring');
-const flashlightRingLength = 2 * Math.PI * 25.5;
+const flashlightRingLength = 2 * Math.PI * 22.5;
 flashlightBatteryRing.style.strokeDasharray = `${flashlightRingLength} ${flashlightRingLength}`;
 const flashlight = new THREE.SpotLight(0xffffff, 0, 25, Math.PI * 0.08, 0.15, 0.5);
 flashlight.position.set(0.3, GLOBE_RADIUS + 0.6, 0.2);
@@ -3730,8 +3730,8 @@ function updateDayNight(delta) {
     scene.fog = null;
   }
 
-  // Drain while switched on, including at the tent; recharge only when off.
-  const atTent = ownTentDistance() <= TENT_INTERACTION_DISTANCE;
+  // Recharge only inside our pitched tent, never merely within interaction range.
+  const atTent = isSleeping && !!localCampState && campModels.has(localPlayerId);
   if (flashlightOn) {
     flashlightBattery = Math.max(0, flashlightBattery - delta / FLASHLIGHT_DRAIN_TIME);
   } else if (atTent && flashlightBattery < 1) {
