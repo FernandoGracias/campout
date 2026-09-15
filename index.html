@@ -197,7 +197,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v159</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v160</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -801,7 +801,10 @@ function setupDataChannel(peerId, channel) {
     }
     // Validate bump messages
     if (data && data.type === 'bump') {
-      if (!Number.isFinite(data.dx) || !Number.isFinite(data.dz) || Math.abs(data.dx) > 1 || Math.abs(data.dz) > 1) {
+      if (!Number.isFinite(data.dx) || !Number.isFinite(data.dz) || Math.abs(data.dx) > 1 || Math.abs(data.dz) > 1 ||
+          (data.axis !== undefined && (!Array.isArray(data.axis) || data.axis.length !== 3 ||
+            !data.axis.every(n => Number.isFinite(n) && Math.abs(n) <= 1) ||
+            Math.abs(Math.hypot(...data.axis) - 1) > 0.01))) {
         console.warn('Ignoring bad bump message:', data);
         return;  // Just ignore, don't disconnect
       }
@@ -893,7 +896,7 @@ function handleGameMessage(peerId, msg) {
   const color = parseInt(peerColors[peerId] || remoteCampStates[peerId]?.color || 'cc5522', 16);
   // Handle bump message - other player is telling us we collided
   if (msg.type === 'bump') {
-    if (window.receiveBump) window.receiveBump(peerId, msg.dx, msg.dz);
+    if (window.receiveBump) window.receiveBump(peerId, msg);
     return;
   }
   if (msg.type === 'pos') {
@@ -942,10 +945,11 @@ function broadcastHello(globeRot) {
 }
 
 // Send bump notification to a specific peer
-function sendBump(peerId, dx, dz) {
+function sendBump(peerId, axis) {
   const dc = dataChannels[peerId];
   if (dc && dc.readyState === 'open') {
-    dc.send(JSON.stringify({ type: 'bump', dx, dz }));
+    // Legacy clients can play their reaction without interpreting a unit axis as a huge shove.
+    dc.send(JSON.stringify({ type: 'bump', dx: 0, dz: 0, axis: [axis.x, axis.y, axis.z] }));
   }
 }
 
@@ -1502,16 +1506,62 @@ const raycaster = new THREE.Raycaster();
 let playerFacing = 0;
 let walkCycle = 0;
 let playerBounceState = null;
-// Called when another player tells us we bumped into them
-window.receiveBump = function(peerId, dx, dz) {
-  // Apply bump immediately to globeRotation
-  if (window.globeRotation) {
-    const bRotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), dx);
-    const bRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -dz);
-    window.globeRotation.premultiply(bRotX).premultiply(bRotZ);
-  }
-  playerBounceState = { time: 0.25 };
+const BUMP_DURATION = 0.62;
+const BUMP_TRAVEL_TIME = 0.28;
+const BUMP_DISTANCE = 0.32;
+const bumpCooldowns = new Map();
+
+// Axis is in the shared globe frame, never the sender's camera/player frame.
+function startPlayerBump(peerId, axis, notify) {
+  const p = otherPlayers[peerId];
+  const now = performance.now();
+  if (!p || isSleeping || remoteCampStates[peerId]?.sleeping || playerBounceState ||
+      now < (bumpCooldowns.get(peerId) || 0)) return;
+  bumpCooldowns.set(peerId, now + 850);
+  playerBounceState = { elapsed: 0, axis: axis.clone() };
+  p.bump = { elapsed: 0, axis: axis.clone().negate() };
+  walkingToTent = false;
+  if (notify) sendBump(peerId, axis.clone().negate());
+}
+
+window.receiveBump = function(peerId, msg) {
+  const p = otherPlayers[peerId];
+  if (!p) return;
+  const otherDir = new THREE.Vector3(0, 1, 0)
+    .applyQuaternion(p.currentGlobeRotation.clone().invert()).applyQuaternion(globeRotation);
+  if (otherDir.distanceTo(new THREE.Vector3(0, 1, 0)) * GLOBE_RADIUS > 1.5) return;
+  // Older clients sent view-relative dx/dz; derive their contact normal instead.
+  const axis = msg.axis === undefined
+    ? new THREE.Vector3(otherDir.z, 0, -otherDir.x).normalize().applyQuaternion(globeRotation.clone().invert())
+    : new THREE.Vector3(...msg.axis).normalize();
+  if (axis.lengthSq() > 0.5) startPlayerBump(peerId, axis, false);
 };
+
+function bumpTravel(elapsed) {
+  const t = Math.min(1, Math.max(0, elapsed / BUMP_TRAVEL_TIME));
+  return 1 - Math.pow(1 - t, 3);
+}
+
+// Apply after the ordinary pose is rebuilt, so wobble never accumulates.
+function applyBumpPose(mesh, bump, rotation) {
+  if (!bump) return;
+  const t = Math.min(1, bump.elapsed / BUMP_DURATION);
+  const envelope = Math.sin(Math.PI * t) * (1 - t);
+  const waddle = Math.sin(t * Math.PI * 6) * envelope;
+  const up = mesh.position.clone().normalize();
+  const axis = bump.axis.clone().applyQuaternion(rotation);
+  const away = new THREE.Vector3().crossVectors(up, axis).normalize()
+    .applyQuaternion(mesh.quaternion.clone().invert());
+  const hopT = Math.min(1, bump.elapsed / BUMP_TRAVEL_TIME);
+  mesh.position.addScaledVector(up, Math.sin(Math.PI * hopT) * 0.13);
+  mesh.rotateX(away.z * envelope * 0.25);
+  mesh.rotateZ(-away.x * envelope * 0.25 + waddle * 0.24);
+  mesh.scale.set(1 + envelope * 0.06, 1 - envelope * 0.1, 1 + envelope * 0.06);
+  mesh.userData.leftLeg.rotation.x = waddle * 0.65;
+  mesh.userData.rightLeg.rotation.x = -waddle * 0.65;
+  mesh.userData.leftArm.rotation.x = -waddle * 0.45;
+  mesh.userData.rightArm.rotation.x = waddle * 0.45;
+}
 
 function buildPlayer() {
   const group = new THREE.Group();
@@ -1739,6 +1789,7 @@ function removeOtherPlayer(id) {
   p.nameLabel.material.map.dispose();
   p.nameLabel.material.dispose();
   delete otherPlayers[id];
+  bumpCooldowns.delete(id);
 }
 
 function updateOtherPlayer(id, globeRotation, facing, immediate) {
@@ -1770,6 +1821,7 @@ function animateOtherPlayers(delta) {
   for (const id in otherPlayers) {
     const p = otherPlayers[id];
     const m = p.mesh;
+    m.scale.setScalar(1);
     const wasVisible = m.visible;
     m.visible = !remoteCampStates[id]?.sleeping;
     if (wasVisible && !m.visible) mpLog('Player ' + id.substring(0,6) + ' now invisible (sleeping=' + remoteCampStates[id]?.sleeping + ')');
@@ -1849,6 +1901,12 @@ function animateOtherPlayers(delta) {
       m.userData.rightLeg.rotation.x *= 0.85;
       m.userData.leftArm.rotation.x *= 0.85;
       m.userData.rightArm.rotation.x *= 0.85;
+    }
+
+    if (p.bump) {
+      p.bump.elapsed = Math.min(BUMP_DURATION, p.bump.elapsed + delta);
+      applyBumpPose(m, p.bump, globeRotation);
+      if (p.bump.elapsed >= BUMP_DURATION) p.bump = null;
     }
 
     // Position name label below player or at tent if sleeping
@@ -3238,7 +3296,7 @@ function animate() {
   const isWalking = Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1 || walkingToTent;
   const moveSpeed = 0.2 * delta;
 
-  if (Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1) {
+  if (!playerBounceState && (Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1)) {
     // Forward/back movement
     const step = moveSpeed * moveInput;
     // Strafe movement (perpendicular to facing, i.e. facing + 90 degrees)
@@ -3268,7 +3326,7 @@ function animate() {
         }
       }
     }
-    // Player-to-player collision: use actual mesh position (already computed last frame)
+    // Test surface positions, independent of the visual hop and terrain height.
     let playerCollisionId = null;
     let collisionBounceDir = null;
     if (canMove) {
@@ -3285,19 +3343,22 @@ function animate() {
           continue;
         }
         const dist = localPlayerPos.distanceTo(otherNewWorldPos);
-        if (dist < 0.55) {  // Smaller collision radius for closer contact
+        const otherCurrentPos = otherGlobeDir.clone().applyQuaternion(globeRotation).multiplyScalar(GLOBE_RADIUS);
+        if (dist < 0.55 && dist < localPlayerPos.distanceTo(otherCurrentPos)) {
           canMove = false;
           playerCollisionId = id;
-          playerBounceState = { time: 0.25 };
-          // Calculate bounce direction (away from other player, in globe-local coords)
-          const bounceDir = localPlayerPos.clone().sub(otherNewWorldPos).normalize();
-          collisionBounceDir = { x: bounceDir.x * 0.02, z: bounceDir.z * 0.02 };
+          // Retreat along the contact normal at the current position, without sliding first.
+          collisionBounceDir = new THREE.Vector3(otherCurrentPos.z, 0, -otherCurrentPos.x);
+          if (collisionBounceDir.lengthSq() < 1e-8) collisionBounceDir.set(-totalX, 0, totalZ);
+          collisionBounceDir.normalize().applyQuaternion(globeRotation.clone().invert());
           break;
         }
       }
     }
     if (canMove) {
       globeRotation.copy(newRotation);
+    } else if (playerCollisionId) {
+      startPlayerBump(playerCollisionId, collisionBounceDir, true);
     } else {
       // Smooth slide: try progressively larger angle offsets to find a clear path
       let slid = false;
@@ -3315,15 +3376,15 @@ function animate() {
           if (sDist < c.radius + 0.5 && sDist < curDist) { slideOk = false; break; }
         }
         // Also check player collision for slides
-        if (slideOk && playerCollisionId) {
-          const p = otherPlayers[playerCollisionId];
-          if (p && p.mesh.visible) {
+        if (slideOk) {
+          for (const p of Object.values(otherPlayers)) {
+            if (!p.mesh.visible) continue;
             const otherGlobeDir = new THREE.Vector3(0, 1, 0).applyQuaternion(p.currentGlobeRotation.clone().invert());
             const otherSlideWorldPos = otherGlobeDir.clone().applyQuaternion(slideRotation).multiplyScalar(GLOBE_RADIUS);
             const slideDist = playerWorldPos.distanceTo(otherSlideWorldPos);
             const curOtherWorldPos = otherGlobeDir.clone().applyQuaternion(globeRotation).multiplyScalar(GLOBE_RADIUS);
             const curPlayerDist = playerWorldPos.distanceTo(curOtherWorldPos);
-            if (slideDist < 0.55 && slideDist < curPlayerDist) slideOk = false;
+            if (slideDist < 0.55 && slideDist < curPlayerDist) { slideOk = false; break; }
           }
         }
         if (slideOk) {
@@ -3332,32 +3393,39 @@ function animate() {
           break;
         }
       }
-      // If we hit a player, bounce both players apart
-      if (playerCollisionId && collisionBounceDir) {
-        // Apply bounce to local player (in the direction away from collision)
-        const bRotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), collisionBounceDir.x);
-        const bRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -collisionBounceDir.z);
-        const bounceRotation = globeRotation.clone().premultiply(bRotX).premultiply(bRotZ);
-        // Verify bounce doesn't push into an obstacle
-        let bounceOk = true;
-        for (const c of activeColliders) {
-          const bObjPos = latLonToWorld(c.lat, c.lon).applyQuaternion(bounceRotation);
-          const bDist = playerWorldPos.distanceTo(bObjPos);
-          if (bDist < c.radius + 0.5) { bounceOk = false; break; }
-        }
-        if (bounceOk) globeRotation.copy(bounceRotation);
-        // Tell the other player to bounce in the opposite direction
-        sendBump(playerCollisionId, -collisionBounceDir.x, -collisionBounceDir.z);
-      }
     }
   }
 
+  if (playerBounceState) {
+    const b = playerBounceState;
+    const next = Math.min(BUMP_DURATION, b.elapsed + delta);
+    const distance = BUMP_DISTANCE * (bumpTravel(next) - bumpTravel(b.elapsed));
+    const candidate = globeRotation.clone().multiply(
+      new THREE.Quaternion().setFromAxisAngle(b.axis, distance / GLOBE_RADIUS));
+    const origin = new THREE.Vector3(0, GLOBE_RADIUS, 0);
+    const blocked = [...collidables, ...tentColliders].some(c => {
+      const pos = latLonToWorld(c.lat, c.lon);
+      const before = origin.distanceTo(pos.clone().applyQuaternion(globeRotation));
+      const after = origin.distanceTo(pos.applyQuaternion(candidate));
+      return after < c.radius + 0.5 && after < before;
+    }) || Object.values(otherPlayers).some(p => {
+      if (!p.mesh.visible) return false;
+      const pos = new THREE.Vector3(0, GLOBE_RADIUS, 0).applyQuaternion(p.currentGlobeRotation.clone().invert());
+      const before = origin.distanceTo(pos.clone().applyQuaternion(globeRotation));
+      const after = origin.distanceTo(pos.applyQuaternion(candidate));
+      return after < 0.55 && after < before;
+    });
+    if (!blocked) globeRotation.copy(candidate).normalize();
+    b.elapsed = next;
+    if (next >= BUMP_DURATION) playerBounceState = null;
+  }
   globePivot.quaternion.copy(globeRotation);
-  player.rotation.y = playerFacing;
+  player.rotation.set(0, playerFacing, 0);
+  player.scale.setScalar(1);
 
   // Camera: cameraHeight is tilt (1=ground level, 12=overhead), cameraDistance is total distance
   const tiltFraction = cameraHeight / 12;
-  const playerY = player.position.y;
+  const playerY = player.userData.groundY ?? player.position.y;
   const camY = playerY + tiltFraction * cameraDistance;
   const camHorizDist = cameraDistance * (1 - tiltFraction * 0.85);
   const camX = Math.sin(cameraAngle) * camHorizDist;
@@ -3385,16 +3453,6 @@ function animate() {
     player.userData.leftArm.rotation.x *= 0.85;
     player.userData.rightArm.rotation.x *= 0.85;
     player.rotation.z *= 0.9;
-  }
-
-  // Bounce/waddle effect when colliding with another player
-  if (playerBounceState) {
-    playerBounceState.time -= delta;
-    const bounceIntensity = Math.sin(playerBounceState.time * 25) * playerBounceState.time * 2;
-    player.rotation.z += bounceIntensity * 0.3;
-    player.userData.leftArm.rotation.x += bounceIntensity * 0.5;
-    player.userData.rightArm.rotation.x -= bounceIntensity * 0.5;
-    if (playerBounceState.time <= 0) playerBounceState = null;
   }
 
   // Broadcast position to peers (10 times/sec)
@@ -3426,7 +3484,11 @@ function animate() {
   const hits = raycaster.intersectObject(globe, false);
   if (hits.length > 0) {
     player.position.y = hits[0].point.y;
+  } else {
+    player.position.y = player.userData.groundY ?? GLOBE_RADIUS;
   }
+  player.userData.groundY = player.position.y;
+  applyBumpPose(player, playerBounceState, globeRotation);
 
   // Shared room clock continues through dropped frames and background tabs.
   {
