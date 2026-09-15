@@ -22,6 +22,25 @@ function camper() {
     rotateZ(angle) { this.roll += angle; } };
 }
 
+test('winter supports all campers on lake and river ice, then restores swimming on thaw', () => {
+  const winter = { enabled: true, iceRadius: 20.05 };
+  for (const bottom of [10, 18.8, 19.9]) {
+    const mesh = camper();
+    context.updateSwimming(mesh, 10, true, 1);
+    assert.equal(context.updateSwimming(mesh, bottom, true, 1 / 30, winter), winter.iceRadius);
+    assert.equal(mesh.userData.onIce, true);
+    assert.equal(mesh.userData.swimming, false);
+    assert.equal(mesh.userData.swimBlend, 0);
+    assert.equal(context.updateSwimming(mesh, 21, true, 1 / 30, winter), 21);
+    assert.equal(mesh.userData.onIce, false);
+    winter.enabled = false;
+    context.updateSwimming(mesh, 10, true, 1 / 30, winter);
+    assert.equal(mesh.userData.swimming, true);
+    assert.equal(mesh.userData.onIce, false);
+    winter.enabled = true;
+  }
+});
+
 test('shallow water is walkable; deep water supports the camper independently of seabed depth', () => {
   const mesh = camper();
   assert.equal(context.updateSwimming(mesh, 19.5, false, 1 / 60), 19.5);
