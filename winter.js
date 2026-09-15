@@ -239,15 +239,24 @@ export function createWinter(THREE, world) {
       '#include <clipping_planes_fragment>\nif (length(gl_PointCoord - vec2(0.5)) > 0.5) discard;');
   };
   const snowTime = { value: 0 }, snowView = { value: new THREE.Vector3(0, 1, 0) }, snowBrightness = { value: 1.0 };
+  const snowVelocity = { value: new THREE.Vector3(0, 0, 0) };
   const fallingMaterial = flakeMat.clone();
   fallingMaterial.onBeforeCompile = shader => {
     flakeMat.onBeforeCompile(shader);
     shader.uniforms.snowTime = snowTime;
     shader.uniforms.snowView = snowView;
     shader.uniforms.snowBrightness = snowBrightness;
-    shader.vertexShader = 'attribute vec4 weather; uniform float snowTime; uniform vec3 snowView;\n' + shader.vertexShader;
-    shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>',
-      'vec3 transformed = position * (weather.x + mod(weather.w - snowTime * weather.z, max(weather.y, 1.0)));');
+    shader.uniforms.snowVelocity = snowVelocity;
+    shader.vertexShader = 'attribute vec4 weather; uniform float snowTime; uniform vec3 snowView; uniform vec3 snowVelocity;\n' + shader.vertexShader;
+    shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
+      // Base fall animation along spawn direction
+      float fallProgress = mod(weather.w - snowTime * weather.z, max(weather.y, 1.0));
+      vec3 transformed = position * (weather.x + fallProgress);
+      // Velocity-relative offset: flakes appear to rush past when moving fast
+      // Scale effect by how much of the fall is left (more effect at start of fall)
+      float velocityScale = 12.0 * (1.0 - fallProgress / max(weather.y, 1.0));
+      transformed += snowVelocity * velocityScale;
+    `);
     shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
       // No rasterization for uninitialized flakes or the far side of the globe.
       if (weather.y < 0.5 || dot(position, snowView) < 0.12) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -806,6 +815,21 @@ export function createWinter(THREE, world) {
     flakeGeo.setDrawRange(0, count);
     snowTime.value = elapsed;
     snowView.value.copy(world.camera.position).normalize().applyQuaternion(inverse);
+    // Player velocity in globe-local coords for relative snowfall motion
+    // velocity is in world-local XZ, convert to globe-local direction
+    const speed = velocity.length();
+    if (speed > 0.01) {
+      const facing = world.getFacing();
+      // Convert velocity to world direction then to globe-local
+      const worldVel = new THREE.Vector3(
+        velocity.x * Math.sin(facing) + velocity.y * Math.cos(facing),
+        0,
+        velocity.x * Math.cos(facing) - velocity.y * Math.sin(facing)
+      ).applyQuaternion(inverse);
+      snowVelocity.value.copy(worldVel);
+    } else {
+      snowVelocity.value.set(0, 0, 0);
+    }
     // Snowflake brightness: dim at night, bright only in daylight or when lit by flashlight
     if (world.getLighting) {
       const lighting = world.getLighting();
