@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v165</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v166</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -204,7 +204,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v165</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v166</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -2576,10 +2576,8 @@ function pitchCamp() {
   if (isSleeping) return;
   walkingToTent = false;
   if (localCampState) {
-    // Check distance before allowing pack-up
-    const playerPos = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert()).normalize().multiplyScalar(GLOBE_RADIUS);
-    const tentPos = campsitePoint(localCampState.position, localCampState.tent).normalize().multiplyScalar(GLOBE_RADIUS);
-    if (playerPos.distanceTo(tentPos) > 15) {
+    // Check distance before allowing pack-up (same distance as tent entry)
+    if (campGlobeRotation && globeRotation.angleTo(campGlobeRotation) > 0.3) {
       showToast('Too far from tent to pack up. Return to your campsite first.');
       return;
     }
@@ -3348,16 +3346,6 @@ function animate() {
       }
     }
   }
-  // Show "Y" hint on tent button when near tent with gamepad
-  const hintPitch = document.getElementById('hint-pitch');
-  if (gamepadConnected && !isSleeping) {
-    if (campPitched && campGlobeRotation) {
-      const tentDist = globeRotation.angleTo(campGlobeRotation);
-      hintPitch.textContent = tentDist < 0.3 ? 'Y' : 'A';
-    } else {
-      hintPitch.textContent = 'A';
-    }
-  }
 
   let moveInput = 0;
   let strafeInput = 0;  // Gamepad strafe (left stick X in pan mode)
@@ -3739,38 +3727,35 @@ function animate() {
   const tentCompass = document.getElementById('tent-compass');
   const tentCompassLine = document.getElementById('tent-compass-line');
   const btnPitch = document.getElementById('btn-pitch');
-  if (campPitched && localCampState && !isSleeping) {
-    const ownCamp = campModels.get(localPlayerId);
-    if (ownCamp) {
-      // Calculate player distance from tent
+  if (campPitched && localCampState && campGlobeRotation && !isSleeping) {
+    // Use angular distance (same as tent entry check)
+    const tentDist = globeRotation.angleTo(campGlobeRotation);
+    const nearTent = tentDist < 0.3;
+    
+    // Disable pack-up if too far from tent
+    btnPitch.style.opacity = nearTent ? '1' : '0.4';
+    btnPitch.style.pointerEvents = nearTent ? 'auto' : 'none';
+    
+    // Show compass if not near tent
+    if (!nearTent) {
+      tentCompass.style.display = 'block';
+      // Calculate direction to tent in screen space
       const playerWorldPos = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert()).normalize().multiplyScalar(GLOBE_RADIUS);
       const tentWorldPos = campsitePoint(localCampState.position, localCampState.tent).normalize().multiplyScalar(GLOBE_RADIUS);
-      const distToTent = playerWorldPos.distanceTo(tentWorldPos);
-      
-      // Disable pack-up if too far from tent (more than 15 units)
-      const tooFarFromTent = distToTent > 15;
-      btnPitch.style.opacity = tooFarFromTent ? '0.4' : '1';
-      btnPitch.style.pointerEvents = tooFarFromTent ? 'none' : 'auto';
-      
-      // Show compass if far enough that it's useful (more than 5 units)
-      if (distToTent > 5) {
-        tentCompass.style.display = 'block';
-        // Calculate direction to tent in screen space
-        const tentDir = tentWorldPos.clone().sub(playerWorldPos).normalize();
-        // Project to horizontal plane relative to player
-        const playerUp = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert()).normalize();
-        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(globeRotation.clone().invert());
-        const right = new THREE.Vector3().crossVectors(playerUp, forward).normalize();
-        forward.crossVectors(right, playerUp).normalize();
-        const angle = Math.atan2(tentDir.dot(right), tentDir.dot(forward)) - cameraAngle;
-        // Line points outward from center, rotate around
-        const x2 = 32 + Math.sin(angle) * 28;
-        const y2 = 32 - Math.cos(angle) * 28;
-        tentCompassLine.setAttribute('x2', x2);
-        tentCompassLine.setAttribute('y2', y2);
-      } else {
-        tentCompass.style.display = 'none';
-      }
+      const tentDir = tentWorldPos.clone().sub(playerWorldPos).normalize();
+      // Project to horizontal plane relative to player
+      const playerUp = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert()).normalize();
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(globeRotation.clone().invert());
+      const right = new THREE.Vector3().crossVectors(playerUp, forward).normalize();
+      forward.crossVectors(right, playerUp).normalize();
+      const angle = Math.atan2(tentDir.dot(right), tentDir.dot(forward)) - cameraAngle;
+      // Line points outward from center, rotate around
+      const x2 = 32 + Math.sin(angle) * 28;
+      const y2 = 32 - Math.cos(angle) * 28;
+      tentCompassLine.setAttribute('x2', x2);
+      tentCompassLine.setAttribute('y2', y2);
+    } else {
+      tentCompass.style.display = 'none';
     }
   } else {
     tentCompass.style.display = 'none';
