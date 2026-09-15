@@ -4014,7 +4014,7 @@ function animate() {
 
   // Camera: cameraHeight is tilt (1=ground level, 12=overhead), cameraDistance is total distance
   if (!winter.aimSelected || lastInputMode !== 'keyboard') aimPointerY = null;
-  if (aimPointerY !== null && aimPointerY < 48) winter.adjustAim((1 - Math.max(0, aimPointerY) / 48) * delta * 0.8);
+  if (aimPointerY !== null && aimPointerY < 24) winter.adjustAim((1 - Math.max(0, aimPointerY) / 24) * delta * 0.25);
   aimViewBlend = THREE.MathUtils.lerp(aimViewBlend, winter.aimSelected && !movementLocked ? 1 : 0, 1 - Math.exp(-8 * delta));
   aimCameraPitch = THREE.MathUtils.lerp(aimCameraPitch, winter.pitch, 1 - Math.exp(-10 * delta));
   const tiltFraction = THREE.MathUtils.lerp(cameraHeight / 12, Math.max(cameraHeight / 12, 0.65), aimViewBlend);
@@ -4028,9 +4028,9 @@ function animate() {
   const camZ = Math.cos(cameraAngle) * camHorizDist - Math.sin(cameraAngle) * 0.7 * aimViewBlend;
   camera.position.set(camX, camY, camZ);
   camera.lookAt(-Math.sin(cameraAngle) * aimViewBlend, cameraGroundY + 1, -Math.cos(cameraAngle) * aimViewBlend);
-  // Follow elevated manual throws instead of permanently looking down at the
-  // ground. Edge continuation lets mice/trackpads keep raising aim at screen top.
-  camera.rotateX(Math.max(0, aimCameraPitch - 0.3) * 1.4 * aimViewBlend);
+  // Keep ordinary distance throws in view; gently lift the camera only for
+  // steeper uphill shots. Cap the lift so it cannot swing away from the ground.
+  camera.rotateX(THREE.MathUtils.clamp((aimCameraPitch - 0.55) * 0.55, 0, 0.4) * aimViewBlend);
   camera.updateMatrixWorld(true);
   atmosMat.uniforms.viewVector.value.copy(camera.position);
 
