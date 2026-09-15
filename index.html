@@ -197,7 +197,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v162</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v163</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -1488,7 +1488,7 @@ globeGeo.computeVertexNormals();
 
 // Water sphere - sits just below ground level, visible wherever terrain dips
 const WATER_RADIUS = GLOBE_RADIUS - 0.25;
-const SWIM_DEPTH = 0.72;
+const SWIM_DEPTH = 0.8;
 const SWIM_SPEED = 0.12;
 const waterSphere = new THREE.Mesh(
   new THREE.SphereGeometry(WATER_RADIUS, 48, 48),
@@ -1516,8 +1516,9 @@ function updateSwimming(mesh, terrainRadius, moving, delta) {
   state.swimMoving = THREE.MathUtils.lerp(state.swimMoving || 0, moving ? 1 : 0, blend);
   state.swimPhase = ((state.swimPhase || 0) + delta * (3 + 4 * state.swimMoving)) % (Math.PI * 2);
   const bob = Math.sin(state.swimPhase * 2) * 0.025 * state.swimBlend;
-  // Lift the hips as the body leans forward, keeping the face above the surface.
-  const floatRadius = WATER_RADIUS - SWIM_DEPTH + 0.3 * state.swimMoving * state.swimBlend + bob;
+  // Compensate for the lean around shoulder height, keeping the water at the shoulders.
+  const lean = 0.85 * state.swimMoving * state.swimBlend;
+  const floatRadius = WATER_RADIUS - SWIM_DEPTH + 0.78 * (1 - Math.cos(lean)) + bob;
   return Math.max(terrainRadius, floatRadius);
 }
 
@@ -1542,9 +1543,9 @@ function applySwimPose(mesh) {
     const leg = s[side + 'Leg'];
     const stroke = phase + (sign < 0 ? Math.PI : 0);
     const tread = -0.25 + Math.sin(stroke) * 0.3;
-    const paddle = -0.65 + Math.sin(stroke) * 1.15;
+    const paddle = -2.9 + Math.sin(stroke) * 0.65;
     arm.rotation.x = THREE.MathUtils.lerp(arm.rotation.x, THREE.MathUtils.lerp(tread, paddle, moving), weight);
-    arm.rotation.z = THREE.MathUtils.lerp(sign * 0.15, sign * (0.95 - moving * 0.4 + Math.cos(stroke) * 0.2), weight);
+    arm.rotation.z = THREE.MathUtils.lerp(sign * 0.15, sign * (0.65 - moving * 0.47 + Math.cos(stroke) * 0.1), weight);
     leg.rotation.x = THREE.MathUtils.lerp(leg.rotation.x, Math.sin(stroke) * (0.22 + moving * 0.25), weight);
     leg.rotation.z = sign * (0.12 + Math.cos(stroke) * 0.06) * weight;
   }
