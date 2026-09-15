@@ -60,7 +60,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v166</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v167</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -204,7 +204,7 @@ canvas { display: block; }
   </div>
 </div>
 
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v166</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v167</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -2978,34 +2978,49 @@ function buildCampModel(state, anchor) {
     new THREE.MeshStandardMaterial({ color: 0x3d6b35, roughness: 0.8 })
   );
   placedPack.position.set(0.08, 0.16, 0);
-  placedPack.rotation.x = -0.3;
   placedPack.castShadow = true;
+  placedPack.userData.needsRaycast = true;
   gearGroup.add(placedPack);
   
   const placedFlap = new THREE.Mesh(
     new THREE.BoxGeometry(0.26, 0.06, 0.16),
     new THREE.MeshStandardMaterial({ color: 0x2d5528, roughness: 0.8 })
   );
-  placedFlap.position.set(0.08, 0.32, -0.06);
-  placedFlap.rotation.x = -0.3;
+  placedFlap.position.set(0.08, 0.32, 0);
   gearGroup.add(placedFlap);
   
   const placedBag = new THREE.Mesh(
     new THREE.CylinderGeometry(0.07, 0.07, 0.28, 8),
     new THREE.MeshStandardMaterial({ color: 0x4488aa, roughness: 0.7 })
   );
-  placedBag.position.set(-0.15, 0.07, 0.05);
+  placedBag.position.set(-0.15, 0.07, 0);
   placedBag.rotation.z = Math.PI / 2;
-  placedBag.rotation.y = 0.2;
   placedBag.castShadow = true;
+  placedBag.userData.needsRaycast = true;
   gearGroup.add(placedBag);
   
-  // Position gear beside the tent
+  // Position gear right beside the tent entrance
   const tentPos = tent.position.clone();
   const gearAngle = Math.atan2(tentPos.x, tentPos.z) + Math.PI / 2;
-  gearGroup.position.set(tentPos.x + Math.sin(gearAngle) * 1.2, 0, tentPos.z + Math.cos(gearAngle) * 1.2);
-  gearGroup.rotation.y = gearAngle + Math.PI;
+  gearGroup.position.set(tentPos.x + Math.sin(gearAngle) * 0.6, 0, tentPos.z + Math.cos(gearAngle) * 0.6);
   campGroup.add(gearGroup);
+  
+  // Raycast gear to terrain
+  for (const child of gearGroup.children) {
+    if (!child.userData.needsRaycast) continue;
+    campGroup.updateMatrixWorld(true);
+    const worldPos = new THREE.Vector3();
+    child.getWorldPosition(worldPos);
+    const normal = worldPos.clone().normalize();
+    const rayOrigin = worldPos.clone().addScaledVector(normal, 3);
+    const rayDir = normal.clone().negate();
+    const ray = new THREE.Raycaster(rayOrigin, rayDir, 0, 10);
+    const hits = ray.intersectObject(globe, false);
+    if (hits.length > 0) {
+      const localHit = gearGroup.worldToLocal(hits[0].point.clone());
+      child.position.y = localHit.y + (child === placedPack ? 0.16 : 0.07);
+    }
+  }
 
   return { group: campGroup, tent, fireAnchor, gearGroup, campCoals, campFireGeo, campFireAlphas,
     campFireLifespan, campSmokeGeo, campSmokeVelocities, campFireLight, campFireLight2,
