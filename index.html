@@ -205,7 +205,8 @@ canvas { display: block; }
 </div>
 
 <button id="btn-stand" style="display:none;position:fixed;bottom:100px;left:30px;z-index:101;padding:10px 16px;border:1px solid #f0c040;border-radius:8px;background:#252535;color:#fff;cursor:pointer;">Stand up</button>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v170</div>
+<button id="camp-interaction" style="display:none;position:fixed;z-index:150;transform:translate(-50%,-100%);padding:6px 10px;border:1px solid #f0c040;border-radius:7px;background:rgba(25,25,40,0.95);color:#fff;font:14px system-ui,sans-serif;white-space:nowrap;cursor:pointer;"></button>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v171</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -2043,7 +2044,14 @@ const gamepadState = {
   dpadDownWasPressed: false, dpadDownLastTap: 0
 };
 let gamepadConnected = false;
-let lastInputMode = 'keyboard';  // 'keyboard', 'gamepad', 'touch'
+let lastInputMode = matchMedia('(pointer: coarse)').matches ? 'touch' : 'keyboard';
+function setInputMode(mode) {
+  if (lastInputMode === mode) return;
+  lastInputMode = mode;
+  updateControlHints();
+}
+document.addEventListener('keydown', () => setInputMode('keyboard'));
+document.addEventListener('pointerdown', e => setInputMode(e.pointerType === 'touch' ? 'touch' : 'keyboard'));
 let cursorHideTimeout = null;
 
 // Hide cursor when using gamepad, show on mouse movement
@@ -2129,7 +2137,7 @@ document.querySelectorAll('.minigame-item').forEach((item, i) => {
 
 // Detect input mode and show appropriate hints
 function updateControlHints() {
-  const isMobile = matchMedia('(pointer: coarse)').matches;
+  const isMobile = lastInputMode === 'touch';
   const hintPitch = document.getElementById('hint-pitch');
   const hintFlashlight = document.getElementById('hint-flashlight');
   const hintMinigames = document.getElementById('hint-minigames');
@@ -2137,7 +2145,7 @@ function updateControlHints() {
     hintPitch.style.display = 'none';
     hintFlashlight.style.display = 'none';
     hintMinigames.style.display = 'none';
-  } else if (gamepadConnected) {
+  } else if (lastInputMode === 'gamepad') {
     hintPitch.textContent = 'A';
     hintPitch.style.display = 'block';
     hintFlashlight.textContent = 'B';
@@ -2155,10 +2163,11 @@ function updateControlHints() {
 }
 
 // Listen for gamepad connect/disconnect
-window.addEventListener('gamepadconnected', () => { gamepadConnected = true; updateControlHints(); });
+window.addEventListener('gamepadconnected', () => { gamepadConnected = true; setInputMode('gamepad'); updateControlHints(); });
 window.addEventListener('gamepaddisconnected', () => {
   const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
   gamepadConnected = gamepads.some(gp => gp !== null);
+  if (!gamepadConnected) setInputMode('keyboard');
   updateControlHints();
 });
 
@@ -2383,7 +2392,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'g' && !e.repeat) openMinigames();
   if (e.key === '=' || e.key === '+') cameraDistance = Math.max(4, cameraDistance - 0.5);
   if (e.key === '-') cameraDistance = Math.min(60, cameraDistance + 0.5);
-  if (e.key === 't' && !e.repeat) pitchCamp();
+  if (e.key.toLowerCase() === 't' && !e.repeat) interactWithCamp();
   if (e.key === 'f' && !e.repeat && !isSleeping) {
     flashlightOn = !flashlightOn;
     document.getElementById('btn-flashlight').style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
@@ -3023,6 +3032,66 @@ function fireDirection(id) {
   return model.fireAnchor.position.clone().applyMatrix4(model.group.matrix).normalize();
 }
 
+const campInteraction = document.getElementById('camp-interaction');
+
+function nearbyCampInteraction() {
+  if (minigamesOpen || walkingToTent || walkingToFire) return null;
+  const candidates = [];
+  const here = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert());
+  camera.updateMatrixWorld();
+  for (const [id, model] of campModels) {
+    model.group.updateMatrix();
+    const objects = [];
+    if (id === localPlayerId && sittingFireId === null) objects.push({ object: model.tent, type: 'tent', height: 1.5, range: 2.5 });
+    if (!isSleeping && model.fireAnchor.visible && (sittingFireId === null || sittingFireId === id)) {
+      objects.push({ object: model.fireAnchor, type: 'fire', height: 1.2, range: 2.3 });
+    }
+    for (const item of objects) {
+      const point = item.object.position.clone().applyMatrix4(model.group.matrix);
+      const direction = point.clone().normalize();
+      const distance = here.distanceTo(direction) * GLOBE_RADIUS;
+      if (distance > item.range) continue;
+      const world = point.addScaledVector(direction, item.height).applyQuaternion(globeRotation);
+      const screen = world.clone().project(camera);
+      if (screen.z < -1 || screen.z > 1 || Math.abs(screen.x) > 0.95 || Math.abs(screen.y) > 0.95) continue;
+      const toHint = world.clone().sub(camera.position);
+      const ray = new THREE.Raycaster(camera.position, toHint.clone().normalize(), 0, toHint.length());
+      if (ray.intersectObject(globe, false).length) continue;
+      candidates.push({ id, type: item.type, distance, screen });
+    }
+  }
+  return candidates.sort((a, b) => a.distance - b.distance)[0] || null;
+}
+
+function interactWithCamp() {
+  if (minigamesOpen || walkingToTent || walkingToFire) return;
+  const target = nearbyCampInteraction();
+  if (target?.type === 'tent') {
+    if (isSleeping) wakeUp();
+    else { standUp(); clearMovementInput(); walkingToTent = true; }
+  } else if (target?.type === 'fire') {
+    walkToCampfire(target.id);
+  } else if (sittingFireId !== null) {
+    standUp();
+  } else if (!isSleeping) {
+    pitchCamp();
+  }
+}
+campInteraction.addEventListener('click', interactWithCamp);
+
+function updateCampInteraction() {
+  const target = nearbyCampInteraction();
+  campInteraction.style.display = target ? 'block' : 'none';
+  // The toolbar still packs the camp; don't show a conflicting A/T badge on it.
+  document.getElementById('hint-pitch').style.display = target || lastInputMode === 'touch' ? 'none' : 'block';
+  if (!target) return;
+  const key = lastInputMode === 'gamepad' ? 'A' : lastInputMode === 'touch' ? 'Tap' : 'T';
+  const action = target.type === 'tent' ? (isSleeping ? 'Wake up' : 'Enter tent') : (sittingFireId !== null ? 'Stand up' : 'Sit by fire');
+  campInteraction.textContent = `${key} · ${action}`;
+  campInteraction.style.left = `${(target.screen.x * 0.5 + 0.5) * window.innerWidth}px`;
+  campInteraction.style.top = `${(-target.screen.y * 0.5 + 0.5) * window.innerHeight}px`;
+}
+
 function walkToCampfire(id) {
   if (isSleeping) return;
   if (sittingFireId !== null) { standUp(); return; }
@@ -3334,6 +3403,7 @@ function animate() {
     gamepadDpadRight = gp.buttons[15]?.pressed || false;
     // Hide cursor when gamepad has any input
     if (lx || ly || rx || ry || gp.buttons.some(b => b?.pressed)) {
+      setInputMode('gamepad');
       hideCursor();
     }
     gamepadMoveY = ly;
@@ -3399,7 +3469,7 @@ function animate() {
     if (gamepadLookY) cameraHeight = Math.max(1, Math.min(12, cameraHeight + gamepadLookY * delta * 8));
   }
   
-  if (gamepadA && !isSleeping && !minigamesOpen) pitchCamp();
+  if (gamepadA && !minigamesOpen) interactWithCamp();
   if (gamepadB && !isSleeping && !minigamesOpen) {
     flashlightOn = !flashlightOn;
     document.getElementById('btn-flashlight').style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
@@ -3876,6 +3946,7 @@ function animate() {
     btnPitch.style.pointerEvents = 'auto';
   }
 
+  updateCampInteraction();
   renderer.render(scene, camera);
 }
 window.syncCamps = syncCamps;
