@@ -4393,6 +4393,12 @@ function animate() {
 }
 window.syncCamps = syncCamps;
 syncCamps();
+
+// Local player name label (team colored) - must be created before animate()
+const localTeamColor = localTeam === 'red' ? '#ff6666' : (localTeam === 'blue' ? '#6699ff' : '#ffffff');
+const localNameLabel = createNameLabel(playerName || 'Camper', localTeamColor);
+scene.add(localNameLabel);
+
 animate();
 
 window.addEventListener('resize', () => {
@@ -4421,11 +4427,6 @@ if (roomId) {
     });
   });
 }
-
-// Local player name label (team colored)
-const localTeamColor = localTeam === 'red' ? '#ff6666' : (localTeam === 'blue' ? '#6699ff' : '#ffffff');
-const localNameLabel = createNameLabel(playerName || 'Camper', localTeamColor);
-scene.add(localNameLabel);
 
 // Show control hints based on input mode
 updateControlHints();
