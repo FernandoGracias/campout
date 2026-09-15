@@ -62,7 +62,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v202</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v203</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -109,7 +109,7 @@ canvas { display: block; }
     <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
     <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v202</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v203</div>
 </div>
 
 <!-- GAME OVER SCREEN -->
@@ -258,7 +258,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v202</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v203</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -272,7 +272,7 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=202';
+import { createWinter } from './winter.js?v=203';
 
 // Toast notification system - defined early since used by WebSocket handlers
 function showToast(message, duration = 5000) {
@@ -1782,6 +1782,10 @@ document.addEventListener('keydown', e => {
 renderer.domElement.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse') setInputMode('keyboard');
 });
+
+// Forward declarations for drag/touch state (used by blur handler, defined later)
+let isDragging, orbitTouchId, pinchStartDist;
+
 window.addEventListener('blur', () => {
   clearMovementInput(); isDragging = false; orbitTouchId = null; pinchStartDist = null;
 });
@@ -2561,7 +2565,7 @@ let cameraHeight = 6;
 let cameraManual = false;
 let cameraGroundY = null, cameraLookPitch = 0;
 let lastTouchAngle = null;
-let pinchStartDist = null;
+pinchStartDist = null;
 let pinchStartZoom = null;
 let pinchStartAvgY = null;
 let pinchStartHeight = null;
@@ -2573,7 +2577,7 @@ let isSleeping = false;
 let sittingFireId = null;
 
 // Mouse/touch drag to orbit camera
-let isDragging = false;
+isDragging = false;
 let dragStartX = 0;
 let dragStartY = 0;
 let dragStartAngle = 0;
@@ -2640,7 +2644,7 @@ window.addEventListener('pointermove', (e) => {
 window.addEventListener('mouseup', () => { isDragging = false; });
 
 // Touch orbit (single finger on canvas, not joystick)
-let orbitTouchId = null;
+orbitTouchId = null;
 let orbitStartX = 0;
 let orbitStartY = 0;
 let orbitStartAngle = 0;
@@ -2901,6 +2905,12 @@ document.getElementById('time-pause').addEventListener('change', (e) => {
 // --- FLASHLIGHT ---
 let flashlightOn = false;
 const btnFlashlight = document.getElementById('btn-flashlight');
+// Keep the button geometry fixed; battery level is the length of an SVG arc.
+btnFlashlight.style.setProperty('border-color', 'transparent', 'important');
+btnFlashlight.insertAdjacentHTML('afterbegin', `<svg aria-hidden="true" viewBox="0 0 54 54" style="position:absolute;top:-3px;left:-3px;width:54px;height:54px;pointer-events:none;transform:rotate(-90deg)"><circle cx="27" cy="27" r="25.5" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="3"/><circle id="flashlight-battery-ring" cx="27" cy="27" r="25.5" fill="none" stroke="#ddd" stroke-width="3"/></svg>`);
+const flashlightBatteryRing = document.getElementById('flashlight-battery-ring');
+const flashlightRingLength = 2 * Math.PI * 25.5;
+flashlightBatteryRing.style.strokeDasharray = `${flashlightRingLength} ${flashlightRingLength}`;
 const flashlight = new THREE.SpotLight(0xffffff, 0, 25, Math.PI * 0.08, 0.15, 0.5);
 flashlight.position.set(0.3, GLOBE_RADIUS + 0.6, 0.2);
 flashlight.target.position.set(0, GLOBE_RADIUS, 3);
@@ -3720,24 +3730,18 @@ function updateDayNight(delta) {
     scene.fog = null;
   }
 
-  const torchOn = flashlightOn && !isSleeping && player.visible && flashlightBattery > 0;
-  
-  // Flashlight battery: drain when on, recharge at tent
+  // Drain while switched on, including at the tent; recharge only when off.
   const atTent = ownTentDistance() <= TENT_INTERACTION_DISTANCE;
-  if (torchOn) {
+  if (flashlightOn) {
     flashlightBattery = Math.max(0, flashlightBattery - delta / FLASHLIGHT_DRAIN_TIME);
-    if (flashlightBattery <= 0) {
-      flashlightOn = false;
-      btnFlashlight.style.borderColor = 'rgba(255,255,255,0.3)';
-    }
   } else if (atTent && flashlightBattery < 1) {
     flashlightBattery = Math.min(1, flashlightBattery + delta / FLASHLIGHT_RECHARGE_TIME);
   }
-  // Update battery indicator using border width (3px full, shrinks to 0)
-  const borderWidth = Math.round(flashlightBattery * 3);
-  btnFlashlight.style.borderWidth = borderWidth + 'px';
-  btnFlashlight.style.borderColor = flashlightOn ? '#f0c040' : 
-    (flashlightBattery < 0.2 ? '#ff4444' : 'rgba(255,255,255,0.15)');
+  if (flashlightBattery <= 0) flashlightOn = false;
+  flashlightBatteryRing.style.strokeDashoffset = (1 - flashlightBattery) * flashlightRingLength;
+  flashlightBatteryRing.style.stroke = flashlightOn ? '#f0c040' :
+    (flashlightBattery < 0.2 ? '#ff4444' : '#ddd');
+  const torchOn = flashlightOn && !isSleeping && player.visible && flashlightBattery > 0;
   
   flashlight.intensity = torchOn ? 15 : 0;
   player.userData.flashlightStick.visible = torchOn;
@@ -4372,19 +4376,24 @@ function animate() {
     
     // Show compass if not near tent
     if (!nearTent) {
-      tentCompass.style.display = 'block';
-      // Camera-relative bearing to the same physical tent used by interaction checks.
-      const tentDir = ownTentDirection().applyQuaternion(globeRotation);
-      const right = new THREE.Vector3(Math.cos(cameraAngle), 0, -Math.sin(cameraAngle));
-      const forward = new THREE.Vector3(-Math.sin(cameraAngle), 0, -Math.cos(cameraAngle));
-      const angle = Math.atan2(tentDir.dot(right), tentDir.dot(forward));
-      // Keep only the outer half: a short tick across the button's rim.
-      tentCompassLine.setAttribute('x1', 32 + Math.sin(angle) * 14);
-      tentCompassLine.setAttribute('y1', 32 - Math.cos(angle) * 14);
-      const x2 = 32 + Math.sin(angle) * 28;
-      const y2 = 32 - Math.cos(angle) * 28;
-      tentCompassLine.setAttribute('x2', x2);
-      tentCompassLine.setAttribute('y2', y2);
+      const tentDir = ownTentDirection();
+      if (tentDir) {
+        tentCompass.style.display = 'block';
+        // Camera-relative bearing to the same physical tent used by interaction checks.
+        tentDir.applyQuaternion(globeRotation);
+        const right = new THREE.Vector3(Math.cos(cameraAngle), 0, -Math.sin(cameraAngle));
+        const forward = new THREE.Vector3(-Math.sin(cameraAngle), 0, -Math.cos(cameraAngle));
+        const angle = Math.atan2(tentDir.dot(right), tentDir.dot(forward));
+        // Keep only the outer half: a short tick across the button's rim.
+        tentCompassLine.setAttribute('x1', 32 + Math.sin(angle) * 14);
+        tentCompassLine.setAttribute('y1', 32 - Math.cos(angle) * 14);
+        const x2 = 32 + Math.sin(angle) * 28;
+        const y2 = 32 - Math.cos(angle) * 28;
+        tentCompassLine.setAttribute('x2', x2);
+        tentCompassLine.setAttribute('y2', y2);
+      } else {
+        tentCompass.style.display = 'none';
+      }
     } else {
       tentCompass.style.display = 'none';
     }
