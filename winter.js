@@ -1,4 +1,5 @@
 import { iceImpulse, advanceOrbit, ballisticArcs } from './winter-physics.js?v=190';
+import { CLOUD_FIELD_GLSL } from './seasonal-sky.js';
 
 // Seasonal equipment uses planet-local coordinates, including summer pinecones.
 export function createWinter(THREE, world) {
@@ -242,7 +243,8 @@ export function createWinter(THREE, world) {
     shader.uniforms.snowFlashPos = snowFlashPos;
     shader.uniforms.snowFlashDir = snowFlashDir;
     shader.uniforms.snowFlashOn = snowFlashOn;
-    shader.vertexShader = 'attribute vec4 weather; uniform float snowTime; uniform vec3 snowView; uniform vec3 snowVelocity;\nuniform vec3 snowFlashPos; uniform vec3 snowFlashDir; uniform float snowFlashOn;\nvarying float vFlashLight;\n' + shader.vertexShader;
+    shader.uniforms.weatherSeed = world.weatherUniforms?.weatherSeed || { value: 0 };
+    shader.vertexShader = CLOUD_FIELD_GLSL + '\nattribute vec4 weather; uniform float snowTime; uniform vec3 snowView; uniform vec3 snowVelocity;\nuniform vec3 snowFlashPos; uniform vec3 snowFlashDir; uniform float snowFlashOn;\nvarying float vFlashLight; varying float vRegionalSnow;\n' + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
       // Base fall animation along spawn direction
       float fallProgress = mod(weather.w - snowTime * weather.z, max(weather.y, 1.0));
@@ -250,6 +252,10 @@ export function createWinter(THREE, world) {
       // Velocity-relative offset: flakes appear to rush past when moving fast
       float velocityScale = 12.0 * (1.0 - fallProgress / max(weather.y, 1.0));
       transformed += snowVelocity * velocityScale;
+      // Apply weather at the flake's actual planet-local position, including
+      // drift. Clear sky regions get zero flakes; cloud edges fade softly.
+      float cloudCover = campCloudCover(normalize(transformed + vec3(0.0, 0.000001, 0.0)));
+      vRegionalSnow = smoothstep(0.28, 0.80, cloudCover);
       // Calculate flashlight illumination per-flake
       vFlashLight = 0.0;
       if (snowFlashOn > 0.5) {
@@ -269,11 +275,11 @@ export function createWinter(THREE, world) {
     `);
     shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
       // No rasterization for uninitialized flakes or the far side of the globe.
-      if (weather.y < 0.5 || dot(position, snowView) < 0.12) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      if (weather.y < 0.5 || dot(position, snowView) < 0.12 || vRegionalSnow < 0.001) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     `);
-    shader.fragmentShader = 'uniform float snowBrightness;\nvarying float vFlashLight;\n' + shader.fragmentShader;
+    shader.fragmentShader = 'uniform float snowBrightness;\nvarying float vFlashLight; varying float vRegionalSnow;\n' + shader.fragmentShader;
     shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>',
-      '#include <color_fragment>\ndiffuseColor.rgb *= snowBrightness + vFlashLight * 0.8;');
+      '#include <color_fragment>\ndiffuseColor.rgb *= snowBrightness + vFlashLight * 0.8;\ndiffuseColor.a *= vRegionalSnow;');
   };
   const falling = new THREE.Points(flakeGeo, fallingMaterial);
   falling.visible = false; globePivot.add(falling);
