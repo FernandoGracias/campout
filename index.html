@@ -258,7 +258,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v216</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v219</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -1272,7 +1272,7 @@ const mobileGraphics = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
   (matchMedia('(pointer: coarse)').matches && Math.min(innerWidth, innerHeight) < 900);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, mobileGraphics ? 1.5 : 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -1376,7 +1376,7 @@ scene.add(fireflies);
 // --- GLOBE PIVOT (everything on the globe goes in here) ---
 const globePivot = new THREE.Group();
 scene.add(globePivot);
-const seasonalSky = createSeasonalSky(THREE, { scene, camera, starMat, radius: GLOBE_RADIUS, seed });
+const seasonalSky = createSeasonalSky(THREE, { scene, camera, starMat, radius: GLOBE_RADIUS, seed, mobile: mobileGraphics });
 
 const globeGeo = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
 const globeMat = new THREE.MeshStandardMaterial({
@@ -1662,6 +1662,7 @@ for (const t of trees) { collidables.push({ lat: t.lat, lon: t.lon, radius: 0.08
 for (const r of rockData) { collidables.push({ lat: r.lat, lon: r.lon, radius: r.radius }); }
 
 // --- FLOWERS ---
+const flowers = [];
 for (let i = 0; i < 60; i++) {
   const { lat, lon } = randomPointOnSphere();
   const flowerPos = latLonToWorld(lat, lon);
@@ -1697,6 +1698,7 @@ for (let i = 0; i < 60; i++) {
   group.add(petal);
   placeOnGlobe(group, lat, lon);
   globePivot.add(group);
+  flowers.push(group);
 }
 
 // --- DEFORM GLOBE (hills, lake basins, river channels) ---
@@ -2982,6 +2984,8 @@ function applyEnvironment() {
   document.getElementById('fog-slider').value = fogDensity * 100;
   document.getElementById('moonlight-slider').value = moonlightStrength * 100;
   winter.configure(sharedEnvironment);
+  // Keep world generation identical; only hide mobile winter decoration.
+  if (mobileGraphics) for (const flower of flowers) flower.visible = sharedEnvironment.winter !== true;
   // Toggle winter-mode class for dark button styling
   document.getElementById('game-screen').classList.toggle('winter-mode', sharedEnvironment.winter === true);
   // Sync team data

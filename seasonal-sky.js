@@ -29,7 +29,7 @@ const SKY_WEATHER_GLSL = `
   }
 `;
 
-export function createSeasonalSky(THREE, { scene, camera, starMat, radius, seed }) {
+export function createSeasonalSky(THREE, { scene, camera, starMat, radius, seed, mobile = false }) {
   const weatherUniforms = {
     weatherSeed: { value: (Number(seed) % 997) * 0.071 },
     weatherInverse: { value: new THREE.Matrix3() },
@@ -49,6 +49,7 @@ export function createSeasonalSky(THREE, { scene, camera, starMat, radius, seed 
     sunAltitude: { value: 1 }, nightVisibility: { value: 0 }, skyTime: { value: 0 }
   };
   const material = new THREE.ShaderMaterial({
+    defines: mobile ? { MOBILE_SKY: 1 } : {},
     uniforms, side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false, toneMapped: false,
     vertexShader: `
       varying vec3 skyDirection;
@@ -100,8 +101,16 @@ export function createSeasonalSky(THREE, { scene, camera, starMat, radius, seed 
           cloudSky *= 0.90 + clouds * 0.10;
           color = mix(clearSky, cloudSky, clouds);
           float opening = 1.0 - smoothstep(0.10, 0.72, clouds);
+          #ifdef MOBILE_SKY
+          // One softer curtain; skip it entirely in daylight or behind clouds.
+          // Keep the shared cloud field exact so stars and snowfall still align.
+          if (nightVisibility > 0.0 && opening > 0.0) {
+            color += auroraCurtain(localRay, 0.0) * (0.7 * opening * nightVisibility);
+          }
+          #else
           vec3 aurora = auroraCurtain(localRay, 0.0) + auroraCurtain(localRay, 0.22) * 0.45;
           color += aurora * opening * nightVisibility;
+          #endif
         }
         gl_FragColor = vec4(color, 1.0);
         #include <colorspace_fragment>

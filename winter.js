@@ -215,7 +215,8 @@ export function createWinter(THREE, world) {
 
   // Fixed particle budget. Spawn in a cap over the viewer, then fall radially in
   // the shared planet frame. Each flake stops at its first tree/terrain surface.
-  const flakeCount = 6400;
+  // Local visual density only: retain the room's shared snowfall setting.
+  const flakeCount = mobile ? 3200 : 6400;
   const flakePositions = new Float32Array(flakeCount * 3);
   const flakeWeather = new Float32Array(flakeCount * 4);
   const flakes = Array.from({ length: flakeCount }, () => ({ direction: new THREE.Vector3(), live: false, floor: 0, speed: 0 }));
