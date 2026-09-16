@@ -12,6 +12,10 @@ export function createWinter(THREE, world) {
   let hintState = '';
   const BALL_RADIUS = 0.08, FLIGHT_STEP = 1 / 60, GRAVITY_MU = 12 * radius * radius;
   const throwPower = 20;
+  const SKY_CLIMB_TIME = 2, SKY_DECAY_TURNS = 50;
+  const MAX_PROJECTILES = 100;
+  const ORBIT_TRAIL_LENGTH = Math.PI * 2 * radius / 5, ORBIT_TRAIL_SECONDS = 2;
+  const ORBIT_TRAIL_POINTS = Math.ceil(ORBIT_TRAIL_SECONDS / FLIGHT_STEP) + 2;
   const velocity = new THREE.Vector2();
   const button = document.getElementById('btn-snowball');
   const skatesButton = document.getElementById('btn-skates');
@@ -436,6 +440,7 @@ export function createWinter(THREE, world) {
     takeCone(message.cone);
   }
   const balls = [], receiveTimes = new Map();
+  let moonFlareTexture = null;
   const burstCount = 160, burstPositions = new Float32Array(burstCount * 3);
   const bursts = Array.from({ length: burstCount }, () => ({ life: 0, p: new THREE.Vector3(), v: new THREE.Vector3() }));
   let burstCursor = 0;
@@ -456,15 +461,148 @@ export function createWinter(THREE, world) {
     cone.position.copy(cone.direction).multiplyScalar(surface(cone.direction) + 0.075);
     cone.availableAt = 0; drawCone(id, true);
   }
-  function launch(owner, position, velocity, kind = enabled ? 'snowball' : 'pinecone', cone = null) {
-    if (balls.length >= 32) {
+  function createOrbitTrail(position, kind) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ORBIT_TRAIL_POINTS * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(ORBIT_TRAIL_POINTS * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setDrawRange(0, 0);
+    const material = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true,
+      opacity: 0.65, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    const line = new THREE.Line(geometry, material);
+    line.frustumCulled = false; globePivot.add(line);
+    return { line, color: new THREE.Color(kind === 'pinecone' ? 0xffc477 : 0xaaddff), distance: 0,
+      points: [{ position: position.clone(), age: 0, distance: 0 }] };
+  }
+  function updateOrbitTrail(ball) {
+    const trail = ball.trail;
+    if (!trail) return;
+    const points = trail.points, position = ball.mesh.position;
+    trail.distance += position.distanceTo(points[points.length - 1].position);
+    points.push({ position: position.clone(), age: ball.age, distance: trail.distance });
+    // Bound actual path length, not orbital angle: high-altitude trails must
+    // also stay shorter than one fifth of the globe's surface circumference.
+    while (points.length > 1 && (points.length > ORBIT_TRAIL_POINTS ||
+        ball.age - points[0].age > ORBIT_TRAIL_SECONDS ||
+        trail.distance - points[0].distance > ORBIT_TRAIL_LENGTH)) points.shift();
+    const positions = trail.line.geometry.attributes.position, colors = trail.line.geometry.attributes.color;
+    const length = Math.max(1e-6, trail.distance - points[0].distance);
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const fade = (p.distance - points[0].distance) / length;
+      positions.setXYZ(i, p.position.x, p.position.y, p.position.z);
+      // Additive black at the tail fades smoothly into the scene background.
+      colors.setXYZ(i, trail.color.r * fade * fade, trail.color.g * fade * fade, trail.color.b * fade * fade);
+    }
+    positions.needsUpdate = colors.needsUpdate = true;
+    trail.line.geometry.setDrawRange(0, points.length);
+  }
+  function removeOrbitTrail(ball) {
+    if (!ball.trail) return;
+    const { line } = ball.trail;
+    globePivot.remove(line); line.geometry.dispose(); line.material.dispose();
+    ball.trail = null;
+  }
+  function removeProjectileVisuals(ball) {
+    removeOrbitTrail(ball);
+    removeMoonFlare(ball);
+    globePivot.remove(ball.mesh);
+  }
+  function createMoonFlare(mesh) {
+    if (!moonFlareTexture) {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 64;
+      const ctx = canvas.getContext('2d');
+      const glow = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      glow.addColorStop(0, 'rgba(255,255,255,1)');
+      glow.addColorStop(0.12, 'rgba(220,235,255,0.9)');
+      glow.addColorStop(0.4, 'rgba(160,195,255,0.25)');
+      glow.addColorStop(1, 'rgba(140,180,255,0)');
+      ctx.fillStyle = glow; ctx.fillRect(0, 0, 64, 64);
+      moonFlareTexture = new THREE.CanvasTexture(canvas);
+    }
+    // Only orbital snowballs get an individual reflective material. The shared
+    // snow material also belongs to held balls, snowfall, and scenery.
+    mesh.material = snowMaterial.clone();
+    mesh.material.roughness = 0.22;
+    mesh.material.emissive.set(0x9dbfff);
+    mesh.material.emissiveIntensity = 0;
+    const flare = new THREE.Sprite(new THREE.SpriteMaterial({ map: moonFlareTexture,
+      color: 0xddeaff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+      depthWrite: false, depthTest: true, toneMapped: false }));
+    flare.visible = false; mesh.add(flare);
+    return flare;
+  }
+  function removeMoonFlare(ball) {
+    if (!ball.flare) return;
+    ball.mesh.remove(ball.flare); ball.flare.material.dispose();
+    ball.mesh.material.dispose(); ball.mesh.material = snowMaterial;
+    ball.flare = null;
+  }
+  function updateMoonFlares(lighting, inverse) {
+    const moonDirection = lighting?.moonDirection?.clone().applyQuaternion(inverse).normalize();
+    const cameraPosition = world.camera.getWorldPosition(new THREE.Vector3());
+    globePivot.worldToLocal(cameraPosition);
+    // Keep a little reflected light even with the room's moonlight slider low.
+    const moonStrength = moonDirection ? (1 - lighting.daylight) * (0.25 + lighting.moonlight * 0.75) : 0;
+    const shadowRadius = Math.max(radius, enabled ? iceRadius : waterRadius);
+    for (const ball of balls) {
+      if (!ball.flare) continue;
+      ball.flare.visible = false;
+      ball.mesh.material.emissiveIntensity = 0;
+      if (moonStrength <= 0) continue;
+      const position = ball.mesh.position;
+      const alongMoon = position.dot(moonDirection);
+      const shadowDistance = Math.sqrt(Math.max(0, position.lengthSq() - alongMoon * alongMoon));
+      const exposure = alongMoon >= 0 ? 1 : THREE.MathUtils.smoothstep(shadowDistance, shadowRadius, shadowRadius + 0.35);
+      if (exposure <= 0) continue;
+      const view = cameraPosition.clone().sub(position).normalize();
+      const half = moonDirection.clone().add(view).normalize();
+      const radial = position.clone().normalize();
+      const tangent = ball.orbit.normal.clone().cross(radial);
+      // A slowly tumbling icy facet gives a short reflection only when the
+      // moon, facet and this viewer align, rather than a constant blinking lamp.
+      const tumble = ball.age * 1.7;
+      const facet = radial.multiplyScalar(Math.cos(tumble)).addScaledVector(tangent, Math.sin(tumble))
+        .addScaledVector(ball.orbit.normal, Math.sin(tumble * 0.63) * 0.6).normalize();
+      const glint = Math.pow(Math.abs(facet.dot(half)), 48);
+      const phase = 0.15 + 0.85 * Math.pow((1 + moonDirection.dot(view)) / 2, 2);
+      const reflected = moonStrength * exposure;
+      ball.mesh.material.emissiveIntensity = reflected * (0.12 * phase + glint * 1.5);
+      ball.flare.material.opacity = reflected * (0.025 * phase + glint * 0.9);
+      ball.flare.scale.setScalar(0.2 + Math.sqrt(glint) * 1.1);
+      ball.flare.visible = true;
+    }
+  }
+  function launch(owner, position, velocity, kind = enabled ? 'snowball' : 'pinecone', cone = null, skyOrbit = false) {
+    if (balls.length >= MAX_PROJECTILES) {
       const oldest = balls.shift();
       if (oldest.kind === 'pinecone') landCone(oldest.cone, oldest.mesh.position);
-      globePivot.remove(oldest.mesh);
+      removeProjectileVisuals(oldest);
     }
     const mesh = new THREE.Mesh(kind === 'pinecone' ? coneGeo : ballGeo, kind === 'pinecone' ? coneMaterial : snowMaterial);
     mesh.position.copy(position); globePivot.add(mesh);
-    balls.push({ owner, mesh, velocity, kind, cone, age: 0, accumulator: 0 });
+    let orbit = null;
+    if (skyOrbit) {
+      const radial = position.clone().normalize();
+      const radialSpeed = velocity.dot(radial);
+      const tangent = velocity.clone().addScaledVector(radial, -radialSpeed);
+      // Exactly vertical throws still need a repeatable orbital plane on peers.
+      if (tangent.lengthSq() < 1e-8) {
+        tangent.set(Math.abs(radial.x) < 0.8 ? 1 : 0, 0, Math.abs(radial.x) < 0.8 ? 0 : 1);
+        tangent.addScaledVector(radial, -tangent.dot(radial));
+      }
+      orbit = {
+        normal: radial.clone().cross(tangent).normalize(),
+        radialSpeed,
+        tangentSpeed: Math.max(6, velocity.clone().addScaledVector(radial, -radialSpeed).length()),
+        // Lose the eventual altitude over roughly fifty clear revolutions.
+        decayPerRadian: Math.max(0.1, position.length() + Math.max(0, radialSpeed) * SKY_CLIMB_TIME -
+          (enabled ? iceRadius : waterRadius)) / (Math.PI * 2 * SKY_DECAY_TURNS)
+      };
+    }
+    const trail = orbit ? createOrbitTrail(position, kind) : null;
+    const flare = orbit && kind === 'snowball' ? createMoonFlare(mesh) : null;
+    balls.push({ owner, mesh, velocity, kind, cone, orbit, trail, flare, age: 0, accumulator: 0 });
   }
   function throwState() {
     const inverse = world.getRotation().clone().invert();
@@ -503,10 +641,10 @@ export function createWinter(THREE, world) {
       if (fallback) return { position, velocity: fallback };
       const radial = position.clone().normalize();
       const tangent = target.clone().addScaledVector(radial,-target.dot(radial)).normalize();
-      return { position, velocity: tangent.add(radial).normalize().multiplyScalar(throwPower) };
+      return { position, velocity: tangent.add(radial).normalize().multiplyScalar(throwPower), skyOrbit: true };
     }
     // Looking into empty sky has no surface destination to compensate toward.
-    return { position, velocity: viewDirection.multiplyScalar(throwPower).applyQuaternion(inverse) };
+    return { position, velocity: viewDirection.multiplyScalar(throwPower).applyQuaternion(inverse), skyOrbit: true };
   }
   function action(preferredCone = null) {
     if (!world.canAct() || elapsed - lastAction < 0.3 || packing > 0) return;
@@ -529,8 +667,8 @@ export function createWinter(THREE, world) {
     const shot = throwState();
     held = false; lastAction = elapsed; throwPose = 0.3;
     updateCrosshair();
-    launch(world.localId, shot.position, shot.velocity, enabled ? 'snowball' : 'pinecone', heldCone);
-    world.send({ type: enabled ? 'snowball' : 'pinecone', cone: heldCone, position: shot.position.toArray(), velocity: shot.velocity.toArray() });
+    launch(world.localId, shot.position, shot.velocity, enabled ? 'snowball' : 'pinecone', heldCone, shot.skyOrbit);
+    world.send({ type: enabled ? 'snowball' : 'pinecone', cone: heldCone, position: shot.position.toArray(), velocity: shot.velocity.toArray(), skyOrbit: shot.skyOrbit === true });
     heldCone = null;
   }
   function pointerHit(pointerRay) {
@@ -561,6 +699,7 @@ export function createWinter(THREE, world) {
   function receive(id, message) {
     if (!world.getPeers()[id] || elapsed - (receiveTimes.get(id) ?? -10) < 0.3) return;
     if (message.type !== (enabled ? 'snowball' : 'pinecone')) return;
+    if (message.skyOrbit !== undefined && typeof message.skyOrbit !== 'boolean') return;
     if (![message.position, message.velocity].every(v => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite))) return;
     const position = new THREE.Vector3(...message.position), speed = new THREE.Vector3(...message.velocity);
     const peer = world.getPeers()[id];
@@ -571,7 +710,7 @@ export function createWinter(THREE, world) {
       if (!Number.isSafeInteger(message.cone) || !cones[message.cone]) return;
       takeCone(message.cone);
     }
-    receiveTimes.set(id, elapsed); launch(id, position, speed, message.type, message.cone);
+    receiveTimes.set(id, elapsed); launch(id, position, speed, message.type, message.cone, message.skyOrbit === true);
   }
   const flightRay = new THREE.Raycaster();
   const iceBounds = new THREE.Sphere(new THREE.Vector3(), iceRadius);
@@ -628,23 +767,33 @@ export function createWinter(THREE, world) {
     if (!nearest && to.length() < iceBounds.radius) nearest = { point: to.clone().normalize().multiplyScalar(iceBounds.radius), mesh: null, tent: null };
     return nearest;
   }
-  function advanceFlight(position, speed) {
+  function advanceFlight(position, speed, orbit) {
     const next = position.clone();
-    advanceOrbit(next, speed, FLIGHT_STEP, GRAVITY_MU);
-    // Add extra inward pull when altitude exceeds surface by more than a small margin.
-    // This bends high-arc throws back toward Earth sooner, creating rounder paths
-    // instead of highly elliptical orbits that go way out before returning.
-    const altitude = next.length() - radius;
-    if (altitude > 0.5) {
-      const excess = altitude - 0.5;
-      const pullStrength = excess * 1.2 * FLIGHT_STEP;  // Progressive pull
-      const radial = next.clone().normalize();
-      speed.addScaledVector(radial, -pullStrength);
+    if (!orbit) {
+      // Must match ballisticArcs exactly: no sky-only forces on solved shots.
+      advanceOrbit(next, speed, FLIGHT_STEP, GRAVITY_MU);
+      return next;
     }
+    // Arcade circular gravity: inward acceleration is vt²/r, rather than a
+    // fixed inverse-square field that turns elevated launches into ellipses.
+    // Integrate the rotation exactly to avoid numerical decay across 50 laps.
+    // The launch's outward speed fades without reversing into a plunging return.
+    const r = position.length();
+    const damping = Math.exp(-FLIGHT_STEP / SKY_CLIMB_TIME);
+    const climb = orbit.radialSpeed * SKY_CLIMB_TIME * (1 - damping);
+    const angle = orbit.tangentSpeed * FLIGHT_STEP / Math.max(1, r + climb / 2);
+    const nextRadius = Math.max(0.1, r + climb - orbit.decayPerRadian * angle);
+    const radial = next.divideScalar(r).applyAxisAngle(orbit.normal, angle);
+    orbit.radialSpeed *= damping;
+    speed.copy(orbit.normal).cross(radial).multiplyScalar(orbit.tangentSpeed)
+      .addScaledVector(radial, orbit.radialSpeed - orbit.decayPerRadian * orbit.tangentSpeed / nextRadius);
+    next.multiplyScalar(nextRadius);
     return next;
   }
   function updateCrosshair() {
-    crosshair.style.display = held && world.canAct() ? 'block' : 'none';
+    const canShow = world.canAct();
+    crosshair.style.display = canShow ? 'block' : 'none';
+    if (canShow) crosshair.innerHTML = held ? targetIcon : dotIcon;
   }
   const scoreTextures = new Map(), scoreFloats = [];
   function removeScore(index) {
@@ -720,7 +869,7 @@ export function createWinter(THREE, world) {
         ball.mesh.rotateX(delta * 9);
         if (t === 1) {
           landCone(ball.cone, ball.bounce.to);
-          globePivot.remove(ball.mesh); balls.splice(i, 1);
+          removeProjectileVisuals(ball); balls.splice(i, 1);
         }
         continue;
       }
@@ -728,10 +877,11 @@ export function createWinter(THREE, world) {
       while (ball.accumulator >= FLIGHT_STEP && !impact) {
         ball.accumulator -= FLIGHT_STEP;
         const from = ball.mesh.position.clone();
-        const to = advanceFlight(from, ball.velocity);
+        const to = advanceFlight(from, ball.velocity, ball.orbit);
         const hit = flightHit(from, to, ball.age < 0.4 ? ball.owner : null, inverse);
         if (hit) {
           to.copy(hit.point); impact = true;
+          removeOrbitTrail(ball);
           if (hit.mesh) {
             // Hit a player
             hit.mesh.userData.snowHitUntil = elapsed + 0.45;
@@ -768,11 +918,12 @@ export function createWinter(THREE, world) {
         }
         ball.mesh.position.copy(to);
         ball.age += FLIGHT_STEP;
+        updateOrbitTrail(ball);
       }
       if (impact) {
         if (ball.kind === 'pinecone') continue;
         if (ball.kind === 'snowball') splat(ball.mesh.position);
-        globePivot.remove(ball.mesh); balls.splice(i, 1);
+        removeProjectileVisuals(ball); balls.splice(i, 1);
       }
     }
     for (let i = 0; i < burstCount; i++) {
@@ -885,7 +1036,8 @@ export function createWinter(THREE, world) {
   const pineconeIcon = icon('<path d="M12 3c-3 0-7 7-7 12s3 7 7 7 7-2 7-7S15 3 12 3Z" fill="#89512e" fill-opacity=".7"/><path d="M12 3V1M8 7l4 3 4-3M6 11l6 4 6-4M5 16l7 4 7-4M12 10v5M8 13v5M16 13v5"/>');
   button.innerHTML = snowballIcon;
   const targetIcon = icon('<circle cx="12" cy="12" r="7"/><path d="M12 1v22M1 12h22"/>');
-  crosshair.innerHTML = targetIcon;
+  const dotIcon = icon('<circle cx="12" cy="12" r="3" fill="#e32636" stroke="none"/>');
+  crosshair.innerHTML = dotIcon;
   const actionHint = document.createElement('span');
   actionHint.className = 'winter-hint';
   button.append(actionHint);
@@ -945,7 +1097,7 @@ export function createWinter(THREE, world) {
       flakeGeo.attributes.position.needsUpdate = flakeGeo.attributes.weather.needsUpdate = true;
       for (const ball of balls) {
         if (ball.kind === 'pinecone') landCone(ball.cone, ball.mesh.position);
-        globePivot.remove(ball.mesh);
+        removeProjectileVisuals(ball);
       }
       balls.length = 0;
       while (scoreFloats.length) removeScore(0);
@@ -1047,6 +1199,7 @@ export function createWinter(THREE, world) {
     skatesButton.disabled = !canAct;
     const inverse = world.getRotation().clone().invert();
     flightObstacles = world.getObstacles();
+    const lighting = world.getLighting?.();
     if (enabled) {
     const count = Math.round(flakeCount * snowfall);
     flakeGeo.setDrawRange(0, count);
@@ -1068,8 +1221,7 @@ export function createWinter(THREE, world) {
       snowVelocity.value.set(0, 0, 0);
     }
     // Snowflake brightness: dim at night, bright in daylight. Flashlight is per-flake in shader.
-    if (world.getLighting) {
-      const lighting = world.getLighting();
+    if (lighting) {
       // Base brightness from daylight (0.15 at night with moonlight, up to 1.0 in full day)
       const baseBrightness = 0.12 + lighting.daylight * 0.88 + (1 - lighting.daylight) * lighting.moonlight * 0.08;
       snowBrightness.value = baseBrightness;
@@ -1119,6 +1271,7 @@ export function createWinter(THREE, world) {
     }
     updateCrosshair();
     updateBalls(delta, inverse);
+    updateMoonFlares(lighting, inverse);
     updateScores(delta);
   }
   return { configure, movement, update, action, interact, receive, receivePickup, updateHints, toggleSkates,
