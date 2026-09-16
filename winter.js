@@ -14,7 +14,7 @@ export function createWinter(THREE, world) {
   const throwPower = 20;
   const SKY_CLIMB_TIME = 2, SKY_DECAY_TURNS = 50;
   const MAX_PROJECTILES = 100;
-  const ORBIT_TRAIL_LENGTH = Math.PI * 2 * radius / 5, ORBIT_TRAIL_SECONDS = 2;
+  const ORBIT_TRAIL_LENGTH = Math.PI * 2 * radius / 5 * 0.7, ORBIT_TRAIL_SECONDS = 1.4;
   const ORBIT_TRAIL_POINTS = Math.ceil(ORBIT_TRAIL_SECONDS / FLIGHT_STEP) + 2;
   const velocity = new THREE.Vector2();
   const button = document.getElementById('btn-snowball');
@@ -600,7 +600,7 @@ export function createWinter(THREE, world) {
           (enabled ? iceRadius : waterRadius)) / (Math.PI * 2 * SKY_DECAY_TURNS)
       };
     }
-    const trail = orbit ? createOrbitTrail(position, kind) : null;
+    const trail = createOrbitTrail(position, kind);
     const flare = orbit && kind === 'snowball' ? createMoonFlare(mesh) : null;
     balls.push({ owner, mesh, velocity, kind, cone, orbit, trail, flare, age: 0, accumulator: 0 });
   }
@@ -1275,8 +1275,76 @@ export function createWinter(THREE, world) {
     updateMoonFlares(lighting, inverse);
     updateScores(delta);
   }
+  
+  // Serialize pinecone positions and orbiting projectiles for session persistence
+  function getProjectileState() {
+    // Pinecones: save position and direction for cones that have moved (availableAt !== 0 means taken/in-flight)
+    const pinecones = cones.map((c, i) => ({
+      position: c.position.toArray(),
+      direction: c.direction.toArray(),
+      available: c.availableAt === 0
+    }));
+    // Orbiting projectiles: only save those with orbit (in stable orbit)
+    const projectiles = balls.filter(b => b.orbit).map(b => ({
+      kind: b.kind,
+      cone: b.cone,
+      position: b.mesh.position.toArray(),
+      velocity: b.velocity.toArray(),
+      orbit: {
+        normal: b.orbit.normal.toArray(),
+        radialSpeed: b.orbit.radialSpeed,
+        tangentSpeed: b.orbit.tangentSpeed,
+        decayPerRadian: b.orbit.decayPerRadian
+      },
+      age: b.age
+    }));
+    return { pinecones, projectiles };
+  }
+  
+  // Restore pinecone positions and orbiting projectiles from saved state
+  function setProjectileState(state) {
+    if (!state) return;
+    // Restore pinecone positions
+    if (state.pinecones && state.pinecones.length === cones.length) {
+      for (let i = 0; i < cones.length; i++) {
+        const saved = state.pinecones[i];
+        cones[i].position.fromArray(saved.position);
+        cones[i].direction.fromArray(saved.direction);
+        cones[i].availableAt = saved.available ? 0 : Infinity;
+        drawCone(i, saved.available);
+      }
+    }
+    // Restore orbiting projectiles
+    if (state.projectiles) {
+      for (const p of state.projectiles) {
+        const position = new THREE.Vector3().fromArray(p.position);
+        const velocity = new THREE.Vector3().fromArray(p.velocity);
+        const orbit = {
+          normal: new THREE.Vector3().fromArray(p.orbit.normal),
+          radialSpeed: p.orbit.radialSpeed,
+          tangentSpeed: p.orbit.tangentSpeed,
+          decayPerRadian: p.orbit.decayPerRadian
+        };
+        // Create the projectile mesh
+        const mesh = new THREE.Mesh(
+          p.kind === 'pinecone' ? coneGeo : ballGeo,
+          p.kind === 'pinecone' ? coneMaterial : snowMaterial
+        );
+        mesh.position.copy(position);
+        globePivot.add(mesh);
+        const trail = createOrbitTrail(position, p.kind);
+        const flare = p.kind === 'snowball' ? createMoonFlare(mesh) : null;
+        balls.push({
+          owner: world.localId, // Restored projectiles belong to local player
+          mesh, velocity, kind: p.kind, cone: p.cone, orbit, trail, flare,
+          age: p.age || 0, accumulator: 0
+        });
+      }
+    }
+  }
+  
   return { configure, movement, update, action, interact, receive, receivePickup, updateHints, toggleSkates,
-    collide, receiveIceContact, sharedVelocity,
+    collide, receiveIceContact, sharedVelocity, getProjectileState, setProjectileState,
     get snowy() { return enabled && (cover > 0 || snowfall > 0); },
     stop: () => velocity.set(0, 0),
     get holding() { return held && world.canAct(); },

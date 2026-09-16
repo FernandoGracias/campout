@@ -62,7 +62,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v212</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v213</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -109,7 +109,7 @@ canvas { display: block; }
     <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
     <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v212</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v213</div>
 </div>
 
 <!-- GAME OVER SCREEN -->
@@ -258,7 +258,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v212</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v213</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -272,7 +272,7 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=211';
+import { createWinter } from './winter.js?v=212';
 
 // Toast notification system - defined early since used by WebSocket handlers
 function showToast(message, duration = 5000) {
@@ -325,6 +325,8 @@ function saveSession() {
     cameraAngle: window.cameraAngle,
     campState: localCampState,
     environment: sharedEnvironment ? { winter: sharedEnvironment.winter, snowCover: sharedEnvironment.snowCover, snowfall: sharedEnvironment.snowfall } : null,
+    teamScores: sharedEnvironment?.teamScores ? { ...sharedEnvironment.teamScores } : teamScores,
+    projectileState: window.getProjectileState?.() || null,
     savedAt: Date.now()
   };
   localStorage.setItem('campout-session', JSON.stringify(session));
@@ -1823,6 +1825,8 @@ const winter = createWinter(THREE, {
 window.receiveSnowball = winter.receive;
 window.receivePineconePickup = winter.receivePickup;
 window.receiveIceContact = winter.receiveIceContact;
+window.getProjectileState = winter.getProjectileState;
+window.setProjectileState = winter.setProjectileState;
 document.getElementById('btn-snowball').addEventListener('click', winter.action);
 document.getElementById('btn-skates').addEventListener('click', winter.toggleSkates);
 
@@ -3895,6 +3899,16 @@ if (savedSession && savedSession.roomId === roomId && savedSession.globeRotation
     if (window.applyEnvironment) window.applyEnvironment();
     // Publish after a short delay to give peers time to connect
     setTimeout(() => publishEnvironment({}), 2000);
+  }
+  // Restore team scores from session (for solo play persistence)
+  if (savedSession.teamScores) {
+    teamScores = { ...savedSession.teamScores };
+    if (sharedEnvironment) sharedEnvironment.teamScores = { ...teamScores };
+    updateTeamLeaderboard();
+  }
+  // Restore pinecones and orbiting projectiles
+  if (savedSession.projectileState && window.setProjectileState) {
+    window.setProjectileState(savedSession.projectileState);
   }
 }
 
