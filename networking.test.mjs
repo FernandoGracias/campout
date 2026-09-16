@@ -51,6 +51,8 @@ function browser() {
     URLSearchParams,
     localStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
     showToast() {},
+    createLobbyWeather: () => ({ sync() {} }),
+    createLaunchPreview: () => ({ dispose() {} }),
     document: { getElementById: element, querySelectorAll: () => [], addEventListener() {} },
     console: { error() {}, log() {}, warn() {} },
     WebSocket: Socket, RTCPeerConnection: PC,
@@ -144,7 +146,7 @@ test('retreat starts at contact and travels the same distance at different frame
   }
 });
 
-test('client joins before receiving TURN credentials and waits for server readiness', async () => {
+test('client joins before receiving TURN credentials and waits for readiness and team assignment', async () => {
   const { context, ws, element } = browser();
   assert.match(ws.url, /\/api\/room\/0123456789ab$/);
   assert.equal(ws.sent[0].type, 'join');
@@ -157,6 +159,8 @@ test('client joins before receiving TURN credentials and waits for server readin
   assert.equal(element('btn-enter-world').disabled, true);
   ws.message({ type: 'ready' });
   await tick();
+  assert.equal(element('btn-enter-world').disabled, true);
+  vm.runInContext("teamAssignments.middle = 'red'; updateTeamLobby();", context);
   assert.equal(element('btn-enter-world').disabled, false);
   assert.equal(element('lobby-seed-display').textContent, 'seed: 0');
 });

@@ -1,16 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import vm from 'node:vm';
 import { test } from 'node:test';
+import { createSwimming } from './swimming.js';
 
-const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
-const source = html.slice(html.indexOf('function updateSwimming('), html.indexOf('// --- PLAYER ---'));
-const context = vm.createContext({
-  WATER_RADIUS: 20,
-  SWIM_DEPTH: 0.72,
-  THREE: { MathUtils: { lerp: (a, b, t) => a + (b - a) * t } },
-});
-vm.runInContext(source, context);
+const context = createSwimming({ MathUtils: { lerp: (a, b, t) => a + (b - a) * t } }, 20, 0.72);
 
 function camper() {
   const userData = {};
