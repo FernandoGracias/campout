@@ -273,6 +273,7 @@ canvas { display: block; }
 <script type="module">
 import * as THREE from 'three';
 import { createWinter } from './winter.js?v=212';
+import { createSeasonalSky } from './seasonal-sky.js';
 
 // Toast notification system - defined early since used by WebSocket handlers
 function showToast(message, duration = 5000) {
@@ -1375,6 +1376,7 @@ scene.add(fireflies);
 // --- GLOBE PIVOT (everything on the globe goes in here) ---
 const globePivot = new THREE.Group();
 scene.add(globePivot);
+const seasonalSky = createSeasonalSky(THREE, { scene, camera, starMat, radius: GLOBE_RADIUS, seed });
 
 const globeGeo = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
 const globeMat = new THREE.MeshStandardMaterial({
@@ -1817,6 +1819,7 @@ globePivot.add(waterSphere);
 
 const winter = createWinter(THREE, {
   mobile: mobileGraphics,
+  weatherUniforms: seasonalSky.weatherUniforms,
   scene, camera, globePivot, globe, trees, waterSphere, radius: GLOBE_RADIUS, waterRadius: WATER_RADIUS,
   get localId() { return localPlayerId; }, getPlayer: () => player, getPeers: () => otherPlayers,
   serverNow: roomNow,
@@ -3847,8 +3850,10 @@ function updateDayNight(delta) {
   const daylight = THREE.MathUtils.smoothstep(sunAltitude, -0.12, 0.22);
   const twilight = Math.exp(-Math.pow(sunAltitude / 0.12, 2)) * 0.65;
   const snowy = winter.snowy;
-  const skyColor = new THREE.Color(0x0a0a1e).lerp(new THREE.Color(snowy ? 0xc3ccd1 : 0x68b8e8), daylight)
-    .lerp(new THREE.Color(snowy ? 0xcdd0d2 : 0xffaa55), twilight);
+  const skyColor = new THREE.Color(0x0a0a1e).lerp(new THREE.Color(winter.enabled ? 0xc3ccd1 : 0x68b8e8), daylight)
+    .lerp(new THREE.Color(winter.enabled ? 0xcdd0d2 : 0xffaa55), twilight);
+  seasonalSky.update({ rotation: globeRotation, playerPosition: player.position, winter: winter.enabled,
+    skyColor, daylight, twilight, sunAltitude, time: (roomNow() / 1000) % 86400 });
   sun.color.setHex(snowy ? 0xffffff : 0xfff4e0);
   sunSphere.material.color.setHex(snowy ? 0xf3f4f5 : 0xffee88);
   hemi.groundColor.setHex(snowy ? 0xa6adb3 : 0x446622);
@@ -3914,8 +3919,7 @@ function updateDayNight(delta) {
     localNameLabel.scale.set(scale * 3, scale * 0.75, 1);
   }
 
-  // Stars visible at night
-  starMat.opacity = 1 - THREE.MathUtils.smoothstep(sunAltitude, -0.25, 0.02);
+  // Star visibility and winter cloud occlusion are handled by seasonalSky.
 
   // Fireflies visible at dusk/night, but not in winter
   const fireflyVisibility = winter.enabled ? 0 : 1 - THREE.MathUtils.smoothstep(sunAltitude, -0.1, 0.15);
@@ -4075,7 +4079,7 @@ function animate() {
   if (gamepadB && !isSleeping && !minigamesOpen) {
     if (flashlightOn || flashlightBattery > 0) {  // Can only turn on if battery > 0
       flashlightOn = !flashlightOn;
-      document.getElementById('btn-flashlight').style.borderColor = flashlightOn ? '#f0c040' : 'rgba(255,255,255,0.3)';
+      document.getElementById('btn-flashlight').style.borderColor = 'rgba(255,255,255,0.3)';
     }
   }
   // Tent entry and waking are exclusively A interactions.
