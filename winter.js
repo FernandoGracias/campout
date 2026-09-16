@@ -631,6 +631,16 @@ export function createWinter(THREE, world) {
   function advanceFlight(position, speed) {
     const next = position.clone();
     advanceOrbit(next, speed, FLIGHT_STEP, GRAVITY_MU);
+    // Add extra inward pull when altitude exceeds surface by more than a small margin.
+    // This bends high-arc throws back toward Earth sooner, creating rounder paths
+    // instead of highly elliptical orbits that go way out before returning.
+    const altitude = next.length() - radius;
+    if (altitude > 0.5) {
+      const excess = altitude - 0.5;
+      const pullStrength = excess * 1.2 * FLIGHT_STEP;  // Progressive pull
+      const radial = next.clone().normalize();
+      speed.addScaledVector(radial, -pullStrength);
+    }
     return next;
   }
   function updateCrosshair() {

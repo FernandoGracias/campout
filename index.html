@@ -62,7 +62,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v209</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v210</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -109,7 +109,7 @@ canvas { display: block; }
     <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
     <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v209</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v210</div>
 </div>
 
 <!-- GAME OVER SCREEN -->
@@ -258,7 +258,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v209</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v210</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -2803,7 +2803,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'g' && !e.repeat) openMinigames();
   if (e.key === '=' || e.key === '+') cameraDistance = Math.max(4, cameraDistance - 0.5);
   if (e.key === '-') cameraDistance = Math.min(60, cameraDistance + 0.5);
-  if (e.key.toLowerCase() === 't' && !e.repeat) interactWithCamp();
+  if (e.key.toLowerCase() === 't' && !e.repeat && !isSleeping) pitchCamp();
+  if (e.key.toLowerCase() === 'e' && !e.repeat) interactWithCamp();
   if (e.key === 'f' && !e.repeat && !isSleeping) {
     if (flashlightOn || flashlightBattery > 0) {
       flashlightOn = !flashlightOn;
@@ -3573,10 +3574,10 @@ function updateCampInteraction() {
   }
   const target = nearbyCampInteraction();
   campInteraction.style.display = target ? 'block' : 'none';
-  // X always packs/pitches; only the keyboard T badge conflicts with interaction.
-  document.getElementById('hint-pitch').style.display = (target && lastInputMode !== 'gamepad') || lastInputMode === 'touch' ? 'none' : 'block';
+  // E is now for interaction, T is for pack/place - hint always visible
+  document.getElementById('hint-pitch').style.display = lastInputMode === 'touch' ? 'none' : 'block';
   if (!target) return;
-  const key = lastInputMode === 'gamepad' ? 'A' : lastInputMode === 'touch' ? 'Tap' : 'T';
+  const key = lastInputMode === 'gamepad' ? 'A' : lastInputMode === 'touch' ? 'Tap' : 'E';
   const action = target.type === 'tent' ? (isSleeping ? 'Wake up' : 'Enter tent') : (sittingFireId !== null ? 'Stand up' : 'Sit by fire');
   campInteraction.textContent = `${key} · ${action}`;
   campInteraction.style.left = `${(target.screen.x * 0.5 + 0.5) * window.innerWidth}px`;
