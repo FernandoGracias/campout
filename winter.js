@@ -791,7 +791,8 @@ export function createWinter(THREE, world) {
     return next;
   }
   function updateCrosshair() {
-    const canShow = world.canAct();
+    let canShow = false;
+    try { canShow = world.canAct(); } catch { /* not yet initialized */ }
     crosshair.style.display = canShow ? 'block' : 'none';
     if (canShow) crosshair.innerHTML = held ? targetIcon : dotIcon;
   }
