@@ -4,8 +4,8 @@ import { buildTent } from './tent.js';
 import { createWorld } from './world.js';
 import { createSeasonalSky } from './seasonal-sky.js';
 import { skyLighting } from './sky-lighting.js';
-import { createNameLabel, updateNameLabel } from './player-labels.js';
-import { mulberry32, TEAM_COLORS, teamLabelColor, disposeObject } from './game-utils.js';
+import { createNameLabel, updateNameLabel } from './player-labels.js?v=221';
+import { mulberry32, TEAM_COLORS, teamLabelColor, disposeObject } from './game-utils.js?v=221';
 
 // The preview owns its renderer and resources, and is disposed before gameplay.
 // It reads room state but never joins networking or simulates gameplay actions.
@@ -128,6 +128,7 @@ export function createLaunchPreview(container, getState) {
         terrainColors.needsUpdate = true;
         for (const item of foliage) item.material.color.copy(item.color).lerp(white, cover);
         ice.visible = winter;
+        for (const flower of world.flowers) flower.visible = !winter;
         world.waterSphere.visible = !winter;
         weatherKey = nextWeather;
       }

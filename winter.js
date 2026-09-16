@@ -1,6 +1,7 @@
 import { iceImpulse, advanceOrbit, ballisticArcs } from './winter-physics.js?v=190';
 import { CLOUD_FIELD_GLSL } from './seasonal-sky.js';
-import { createPinecones } from './pinecones.js';
+import { createPinecones } from './pinecones.js?v=221';
+import { createPineconeFire } from './pinecone-fire.js';
 
 // Seasonal equipment uses planet-local coordinates, including summer pinecones.
 export function createWinter(THREE, world) {
@@ -390,9 +391,11 @@ export function createWinter(THREE, world) {
 
   const ballGeo = new THREE.IcosahedronGeometry(BALL_RADIUS, 1);
   const { cones, coneGeo, coneMaterial, groundCones, drawCone, nearbyCone, takeCone, landCone,
-    restingPosition, settleInWater, orientCone } = createPinecones(THREE, {
+    restingPosition, settleInWater, orientCone, isWaterPosition } = createPinecones(THREE, {
     world, treeColumns, terrainPatches, surface, getEnabled: () => enabled, getElapsed: () => elapsed,
   });
+  const pineconeFire = createPineconeFire(THREE);
+  let lastIgniteRequest = -10;
   const balls = [];
   let projectileReady = false, projectileAuthority = null, projectileRevision = -1;
   let pendingPickup = null, lastCheckpoint = 0, lastProjectileHeartbeat = 0;
@@ -549,6 +552,7 @@ export function createWinter(THREE, world) {
     const trail = createOrbitTrail(position, kind);
     const flare = orbit && kind === 'snowball' ? createMoonFlare(mesh) : null;
     const ball = { id: crypto.randomUUID(), owner, mesh, velocity, kind, cone, orbit, trail, flare,
+      burningUntil: kind === 'pinecone' ? cones[cone]?.burningUntil || 0 : 0,
       age: 0, step: 0, launchTime: projectileNow(), confirmed: false };
     balls.push(ball);
     return ball;
@@ -572,6 +576,7 @@ export function createWinter(THREE, world) {
     const ball = launch(data.owner, new THREE.Vector3().fromArray(data.position),
       new THREE.Vector3().fromArray(data.velocity), data.kind, data.cone, data.skyOrbit);
     Object.assign(ball, { id: data.id, launchTime: data.launchTime, step: data.step, age: data.step * FLIGHT_STEP, confirmed: true });
+    ball.burningUntil = data.burningUntil || 0;
     ball.visualImpact = visualImpact;
     if (visualImpact) removeOrbitTrail(ball);
     ball.collisionStartStep = restoring ? Math.max(data.step, Math.floor((projectileNow() - data.launchTime) / (FLIGHT_STEP * 1000))) : 0;
@@ -618,6 +623,7 @@ export function createWinter(THREE, world) {
         if (!saved) { takeCone(i); continue; }
         cones[i].position.fromArray(saved.position); cones[i].direction.copy(cones[i].position).normalize();
         cones[i].position.copy(settleInWater(cones[i].position));
+        cones[i].burningUntil = saved.burningUntil || 0;
         cones[i].availableAt = saved.available ? 0 : Infinity; drawCone(i, saved.available);
         if (saved.holder === world.localId && !enabled) { heldCone = i; held = true; }
       }
@@ -628,19 +634,27 @@ export function createWinter(THREE, world) {
       for (const id of message.removed || []) removeBall(id);
       launchFromServer(message.data);
     } else if (message.type === 'pinecone-picked-up') {
-      if (cones[message.cone]) takeCone(message.cone);
+      if (cones[message.cone]) {
+        takeCone(message.cone);
+        cones[message.cone].burningUntil = message.burningUntil || 0;
+      }
       if (message.holder === world.localId) {
         pendingPickup = null;
         if (enabled || !world.canAct()) world.sendSignal({ type: 'pinecone-release', cone: message.cone });
         else { held = true; heldCone = message.cone; }
       }
+    } else if (message.type === 'pinecone-ignited') {
+      if (cones[message.cone]) cones[message.cone].burningUntil = message.burningUntil || 0;
+      if (message.holder === world.localId) world.toast('Flaming pinecone!');
     } else if (message.type === 'projectile-land') {
       removeBall(message.id);
       landCone(message.cone, new THREE.Vector3().fromArray(message.position));
+      if (cones[message.cone]) cones[message.cone].burningUntil = message.burningUntil || 0;
       if (heldCone === message.cone) { heldCone = null; held = false; }
     } else if (message.type === 'projectile-impact') {
       const ball = balls.find(b => b.id === message.id);
       if (ball) {
+        ball.burningUntil = message.burningUntil || 0;
         ball.pendingImpact = null; removeOrbitTrail(ball);
         if (message.bounce) {
           ball.bounce = { from: new THREE.Vector3().fromArray(message.bounce.from), to: new THREE.Vector3().fromArray(message.bounce.to), startedAt: message.bounce.startedAt };
@@ -1009,6 +1023,7 @@ export function createWinter(THREE, world) {
           const victim = hit.mesh === world.getPlayer() ? world.localId :
             Object.entries(world.getPeers()).find(([, peer]) => peer.mesh === hit.mesh)?.[0] || null;
           const message = { type: 'projectile-impact', id: ball.id, position: to.toArray(), landing,
+            extinguish: ball.kind === 'pinecone' && isWaterPosition(new THREE.Vector3().fromArray(landing)),
             step: ball.step, victim, tentOwner: historical ? null : hit.tent?.owner || null };
           ball.mesh.position.copy(to); ball.mesh.visible = !historical && !ball.visualImpact;
           ball.pendingImpact = { message, sentAt: now };
@@ -1042,7 +1057,7 @@ export function createWinter(THREE, world) {
 
   const bladeGeo = new THREE.BoxGeometry(0.025, 0.045, 0.25);
   const bladeMaterial = new THREE.MeshStandardMaterial({ color: 0xa8b4be, roughness: 0.3, metalness: 0.7 });
-  function equip(mesh, carrying, skating, moving, kind = enabled ? 'snowball' : 'pinecone') {
+  function equip(mesh, carrying, skating, moving, kind = enabled ? 'snowball' : 'pinecone', burning = false) {
     const s = mesh.userData;
     if (!carrying && !skating && !s.winterEquipment) return;
     if (!s.winterEquipment) {
@@ -1062,6 +1077,7 @@ export function createWinter(THREE, world) {
     s.winterEquipment.ball.geometry = kind === 'pinecone' ? coneGeo : ballGeo;
     s.winterEquipment.ball.material = kind === 'pinecone' ? coneMaterial : snowMaterial;
     s.winterEquipment.ball.visible = carrying && mesh.visible;
+    pineconeFire.update(s.winterEquipment.ball, carrying && kind === 'pinecone' && burning, elapsed);
     if (carrying) s.rightArm.rotation.x = -1.2;
     for (const blade of s.winterEquipment.blades) blade.visible = enabled && skating;
     if (enabled && skating && s.onIce) {
@@ -1287,12 +1303,22 @@ export function createWinter(THREE, world) {
     const player = world.getPlayer();
     const canAct = world.canAct();
     if (!canAct) packing = 0;
-    equip(player, held && canAct, enabled && skates, velocity.lengthSq() > 0.0001);
+    const fireNow = projectileNow();
+    const heldBurning = !enabled && held && (cones[heldCone]?.burningUntil || 0) > fireNow;
+    if (!enabled && held && canAct && !heldBurning && world.canIgnitePinecones?.() && elapsed - lastIgniteRequest > 1) {
+      const fire = world.getOwnFirePosition?.();
+      if (fire && player.position.distanceTo(fire) < 1.7) {
+        lastIgniteRequest = elapsed;
+        world.sendSignal({ type: 'pinecone-ignite', cone: heldCone });
+      }
+    }
+    equip(player, held && canAct, enabled && skates, velocity.lengthSq() > 0.0001,
+      enabled ? 'snowball' : 'pinecone', heldBurning);
     for (const peer of Object.values(world.getPeers())) {
       const fresh = performance.now() - peer.motionReceivedAt < 2000;
       equip(peer.mesh, fresh && !!(peer.motion?.snowball || peer.motion?.pinecone),
         enabled && peer.mesh.userData.skating, peer.isWalking && peer.interpT < 1,
-        peer.motion?.pinecone ? 'pinecone' : 'snowball');
+        peer.motion?.pinecone ? 'pinecone' : 'snowball', fresh && peer.motion?.flamingPinecone === true);
       if (peer.torch?.visible) peer.mesh.userData.flashlightLens.getWorldPosition(peer.torch.position);
     }
     skatesButton.style.display = enabled && (skates || player.userData.onIce) ? 'flex' : 'none';
@@ -1371,6 +1397,21 @@ export function createWinter(THREE, world) {
     }
     updateCrosshair();
     updateBalls(delta, inverse);
+    for (const ball of balls) if (ball.kind === 'pinecone') {
+      if (!ball.bounce) ball.mesh.rotation.set(ball.age * 9 + ball.cone * 1.7, ball.age * 5.3, ball.age * 3.7);
+      pineconeFire.update(ball.mesh, ball.burningUntil > fireNow && ball.mesh.visible, elapsed);
+    }
+    for (const cone of cones) {
+      const burning = !enabled && cone.availableAt <= elapsed && cone.burningUntil > fireNow;
+      if (burning && !cone.fireAnchor) {
+        cone.fireAnchor = new THREE.Group();
+        globePivot.add(cone.fireAnchor);
+      }
+      if (cone.fireAnchor) {
+        cone.fireAnchor.position.copy(cone.position);
+        pineconeFire.update(cone.fireAnchor, burning, elapsed);
+      }
+    }
     updateMoonFlares(lighting, inverse);
     updateScores(delta);
   }
@@ -1380,6 +1421,7 @@ export function createWinter(THREE, world) {
     get snowy() { return enabled && (cover > 0 || snowfall > 0); },
     stop: () => velocity.set(0, 0),
     get holding() { return held && world.canAct(); },
+    get flamingPinecone() { return !enabled && held && (cones[heldCone]?.burningUntil || 0) > projectileNow(); },
     get skating() { return enabled && skates; },
     get enabled() { return enabled; }, iceRadius };
 }

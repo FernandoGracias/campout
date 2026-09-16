@@ -85,5 +85,5 @@ export function createPinecones(THREE, { world, treeColumns, terrainPatches, sur
     cone.availableAt = 0; drawCone(id, true);
   }
   return { cones, coneGeo, coneMaterial, groundCones, drawCone, nearbyCone, takeCone, landCone,
-    restingPosition, settleInWater, orientCone };
+    restingPosition, settleInWater, orientCone, isWaterPosition: position => !!waterPoint(position.clone().normalize()) };
 }

@@ -63,7 +63,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v220</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v221</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -121,7 +121,7 @@ canvas { display: block; }
       <span style="color:#aaa;font-size:12px;">Your team: </span><span id="lobby-team-name" style="font-weight:bold;font-size:14px;"></span>
     </div>
     <fieldset id="lobby-weather" disabled>
-      <legend>World &amp; Weather <small>(shared)</small></legend>
+      <legend>World &amp; Weather <small>(creator only)</small></legend>
       <label for="lobby-winter"><input id="lobby-winter" type="checkbox"> Winter</label>
       <label for="lobby-hour">Time of day <output id="lobby-hour-value">12:00</output></label>
       <input id="lobby-hour" type="range" min="0" max="24" step="0.1" value="12">
@@ -135,7 +135,7 @@ canvas { display: block; }
     <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
     <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
   </div>
-  <div class="lobby-version">v220</div>
+  <div class="lobby-version">v221</div>
   </div>
 </div>
 
@@ -285,7 +285,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v220</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v221</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -299,18 +299,18 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=217';
+import { createWinter } from './winter.js?v=221';
 import { createSeasonalSky } from './seasonal-sky.js';
 import { createSwimming } from './swimming.js';
 import { buildPlayer, setPlayerGender } from './character.js';
-import { createNameLabel, updateNameLabel } from './player-labels.js';
+import { createNameLabel, updateNameLabel } from './player-labels.js?v=221';
 import { createWorld } from './world.js';
 import { createGlobeUtils } from './globe-utils.js';
 import { buildTent } from './tent.js';
 import { skyLighting } from './sky-lighting.js';
-import { createLaunchPreview } from './launch-preview.js';
+import { createLaunchPreview } from './launch-preview.js?v=221';
 import { createLobbyWeather } from './lobby-weather.js';
-import { mulberry32, TEAM_COLORS, teamLabelColor, disposeObject as disposeCampObject } from './game-utils.js';
+import { mulberry32, TEAM_COLORS, teamLabelColor, disposeObject as disposeCampObject } from './game-utils.js?v=221';
 
 // Toast notification system - defined early since used by WebSocket handlers
 function showToast(message, duration = 5000) {
@@ -353,17 +353,21 @@ function formatWorldCode(code) {
 // Session persistence
 function saveSession() {
   if (!roomId || !localPlayerId) return;
+  const previous = loadSession();
+  const restoring = !window.globeRotation && previous?.roomId === roomId ? previous : null;
   const session = {
     roomId,
     localPlayerId,
     playerName,
     playerGender,
+    createdWorld,
+    localTeam,
     lobbyTentColor,
     lobbyTentStyle,
-    globeRotation: window.globeRotation ? { x: window.globeRotation.x, y: window.globeRotation.y, z: window.globeRotation.z, w: window.globeRotation.w } : null,
-    cameraAngle: window.cameraAngle,
-    campState: localCampState,
-    environment: sharedEnvironment ? { winter: sharedEnvironment.winter, snowCover: sharedEnvironment.snowCover, snowfall: sharedEnvironment.snowfall } : null,
+    globeRotation: window.globeRotation ? { x: window.globeRotation.x, y: window.globeRotation.y, z: window.globeRotation.z, w: window.globeRotation.w } : restoring?.globeRotation || null,
+    cameraAngle: window.cameraAngle ?? restoring?.cameraAngle,
+    campState: window.globeRotation ? localCampState : restoring?.campState || localCampState,
+    environment: sharedEnvironment ? { ...sharedEnvironment } : null,
     teamScores: sharedEnvironment?.teamScores ? { ...sharedEnvironment.teamScores } : teamScores,
     savedAt: Date.now()
   };
@@ -410,6 +414,10 @@ let signalingWs = null;
 let signalingReconnectTimer = null, signalingReconnectAttempts = 0;
 let lastSignalingDisconnect = null;
 let projectileProtocol = 0;
+let pineconeFireProtocol = 0;
+let environmentProtocol = 0;
+let worldSettingsOwner = false;
+let scoreRevision = 0;
 let localPlayerId = null;
 let multiplayerReady = false;
 let turnRefreshTimer = null;
@@ -430,7 +438,7 @@ let sharedEnvironment = null;
 let launchPreview = null;
 const lobbyWeather = createLobbyWeather({
   getEnvironment: () => sharedEnvironment, getHour: sharedHour,
-  canEdit: () => multiplayerReady, publish: publishEnvironment,
+  canEdit: canChangeWorldSettings, publish: publishEnvironment,
 });
 let environmentSendTimer = null;
 let roomClockOffset = 0;
@@ -446,6 +454,37 @@ let gameOverShown = false;
 let flashlightBattery = 1.0;  // 0-1, 1 = full
 const FLASHLIGHT_DRAIN_TIME = 120;  // 2 minutes to drain
 const FLASHLIGHT_RECHARGE_TIME = 10;  // 10 seconds to recharge
+
+const WORLD_SETTING_KEYS = ['hour', 'paused', 'rate', 'fog', 'moonlight', 'winter', 'snowCover', 'snowfall'];
+function ownerToken() {
+  try { return JSON.parse(localStorage.getItem('campout-world-owners') || '{}')[roomId] || null; }
+  catch { return null; }
+}
+function rememberOwnerToken(token) {
+  if (typeof token !== 'string') return;
+  let owners;
+  try { owners = JSON.parse(localStorage.getItem('campout-world-owners') || '{}'); } catch { owners = {}; }
+  owners[roomId] = token;
+  localStorage.setItem('campout-world-owners', JSON.stringify(owners));
+}
+function canChangeWorldSettings() {
+  return multiplayerReady && (environmentProtocol === 1 ? worldSettingsOwner : createdWorld);
+}
+function syncWorldSettingsPermissions() {
+  lobbyWeather.sync();
+  for (const id of ['winter-enabled', 'snow-cover', 'snow-fall', 'time-slider', 'time-pause', 'moonlight-slider', 'fog-slider']) {
+    const input = document.getElementById(id);
+    input.disabled = !canChangeWorldSettings();
+    input.title = input.disabled ? 'Only the world creator can change this setting' : '';
+  }
+}
+function applyRoomEnvironment(state) {
+  if (!state || !Number.isSafeInteger(state.revision)) return;
+  sharedEnvironment = { ...sharedEnvironment, ...state, teams: { ...teamAssignments }, teamScores: { ...teamScores } };
+  syncWorldSettingsPermissions();
+  window.applyEnvironment?.();
+  saveSession();
+}
 
 function updateTeamLeaderboard() {
   const maxScore = 100;
@@ -483,12 +522,12 @@ function showGameOver(winningTeam) {
 }
 
 function getPlayerTeam(playerId) {
-  return teamAssignments[playerId] || null;
+  return teamAssignments[playerId] || (playerId === localPlayerId ? localTeam : null);
 }
 
 function updateTeamLobby() {
-  lobbyWeather.sync();
-  localTeam = teamAssignments[localPlayerId] || null;
+  syncWorldSettingsPermissions();
+  localTeam = teamAssignments[localPlayerId] || localTeam;
   const choosing = teamHostId === localPlayerId && createdWorld;
   document.getElementById('lobby-team-picker').style.display = choosing ? 'block' : 'none';
   document.getElementById('lobby-team-assigned').style.display = choosing ? 'none' : 'block';
@@ -533,10 +572,20 @@ function sharedHour() {
 }
 
 function publishEnvironment(changes) {
+  const settings = Object.fromEntries(Object.entries(changes).filter(([key]) => WORLD_SETTING_KEYS.includes(key)));
+  if (Object.keys(settings).length && !canChangeWorldSettings()) {
+    window.applyEnvironment?.();
+    return;
+  }
   sharedEnvironment = { ...sharedEnvironment, hour: sharedHour(), at: roomNow(), ...changes,
     revision: Math.max(roomNow(), (sharedEnvironment?.revision || 0) + 1), author: localPlayerId };
+  if (changes.teamScores) scoreRevision = sharedEnvironment.revision;
+  if (environmentProtocol === 1 && Object.keys(settings).length && signalingWs?.readyState === WebSocket.OPEN) {
+    signalingWs.send(JSON.stringify({ type: 'room-environment', changes: settings }));
+  }
   lobbyWeather.sync();
   if (window.applyEnvironment) window.applyEnvironment();
+  saveSession();
   if (!environmentSendTimer) environmentSendTimer = setTimeout(() => {
     environmentSendTimer = null;
     const message = JSON.stringify({ type: 'environment', state: sharedEnvironment });
@@ -580,6 +629,7 @@ async function createRoom() {
     if (!resp.ok) throw new Error('World creation failed: HTTP ' + resp.status);
     const data = await resp.json();
     roomId = data.roomId;
+    rememberOwnerToken(data.ownerToken);
     worldSeed = data.seed;
     createdWorld = true;
     showLobby();
@@ -631,6 +681,8 @@ if (URL_WORLD && /^[a-f0-9]{12}$/.test(URL_WORLD)) {
     if (savedSession && savedSession.roomId === URL_WORLD) {
       playerName = savedSession.playerName || 'Camper';
       playerGender = savedSession.playerGender === 'female' ? 'female' : 'male';
+      createdWorld = savedSession.createdWorld === true || !!ownerToken();
+      localTeam = ['red', 'blue'].includes(savedSession.localTeam) ? savedSession.localTeam : null;
       lobbyTentColor = savedSession.lobbyTentColor || 'cc5522';
       lobbyTentStyle = savedSession.lobbyTentStyle || 'aframe';
       autoEnterWorld = true;
@@ -651,6 +703,8 @@ if (URL_WORLD && /^[a-f0-9]{12}$/.test(URL_WORLD)) {
       worldSeed = null;
       playerName = savedSession.playerName || 'Camper';
       playerGender = savedSession.playerGender === 'female' ? 'female' : 'male';
+      createdWorld = savedSession.createdWorld === true || !!ownerToken();
+      localTeam = ['red', 'blue'].includes(savedSession.localTeam) ? savedSession.localTeam : null;
       lobbyTentColor = savedSession.lobbyTentColor || 'cc5522';
       lobbyTentStyle = savedSession.lobbyTentStyle || 'aframe';
       autoEnterWorld = true;  // Skip lobby, go straight to game
@@ -782,6 +836,10 @@ function connectSignaling() {
     openedAt = Date.now();
     socket.send(JSON.stringify({
       type: 'join',
+      ownerToken: ownerToken(),
+      creator: createdWorld,
+      environment: Object.fromEntries(Object.entries(sharedEnvironment || loadSession()?.environment || {})
+        .filter(([key]) => WORLD_SETTING_KEYS.includes(key))),
       name: playerName || 'Camper',
       color: lobbyTentColor,
       tentStyle: lobbyTentStyle,
@@ -824,7 +882,8 @@ function connectSignaling() {
     const reason = processingError ? `${processingError.messageType}: ${processingError.message}` : event.reason || 'No close reason received';
     multiplayerReady = false;
     projectileProtocol = 0;
-    createdWorld = false;
+    pineconeFireProtocol = 0;
+    syncWorldSettingsPermissions();
     awaitingTeamDiscovery = false;
     clearTimeout(turnRefreshTimer);
     clearInterval(heartbeatTimer);
@@ -855,8 +914,9 @@ async function handleSignalMessage(msg) {
         // An empty world (including a solo reload) needs a new coordinator.
         if (!teamHostId && Object.keys(peerConnections).length === 0) {
           teamHostId = localPlayerId;
-          createdWorld = true;
-          if (autoEnterWorld) teamAssignments[localPlayerId] = 'red';
+          if (autoEnterWorld || !createdWorld || document.getElementById('game-screen').style.display === 'block') {
+            teamAssignments[localPlayerId] = localTeam || 'red';
+          }
           updateTeamLobby();
         }
       }
@@ -865,18 +925,31 @@ async function handleSignalMessage(msg) {
     mpLog('← ' + msg.type + (msg.from ? ' from:' + msg.from.substring(0,6) : '') + (msg.id ? ' id:' + msg.id.substring(0,6) : ''), true);
     switch (msg.type) {
       case 'room-info': {
+        const saved = loadSession();
+        if (!window.globeRotation && saved?.roomId === roomId && saved.teamScores) teamScores = { ...saved.teamScores };
         localPlayerId = msg.id;
+        environmentProtocol = msg.environmentProtocol === 1 ? 1 : 0;
+        worldSettingsOwner = msg.canEditWorld === true;
+        if (environmentProtocol === 1) createdWorld = worldSettingsOwner;
+        rememberOwnerToken(msg.ownerToken);
         teamHostId = createdWorld ? localPlayerId : null;
-        teamAssignments = createdWorld && localTeam ? { [localPlayerId]: localTeam } : {};
-        if (!createdWorld) localTeam = null;
+        teamAssignments = localTeam ? { [localPlayerId]: localTeam } : {};
         worldSeed = msg.seed;
         roomClockOffset = Number.isSafeInteger(msg.serverTime) ? msg.serverTime - Date.now() : 0;
         // Preserve creator's team selection if they picked before world was created
         const initialTeams = localTeam ? { [msg.id]: localTeam } : {};
+        const previousEnvironment = sharedEnvironment;
         sharedEnvironment = { hour: 8 + (worldSeed % 800) / 100, at: roomNow(), rate: 0.04,
           paused: false, fog: 0, moonlight: 0.5, revision: 0, author: '',
           winter: false, snowCover: 0.75, snowfall: 0.4,
           teams: initialTeams, teamScores: { red: 0, blue: 0 } };
+        if (msg.environment) applyRoomEnvironment(msg.environment);
+        else if (previousEnvironment) sharedEnvironment = { ...previousEnvironment, teams: initialTeams };
+        else {
+          const saved = loadSession();
+          if (createdWorld && saved?.roomId === roomId && saved.environment) sharedEnvironment = { ...sharedEnvironment, ...saved.environment, teams: initialTeams };
+        }
+        window.applyEnvironment?.();
         lobbyWeather.sync();
         if (localTeam) teamAssignments[msg.id] = localTeam;
         applyTurnCredentials(msg);
@@ -888,6 +961,7 @@ async function handleSignalMessage(msg) {
         // Older workers close sockets on unknown message types. Negotiate
         // support before sending any projectile sync/heartbeat messages.
         projectileProtocol = msg.projectileProtocol === 1 ? 1 : 0;
+        pineconeFireProtocol = msg.pineconeFireProtocol === 1 ? 1 : 0;
         if (projectileProtocol) window.syncProjectiles?.();
         else showToast('Shared projectiles need the updated room server. Other multiplayer features remain connected.', 8000);
         document.getElementById('lobby-seed-display').textContent = 'seed: ' + worldSeed;
@@ -900,6 +974,7 @@ async function handleSignalMessage(msg) {
         }, 20000);
         
         updateTeamLobby();
+        if (window.globeRotation) window.syncCamps?.();
         awaitingTeamDiscovery = true;
         signalingWs.send(JSON.stringify({ type: 'ping' }));
         
@@ -910,6 +985,10 @@ async function handleSignalMessage(msg) {
           if (el) el.style.display = 'none';
         }
         
+        break;
+      }
+      case 'room-environment': {
+        if (environmentProtocol === 1) applyRoomEnvironment(msg.state);
         break;
       }
       case 'turn-creds': {
@@ -928,7 +1007,6 @@ async function handleSignalMessage(msg) {
         removePeerConnection(msg.id);
         delete teamAssignments[msg.id];
         if (teamHostId === msg.id) {
-          createdWorld = false;
           teamHostId = Object.keys(teamAssignments).sort()[0] || null;
           const hostChannel = dataChannels[teamHostId];
           if (hostChannel?.readyState === 'open') hostChannel.send(JSON.stringify({ type: 'team-roster-request' }));
@@ -959,6 +1037,7 @@ async function handleSignalMessage(msg) {
       case 'projectile-land':
       case 'projectile-rejected':
       case 'pinecone-picked-up':
+      case 'pinecone-ignited':
         if (projectileProtocol) window.receiveProjectileEvent?.(msg);
         break;
     }
@@ -1131,6 +1210,16 @@ function setupDataChannel(peerId, channel) {
         return;  // Just ignore, don't disconnect
       }
       const old = sharedEnvironment;
+      if (environmentProtocol === 1 || (s.author !== teamHostId && s.author !== localPlayerId)) {
+        // Peer packets can carry gameplay scores, never override server-owned
+        // weather or grant a joining camper access to world settings.
+        if (s.revision > scoreRevision && s.teamScores && ['red', 'blue'].every(team => Number.isFinite(s.teamScores[team]) && s.teamScores[team] >= 0)) {
+          scoreRevision = s.revision;
+          sharedEnvironment = { ...sharedEnvironment, teamScores: { ...s.teamScores } };
+          window.applyEnvironment?.();
+        }
+        return;
+      }
       if (!old || s.revision > old.revision || (s.revision === old.revision &&
           (s.author > old.author || (s.author === old.author && s.at < old.at)))) {
         sharedEnvironment = { hour: s.hour, at: s.at, rate: s.rate, paused: s.paused,
@@ -1199,7 +1288,7 @@ function setupDataChannel(peerId, channel) {
           ![0, 8, 12].includes(m.rate) || ![0.35, 0.5].includes(m.amplitude) || ![0.03, 0.04].includes(m.waddle) ||
           !Number.isFinite(m.swing) || Math.abs(m.swing) > 0.5 || !Number.isFinite(m.roll) || Math.abs(m.roll) > 0.1 ||
           typeof m.flashlight !== 'boolean' ||
-          ['snowball', 'pinecone', 'skating'].some(key => m[key] !== undefined && typeof m[key] !== 'boolean') ||
+          ['snowball', 'pinecone', 'flamingPinecone', 'skating'].some(key => m[key] !== undefined && typeof m[key] !== 'boolean') ||
           (m.iceVelocity !== undefined && (!Array.isArray(m.iceVelocity) || m.iceVelocity.length !== 3 ||
             !m.iceVelocity.every(n => Number.isFinite(n) && Math.abs(n) <= 0.6) || Math.hypot(...m.iceVelocity) > 0.61))) {
         console.warn('Ignoring bad motion data:', m);
@@ -1262,6 +1351,7 @@ async function handleIceCandidate(msg) {
 }
 
 function handleGameMessage(peerId, msg) {
+  if (['red', 'blue'].includes(msg.team) && !teamAssignments[peerId]) teamAssignments[peerId] = msg.team;
   if (typeof msg.color === 'string' && /^[a-f0-9]{6}$/.test(msg.color)) peerColors[peerId] = msg.color;
   const color = parseInt(peerColors[peerId] || remoteCampStates[peerId]?.color || 'cc5522', 16);
   // Handle bump message - other player is telling us we collided
@@ -1291,6 +1381,7 @@ function handleGameMessage(peerId, msg) {
 function broadcastPosition(globeRot, facing, motion) {
   const msg = JSON.stringify({
     type: 'pos',
+    team: localTeam,
     name: playerName,
     gender: playerGender,
     color: window.getTentColor ? window.getTentColor() : lobbyTentColor,
@@ -1307,6 +1398,7 @@ function broadcastPosition(globeRot, facing, motion) {
 function broadcastHello(globeRot) {
   const msg = JSON.stringify({
     type: 'hello',
+    team: localTeam,
     gender: playerGender,
     color: window.getTentColor ? window.getTentColor() : lobbyTentColor,
     name: playerName || 'Camper',
@@ -1504,6 +1596,8 @@ const winter = createWinter(THREE, {
   get localId() { return localPlayerId; }, getPlayer: () => player, getPeers: () => otherPlayers,
   serverNow: roomNow,
   projectilesOnline: () => multiplayerReady && projectileProtocol === 1 && signalingWs?.readyState === WebSocket.OPEN,
+  canIgnitePinecones: () => multiplayerReady && pineconeFireProtocol === 1,
+  getOwnFirePosition: () => campModels.get(localPlayerId)?.fireAnchor.getWorldPosition(new THREE.Vector3()) || null,
   getRotation: () => globeRotation, getFacing: () => playerFacing,
   getCameraAngle: () => cameraAngle,
   getObstacles: () => [...rockData.map(r => r.obj), ...Array.from(campModels.values(), model => model.tent).filter(tent => tent.visible)],
@@ -2416,12 +2510,12 @@ function applyEnvironment() {
   document.getElementById('fog-slider').value = fogDensity * 100;
   document.getElementById('moonlight-slider').value = moonlightStrength * 100;
   winter.configure(sharedEnvironment);
-  // Keep world generation identical; only hide mobile winter decoration.
-  if (mobileGraphics) for (const flower of flowers) flower.visible = sharedEnvironment.winter !== true;
+  for (const flower of flowers) flower.visible = sharedEnvironment.winter !== true;
   // Toggle winter-mode class for dark button styling
   document.getElementById('game-screen').classList.toggle('winter-mode', sharedEnvironment.winter === true);
   // Sync team data
-  if (sharedEnvironment.teams) teamAssignments = { ...sharedEnvironment.teams };
+  // Team rosters are independent of weather; stale environment packets must
+  // never erase assignments and turn labels back into neutral colors.
   if (sharedEnvironment.teamScores) {
     const oldRed = teamScores.red, oldBlue = teamScores.blue;
     teamScores = { ...sharedEnvironment.teamScores };
@@ -3325,15 +3419,8 @@ if (savedSession && savedSession.roomId === roomId && savedSession.globeRotation
       enterTent();
     }
   }
-  // Restore winter/environment state and publish it so it syncs to room
-  if (savedSession.environment && sharedEnvironment) {
-    sharedEnvironment.winter = savedSession.environment.winter ?? false;
-    sharedEnvironment.snowCover = savedSession.environment.snowCover ?? 0.75;
-    sharedEnvironment.snowfall = savedSession.environment.snowfall ?? 0.4;
-    if (window.applyEnvironment) window.applyEnvironment();
-    // Publish after a short delay to give peers time to connect
-    setTimeout(() => publishEnvironment({}), 2000);
-  }
+  // Weather was restored from the room server before game initialization.
+  // A browser's old session must never overwrite the current room environment.
   // Restore team scores from session (for solo play persistence)
   if (savedSession.teamScores) {
     teamScores = { ...savedSession.teamScores };
@@ -3764,6 +3851,7 @@ function animate() {
       sitting: sittingFireId !== null,
       snowball: winter.enabled && winter.holding,
       pinecone: !winter.enabled && winter.holding,
+      flamingPinecone: winter.flamingPinecone,
       skating: winter.skating,
       iceVelocity: winter.sharedVelocity(),
     });

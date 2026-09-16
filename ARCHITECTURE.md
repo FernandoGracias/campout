@@ -18,6 +18,7 @@ There is no build step. Deploy the HTML, CSS and JavaScript files together.
 | `winter.js` | Seasonal equipment, snow/ice, projectile simulation and room-event reconciliation |
 | `winter-physics.js` | Ice impulses, orbit integration and ballistic targeting |
 | `pinecones.js` | Cone geometry, inventory, pickup and raycast resting positions |
+| `pinecone-fire.js` | Flame visuals for held, flying and resting pinecones |
 | `launch-preview.js` | Disposable lobby renderer using the shared world/character/tent builders |
 | `lobby-weather.js` | Lobby controls for the shared room environment |
 | `launch-screen.css` | Desktop and mobile preview/menu layout |
@@ -43,3 +44,20 @@ a delayed prediction requests a room snapshot to reconcile with authoritative st
 Pinecones retain their land support offset. In water, a raycast against the actual
 water triangles places the laid-down cone's center on the surface. The same rule
 is used for landing, bounce endpoints and restored room snapshots.
+
+## Persistent room settings and ownership
+
+The room server persists weather and time settings with the room, including when
+the last camper disconnects. The creator receives a per-world ownership token at
+creation, saved locally and presented on reconnect. Only that creator can update
+the server's room settings. Joining campers have read-only world controls in both
+the lobby and the game; their character and tent controls remain editable.
+
+Deploy `campout-server` before the v221 frontend. Include `src/room-settings.js`
+and `src/projectiles.js` in the server deployment. Newly created worlds have
+creator ownership from creation; legacy worlds can migrate a creator who still
+has creator state, but cannot recover ownership from a session that never stored it.
+
+Carrying a pinecone within 1.7 units of your campsite fire ignites it for 30 seconds.
+Its burning deadline is stored by the room and shared in inventory/flight events.
+Pinecones tumble in flight, and water impacts extinguish them.
