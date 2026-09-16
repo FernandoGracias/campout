@@ -1,7 +1,7 @@
 import { iceImpulse, advanceOrbit, ballisticArcs } from './winter-physics.js?v=190';
 import { CLOUD_FIELD_GLSL } from './seasonal-sky.js';
 import { createPinecones } from './pinecones.js?v=221';
-import { createPineconeFire } from './pinecone-fire.js?v=224';
+import { createPineconeFire } from './pinecone-fire.js?v=225';
 
 // Seasonal equipment uses planet-local coordinates, including summer pinecones.
 export function createWinter(THREE, world) {
@@ -1091,7 +1091,7 @@ export function createWinter(THREE, world) {
     s.winterEquipment.ball.geometry = kind === 'pinecone' ? coneGeo : ballGeo;
     s.winterEquipment.ball.material = kind === 'pinecone' ? coneMaterial : snowMaterial;
     s.winterEquipment.ball.visible = carrying && mesh.visible;
-    pineconeFire.update(s.winterEquipment.ball, carrying && kind === 'pinecone' && burning, elapsed);
+    s.winterEquipment.burning = carrying && kind === 'pinecone' && burning;
     if (carrying) s.rightArm.rotation.x = -1.2;
     for (const blade of s.winterEquipment.blades) blade.visible = enabled && skating;
     if (enabled && skating && s.onIce) {
@@ -1416,6 +1416,12 @@ export function createWinter(THREE, world) {
     }
     updateCrosshair();
     updateBalls(delta, inverse);
+    // Emit only after holding/throwing poses and hit reactions are finalized.
+    for (const mesh of [player, ...Object.values(world.getPeers()).map(peer => peer.mesh)]) {
+      const equipment = mesh.userData.winterEquipment;
+      if (equipment) pineconeFire.update(equipment.ball,
+        equipment.burning && equipment.ball.visible && mesh.visible, elapsed, null, true);
+    }
     for (const ball of balls) if (ball.kind === 'pinecone') {
       if (!ball.bounce) ball.mesh.rotation.set(ball.age * 9 + ball.cone * 1.7, ball.age * 5.3, ball.age * 3.7);
       pineconeFire.update(ball.mesh, ball.burningUntil > fireNow && ball.mesh.visible,

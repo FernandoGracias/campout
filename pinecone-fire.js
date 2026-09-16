@@ -41,30 +41,33 @@ export function createPineconeFire(THREE, globePivot, mobile = false) {
     const mesh = new THREE.Points(geometry, material);
     mesh.name = smoke ? 'pinecone-black-smoke' : 'pinecone-fire-particles';
     mesh.frustumCulled = false;
+    mesh.visible = false;
     globePivot.add(mesh);
-    return { count, positions, offsets, colors, sizes, alphas, geometry, mesh, cursor: 0,
+    return { count, positions, offsets, colors, sizes, alphas, geometry, mesh, cursor: 0, dirty: false,
       particles: Array.from({ length: count }, () => ({ life: 0, age: 0, origin: new THREE.Vector3(),
         velocity: new THREE.Vector3(), rotation: new THREE.Quaternion() })) };
   }
-  const fire = pool(mobile ? 512 : 1024);
-  const smoke = pool(mobile ? 768 : 1536, true);
-  const embers = pool(mobile ? 128 : 256);
+  const fire = pool(mobile ? 128 : 256);
+  const smoke = pool(mobile ? 96 : 192, true);
+  const embers = pool(mobile ? 64 : 128);
   embers.mesh.name = 'pinecone-impact-embers';
   const yellow = new THREE.Color(0xffce44), orange = new THREE.Color(0xff4a08), red = new THREE.Color(0xff2400);
   const offset = new THREE.Vector3();
 
-  function spawn(target, origin, direction, life, size, color, velocity = null, spark = false) {
+  function spawn(target, origin, direction, life, size, color, velocity = null, spark = false, anchor = null) {
     const i = target.cursor++ % target.count, particle = target.particles[i];
+    target.dirty = true;
+    particle.anchor = anchor;
     particle.origin.copy(origin);
     particle.rotation.setFromUnitVectors(up, direction);
     particle.velocity.copy(velocity || up).multiplyScalar(velocity ? 1 : 0);
     particle.life = life; particle.age = 0; particle.size = size; particle.spark = spark;
-    const angle = Math.random() * Math.PI * 2, radius = Math.random() * 0.08;
+    const angle = Math.random() * Math.PI * 2, radius = Math.random() * 0.035;
     target.offsets.set([Math.cos(angle) * radius, 0, Math.sin(angle) * radius], i * 3);
     target.colors.set([color.r, color.g, color.b], i * 3);
   }
 
-  function update(object, burning, time, velocity = null) {
+  function update(object, burning, time, velocity = null, attached = false) {
     if (!burning) { emitters.delete(object); return; }
     const position = globePivot.worldToLocal(object.getWorldPosition(new THREE.Vector3()));
     let emitter = emitters.get(object);
@@ -77,20 +80,21 @@ export function createPineconeFire(THREE, globePivot, mobile = false) {
     const flying = velocity && velocity.lengthSq() > 1;
     // Flame motion follows the airflow, opposite flight; held flames rise.
     const direction = flying ? velocity.clone().normalize().negate().addScaledVector(radial, 0.12).normalize() : radial;
-    emitter.fire += delta * 110;
-    emitter.smoke += delta * (flying ? 45 : 20);
+    emitter.fire += delta * 45;
+    emitter.smoke += delta * (flying ? 8 : 3);
     const emit = (target, count, isSmoke) => {
       for (let i = 0; i < count; i++) {
         // Fill the segment travelled this frame so fast throws have no gaps.
-        const origin = emitter.position.clone().lerp(position, (i + 1) / count);
+        const origin = attached ? position : emitter.position.clone().lerp(position, (i + 1) / count);
         if (isSmoke) {
-          const drift = radial.clone().multiplyScalar(0.012 + Math.random() * 0.012);
-          if (flying) drift.addScaledVector(direction, 0.008);
-          drift.add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(0.007));
-          spawn(smoke, origin, up, 1.6 + Math.random() * 1.2, 0.24, { r: 0.004, g: 0.004, b: 0.004 }, drift);
+          const drift = radial.clone().multiplyScalar(0.006 + Math.random() * 0.006);
+          if (flying) drift.addScaledVector(direction, 0.004);
+          drift.add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(0.004));
+          spawn(smoke, origin, up, 0.2 + Math.random() * 0.2, 0.09, { r: 0.004, g: 0.004, b: 0.004 }, drift);
         } else {
-          spawn(fire, origin, direction, flying ? 0.14 + Math.random() * 0.12 : 0.3 + Math.random() * 0.3,
-            0.11 + Math.random() * 0.08, Math.random() < 0.3 ? yellow : orange, null, Math.random() < 0.08);
+          spawn(fire, origin, direction, flying ? 0.06 + Math.random() * 0.04 : 0.16 + Math.random() * 0.12,
+            0.045 + Math.random() * 0.03, Math.random() < 0.3 ? yellow : orange, null, Math.random() < 0.04,
+            attached ? emitter : null);
         }
       }
     };
@@ -114,6 +118,7 @@ export function createPineconeFire(THREE, globePivot, mobile = false) {
   function advance(delta, camera, viewportHeight) {
     scale.value = viewportHeight * camera.projectionMatrix.elements[5] * 0.5;
     for (const target of [fire, smoke, embers]) {
+      if (!target.mesh.visible && !target.dirty) continue;
       let active = false;
       for (let i = 0; i < target.count; i++) {
         const p = target.particles[i];
@@ -123,7 +128,7 @@ export function createPineconeFire(THREE, globePivot, mobile = false) {
         const progress = p.age / p.life;
         if (target === fire) {
           advanceFireParticle(target.offsets, i, p.spark, delta * 30);
-          offset.fromArray(target.offsets, i * 3).applyQuaternion(p.rotation).add(p.origin);
+          offset.fromArray(target.offsets, i * 3).applyQuaternion(p.rotation).add(p.anchor?.position || p.origin);
         } else if (target === smoke) {
           advanceSmokeParticle(target.offsets, i, p.velocity, delta * 30);
           offset.fromArray(target.offsets, i * 3).add(p.origin);
@@ -133,10 +138,11 @@ export function createPineconeFire(THREE, globePivot, mobile = false) {
           offset.copy(p.origin);
         }
         target.positions.set([offset.x, offset.y, offset.z], i * 3);
-        target.alphas[i] = (target === smoke ? 0.65 : 1) * (1 - progress);
-        target.sizes[i] = p.size * (target === smoke ? 1 + progress * 2.5 : 1 - progress * 0.45);
+        target.alphas[i] = (target === smoke ? 0.45 : 1) * (1 - progress);
+        target.sizes[i] = p.size * (target === smoke ? 1 + progress * 0.7 : 1 - progress * 0.45);
       }
       target.mesh.visible = active;
+      target.dirty = false;
       for (const attribute of Object.values(target.geometry.attributes)) attribute.needsUpdate = true;
     }
   }
