@@ -396,6 +396,7 @@ export function createWinter(THREE, world) {
   });
   const pineconeFire = createPineconeFire(THREE);
   let lastIgniteRequest = -10;
+  let fireServerWarningShown = false;
   const balls = [];
   let projectileReady = false, projectileAuthority = null, projectileRevision = -1;
   let pendingPickup = null, lastCheckpoint = 0, lastProjectileHeartbeat = 0;
@@ -1302,17 +1303,21 @@ export function createWinter(THREE, world) {
     spray.visible = true;
     const player = world.getPlayer();
     const canAct = world.canAct();
+    const canCarry = !enabled && (world.canCarryPinecones?.() ?? canAct);
     if (!canAct) packing = 0;
     const fireNow = projectileNow();
     const heldBurning = !enabled && held && (cones[heldCone]?.burningUntil || 0) > fireNow;
-    if (!enabled && held && canAct && !heldBurning && world.canIgnitePinecones?.() && elapsed - lastIgniteRequest > 1) {
-      const fire = world.getOwnFirePosition?.();
-      if (fire && player.position.distanceTo(fire) < 1.7) {
+    if (canCarry && held && !player.userData.swimming && !heldBurning &&
+        world.projectilesOnline() && elapsed - lastIgniteRequest > 1 && world.getCampfireDistance?.() <= 2.3) {
+      if (world.supportsPineconeFire?.()) {
         lastIgniteRequest = elapsed;
         world.sendSignal({ type: 'pinecone-ignite', cone: heldCone });
+      } else if (!fireServerWarningShown) {
+        fireServerWarningShown = true;
+        world.toast('Flaming pinecones need the updated campout-server. Deploy it and rejoin the world.', 8000);
       }
     }
-    equip(player, held && canAct, enabled && skates, velocity.lengthSq() > 0.0001,
+    equip(player, held && (canAct || canCarry), enabled && skates, velocity.lengthSq() > 0.0001,
       enabled ? 'snowball' : 'pinecone', heldBurning);
     for (const peer of Object.values(world.getPeers())) {
       const fresh = performance.now() - peer.motionReceivedAt < 2000;
@@ -1420,7 +1425,7 @@ export function createWinter(THREE, world) {
     collide, receiveIceContact, sharedVelocity, receiveProjectileEvent, syncProjectiles,
     get snowy() { return enabled && (cover > 0 || snowfall > 0); },
     stop: () => velocity.set(0, 0),
-    get holding() { return held && world.canAct(); },
+    get holding() { return held && (enabled ? world.canAct() : (world.canCarryPinecones?.() ?? world.canAct())); },
     get flamingPinecone() { return !enabled && held && (cones[heldCone]?.burningUntil || 0) > projectileNow(); },
     get skating() { return enabled && skates; },
     get enabled() { return enabled; }, iceRadius };

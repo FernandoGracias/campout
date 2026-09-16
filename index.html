@@ -63,7 +63,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v221</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v222</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -77,17 +77,24 @@ canvas { display: block; }
     <p id="preview-caption"></p>
   </section>
   <div id="lobby-menu">
+  <button id="btn-lobby-back" type="button" style="align-self:flex-start;background:transparent;border:1px solid #555;color:#ddd;padding:8px 12px;border-radius:6px;cursor:pointer;margin-bottom:16px;">← Back</button>
   <h2 style="color:#f0c040;font-size:24px;margin-bottom:4px;font-family:system-ui,sans-serif;">World: <span id="lobby-room-id" style="font-family:monospace;"></span></h2>
   <button id="btn-copy-link" style="background:transparent;border:1px solid #555;color:#aaa;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;margin-bottom:8px;font-family:system-ui,sans-serif;">Copy Invite Link</button>
   <p id="lobby-seed-display" style="color:#666;font-size:11px;margin-bottom:24px;font-family:monospace;"></p>
   <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:280px;">
     <div>
       <label style="color:#aaa;font-size:12px;display:block;margin-bottom:4px;">Your Name</label>
-      <input id="input-player-name" type="text" placeholder="Camper" maxlength="16" style="width:100%;padding:10px;font-size:16px;background:#2a2a3e;color:#fff;border:1px solid #555;border-radius:8px;font-family:system-ui,sans-serif;">
+      <div style="display:flex;gap:8px;">
+        <input id="input-player-name" type="text" placeholder="Camper" maxlength="16" style="flex:1;min-width:0;padding:10px;font-size:16px;background:#2a2a3e;color:#fff;border:1px solid #555;border-radius:8px;font-family:system-ui,sans-serif;">
+        <button id="btn-random-name" type="button" aria-label="Generate a new random name" title="Generate a new random name" style="flex-shrink:0;min-width:44px;background:#2a2a3e;color:#fff;border:1px solid #555;border-radius:8px;font-size:24px;cursor:pointer;">↻</button>
+      </div>
     </div>
     <div class="lobby-field">
-      <label for="lobby-gender">Gender</label>
-      <select id="lobby-gender"><option value="male">Male</option><option value="female">Female</option></select>
+      <label id="lobby-gender-label">Gender</label>
+      <div id="lobby-gender" class="lobby-choice-buttons" role="group" aria-labelledby="lobby-gender-label">
+        <button type="button" data-gender="male" aria-pressed="true">Male</button>
+        <button type="button" data-gender="female" aria-pressed="false">Female</button>
+      </div>
     </div>
     <div>
       <label style="color:#aaa;font-size:12px;display:block;margin-bottom:4px;">Tent Color</label>
@@ -135,8 +142,14 @@ canvas { display: block; }
     <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
     <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
   </div>
-  <div class="lobby-version">v221</div>
+  <div class="lobby-version">v222</div>
   </div>
+</div>
+
+<div id="world-loading" hidden role="status" aria-live="polite" aria-busy="true">
+  <div class="world-loading-spinner" aria-hidden="true"></div>
+  <p id="world-loading-message">Loading world…</p>
+  <button id="world-loading-back" type="button" hidden>Back to Home</button>
 </div>
 
 <!-- GAME OVER SCREEN -->
@@ -285,7 +298,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v221</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v222</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -299,7 +312,7 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=221';
+import { createWinter } from './winter.js?v=222';
 import { createSeasonalSky } from './seasonal-sky.js';
 import { createSwimming } from './swimming.js';
 import { buildPlayer, setPlayerGender } from './character.js';
@@ -339,9 +352,11 @@ const URL_WORLD = new URLSearchParams(window.location.search).get('world')?.toLo
 // Random camper name generator
 const CAMPER_ADJECTIVES = ['Burly', 'Jolly', 'Rugged', 'Sleepy', 'Happy', 'Grumpy', 'Brave', 'Lucky', 'Dusty', 'Sunny', 'Rustic', 'Wandering', 'Cheerful', 'Mellow'];
 const CAMPER_NAMES = ['Joe', 'Tom', 'Max', 'Sam', 'Jake', 'Pete', 'Lou', 'Ben', 'Gus', 'Hank', 'Duke', 'Ace', 'Red', 'Slim', 'Buck', 'Chip', 'Finn', 'Rex', 'Bo', 'Cal'];
-function randomCamperName() {
+const FEMALE_CAMPER_NAMES = ['Amy', 'Ava', 'Mia', 'Zoe', 'Lily', 'Rose', 'Ruby', 'June', 'Ella', 'Nora', 'Iris', 'Lucy', 'Mae', 'Tess', 'Faye', 'Kate', 'Wren', 'Ada', 'Eve', 'Jade'];
+function randomCamperName(gender = playerGender) {
   const adj = CAMPER_ADJECTIVES[Math.floor(Math.random() * CAMPER_ADJECTIVES.length)];
-  const name = CAMPER_NAMES[Math.floor(Math.random() * CAMPER_NAMES.length)];
+  const names = gender === 'female' ? FEMALE_CAMPER_NAMES : CAMPER_NAMES;
+  const name = names[Math.floor(Math.random() * names.length)];
   return `${adj} ${name}`;
 }
 
@@ -390,6 +405,28 @@ function clearSession() {
   localStorage.removeItem('campout-session');
 }
 
+function returnHome() {
+  // Prevent late callbacks/the game loop from saving or reconnecting this world.
+  multiplayerReady = false;
+  autoEnterWorld = false;
+  roomId = null;
+  localPlayerId = null;
+  clearTimeout(signalingReconnectTimer);
+  clearTimeout(turnRefreshTimer);
+  clearTimeout(environmentSendTimer);
+  clearInterval(heartbeatTimer);
+  const socket = signalingWs;
+  signalingWs = null;
+  socket?.close(1000, 'User left');
+  launchPreview?.dispose();
+  clearSession();
+  const url = new URL(window.location.href);
+  url.searchParams.delete('world');
+  url.hash = '';
+  // A fresh document also disposes game renderers, input handlers and peers.
+  window.location.replace(url.toString());
+}
+
 const mpLogs = [];
 function mpLog(msg, debugOnly = false) {
   if (debugOnly && !DEBUG_MODE) return;
@@ -410,6 +447,7 @@ let playerGender = 'male';
 let lobbyTentColor = 'cc5522';
 let lobbyTentStyle = 'aframe';
 let autoEnterWorld = false;
+let enteringWorld = false;
 let signalingWs = null;
 let signalingReconnectTimer = null, signalingReconnectAttempts = 0;
 let lastSignalingDisconnect = null;
@@ -528,6 +566,9 @@ function getPlayerTeam(playerId) {
 function updateTeamLobby() {
   syncWorldSettingsPermissions();
   localTeam = teamAssignments[localPlayerId] || localTeam;
+  document.querySelectorAll('#lobby-team-picker button').forEach(button => {
+    button.style.borderColor = button.dataset.team === localTeam ? '#fff' : 'transparent';
+  });
   const choosing = teamHostId === localPlayerId && createdWorld;
   document.getElementById('lobby-team-picker').style.display = choosing ? 'block' : 'none';
   document.getElementById('lobby-team-assigned').style.display = choosing ? 'none' : 'block';
@@ -535,15 +576,12 @@ function updateTeamLobby() {
   name.textContent = localTeam ? localTeam[0].toUpperCase() + localTeam.slice(1) : 'Waiting for creator…';
   name.style.color = localTeam === 'red' ? '#ff6666' : '#6699ff';
   document.getElementById('lobby-team-assigned').style.background = localTeam === 'red' ? 'rgba(204,51,51,0.2)' : 'rgba(51,102,204,0.2)';
-  document.getElementById('btn-enter-world').disabled = !multiplayerReady || !localTeam;
+  document.getElementById('btn-enter-world').disabled = enteringWorld || !multiplayerReady || !localTeam;
   if (sharedEnvironment) sharedEnvironment.teams = { ...teamAssignments };
   if (window.applyEnvironment) window.applyEnvironment();
   if (autoEnterWorld && multiplayerReady && localTeam && worldSeed !== null) {
     autoEnterWorld = false;
-    document.getElementById('landing-screen').style.display = 'none';
-    document.getElementById('lobby-screen').style.display = 'none';
-    document.getElementById('game-screen').style.display = 'block';
-    startGame(worldSeed);
+    enterWorld();
   }
 }
 
@@ -632,6 +670,7 @@ async function createRoom() {
     rememberOwnerToken(data.ownerToken);
     worldSeed = data.seed;
     createdWorld = true;
+    localTeam = 'red';
     showLobby();
   } finally {
     button.disabled = false;
@@ -714,15 +753,49 @@ if (URL_WORLD && /^[a-f0-9]{12}$/.test(URL_WORLD)) {
 }
 
 // Lobby screen handlers
-document.getElementById('btn-enter-world').addEventListener('click', () => {
-  if (!multiplayerReady || worldSeed === null || !localTeam) return;
-  document.getElementById('btn-enter-world').disabled = true;
+document.getElementById('btn-lobby-back').addEventListener('click', returnHome);
+function chooseRandomName() {
+  const input = document.getElementById('input-player-name');
+  let name;
+  do { name = randomCamperName(); } while (name === input.value);
+  input.value = name;
+  playerName = name;
+}
+document.getElementById('btn-random-name').addEventListener('click', chooseRandomName);
+async function enterWorld() {
+  if (enteringWorld || !multiplayerReady || worldSeed === null || !localTeam) return;
+  enteringWorld = true;
+  const button = document.getElementById('btn-enter-world');
+  const loading = document.getElementById('world-loading');
+  button.disabled = true;
+  button.textContent = 'Loading…';
+  button.setAttribute('aria-busy', 'true');
+  loading.hidden = false;
   playerName = document.getElementById('input-player-name').value.trim() || 'Camper';
-  document.getElementById('landing-screen').style.display = 'none';
-  document.getElementById('lobby-screen').style.display = 'none';
-  document.getElementById('game-screen').style.display = 'block';
-  startGame(worldSeed);
-});
+  try {
+    launchPreview?.dispose();
+    launchPreview = null;
+    // Let the browser paint the indicator before synchronous world generation.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (!multiplayerReady || worldSeed === null || !localTeam) throw new Error('Connection lost while entering the world.');
+    document.getElementById('landing-screen').style.display = 'none';
+    document.getElementById('lobby-screen').style.display = 'none';
+    document.getElementById('game-screen').style.display = 'block';
+    startGame(worldSeed, () => {
+      loading.hidden = true;
+      loading.setAttribute('aria-busy', 'false');
+      button.setAttribute('aria-busy', 'false');
+    });
+  } catch (error) {
+    loading.setAttribute('aria-busy', 'false');
+    loading.querySelector('.world-loading-spinner').hidden = true;
+    document.getElementById('world-loading-message').textContent = 'Could not load the world. Return home to try again.';
+    document.getElementById('world-loading-back').hidden = false;
+    networkError(error);
+  }
+}
+document.getElementById('btn-enter-world').addEventListener('click', enterWorld);
+document.getElementById('world-loading-back').addEventListener('click', returnHome);
 
 // Team picker buttons
 document.querySelectorAll('#lobby-team-picker button').forEach(btn => {
@@ -750,8 +823,18 @@ document.querySelectorAll('#lobby-tent-colors button').forEach(btn => {
 document.getElementById('lobby-tent-style').addEventListener('change', (e) => {
   lobbyTentStyle = e.target.value;
 });
-document.getElementById('lobby-gender').addEventListener('change', (e) => {
-  playerGender = e.target.value === 'female' ? 'female' : 'male';
+function syncGenderButtons() {
+  document.querySelectorAll('#lobby-gender button').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.gender === playerGender));
+  });
+}
+document.querySelectorAll('#lobby-gender button').forEach(button => {
+  button.addEventListener('click', () => {
+    if (playerGender === button.dataset.gender) return;
+    playerGender = button.dataset.gender;
+    syncGenderButtons();
+    chooseRandomName();
+  });
 });
 
 document.getElementById('btn-copy-link').addEventListener('click', () => {
@@ -806,7 +889,7 @@ function showLobby() {
     }
   }
   
-  document.getElementById('lobby-gender').value = playerGender;
+  syncGenderButtons();
   if (!launchPreview) {
     try {
       launchPreview = createLaunchPreview(document.getElementById('lobby-preview'), () => ({
@@ -931,6 +1014,7 @@ async function handleSignalMessage(msg) {
         environmentProtocol = msg.environmentProtocol === 1 ? 1 : 0;
         worldSettingsOwner = msg.canEditWorld === true;
         if (environmentProtocol === 1) createdWorld = worldSettingsOwner;
+        if (createdWorld && !localTeam) localTeam = 'red';
         rememberOwnerToken(msg.ownerToken);
         teamHostId = createdWorld ? localPlayerId : null;
         teamAssignments = localTeam ? { [localPlayerId]: localTeam } : {};
@@ -1420,7 +1504,7 @@ function sendBump(peerId, axis) {
 }
 
 // --- GAME INITIALIZATION (called after lobby) ---
-function startGame(seed) {
+function startGame(seed, onReady = null) {
 
 // Entry waits for the coordinator's assignment; never guess from a partial roster.
 if (!localTeam) return;
@@ -1596,8 +1680,20 @@ const winter = createWinter(THREE, {
   get localId() { return localPlayerId; }, getPlayer: () => player, getPeers: () => otherPlayers,
   serverNow: roomNow,
   projectilesOnline: () => multiplayerReady && projectileProtocol === 1 && signalingWs?.readyState === WebSocket.OPEN,
-  canIgnitePinecones: () => multiplayerReady && pineconeFireProtocol === 1,
-  getOwnFirePosition: () => campModels.get(localPlayerId)?.fireAnchor.getWorldPosition(new THREE.Vector3()) || null,
+  canCarryPinecones: () => !isSleeping && !minigamesOpen,
+  supportsPineconeFire: () => pineconeFireProtocol === 1,
+  getCampfireDistance: () => {
+    // Use the same surface distance and visible/shared fires as the Sit prompt.
+    const here = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert());
+    let distance = Infinity;
+    for (const model of campModels.values()) {
+      if (!model.fireAnchor.visible) continue;
+      model.group.updateMatrix();
+      const fire = model.fireAnchor.position.clone().applyMatrix4(model.group.matrix).normalize();
+      distance = Math.min(distance, here.distanceTo(fire) * GLOBE_RADIUS);
+    }
+    return distance;
+  },
   getRotation: () => globeRotation, getFacing: () => playerFacing,
   getCameraAngle: () => cameraAngle,
   getObstacles: () => [...rockData.map(r => r.obj), ...Array.from(campModels.values(), model => model.tent).filter(tent => tent.visible)],
@@ -2398,49 +2494,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 // --- EXIT WORLD ---
-document.getElementById('btn-exit-world').addEventListener('click', () => {
-  clearSession();
-  clearTimeout(signalingReconnectTimer);
-  clearTimeout(turnRefreshTimer);
-  signalingReconnectAttempts = 0;
-  projectileProtocol = 0;
-  if (signalingWs) {
-    signalingWs.close(1000, 'User left');
-    signalingWs = null;
-  }
-  for (const id of Object.keys(peerConnections)) removePeerConnection(id);
-  if (heartbeatTimer) clearInterval(heartbeatTimer);
-  heartbeatTimer = null;
-  multiplayerReady = false;
-  roomId = null;
-  worldSeed = null;
-  localPlayerId = null;
-  // Clear team state
-  localTeam = null;
-  createdWorld = false;
-  teamHostId = null;
-  awaitingTeamDiscovery = false;
-  sharedEnvironment = null;
-  teamAssignments = {};
-  teamScores = { red: 0, blue: 0 };
-  gameOverShown = false;
-  // Clear player name so they re-enter it
-  playerName = '';
-  document.getElementById('player-name').value = '';
-  // Clear URL params so refreshing doesn't rejoin
-  if (window.history.replaceState) {
-    const url = new URL(window.location.href);
-    url.searchParams.delete('world');
-    window.history.replaceState({}, '', url.toString());
-  }
-  document.getElementById('game-screen').style.display = 'none';
-  document.getElementById('lobby-screen').style.display = 'none';
-  document.getElementById('landing-screen').style.display = 'flex';
-  document.getElementById('input-room-code').value = '';
-  mpLogs.length = 0;
-  const el = document.getElementById('mp-status');
-  if (el) el.style.display = 'none';
-});
+document.getElementById('btn-exit-world').addEventListener('click', returnHome);
 
 // --- OPTIONS MENU ---
 document.getElementById('sidebar-toggle').addEventListener('click', () => {
@@ -4037,6 +4091,11 @@ function animate() {
   btnPitch.setAttribute('aria-disabled', String(!!player.userData.swimming || (campPitched && ownTentDistance() > TENT_INTERACTION_DISTANCE)));
   updateCampInteraction();
   renderer.render(scene, camera);
+  if (onReady) {
+    const ready = onReady;
+    onReady = null;
+    ready();
+  }
 }
 window.syncCamps = syncCamps;
 syncCamps();

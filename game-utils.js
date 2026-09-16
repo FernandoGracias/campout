@@ -10,7 +10,7 @@ export function mulberry32(a) {
 
 export const TEAM_COLORS = { red: 0xcc3333, blue: 0x3366cc };
 export function teamLabelColor(team) {
-  return team === 'red' ? '#ff2020' : team === 'blue' ? '#0080ff' : '#dddddd';
+  return team === 'red' ? '#ff0000' : team === 'blue' ? '#0000ff' : '#dddddd';
 }
 
 // Dispose each shared resource once, even when several meshes use it.

@@ -34,6 +34,15 @@
 .preview-toolbar { position: absolute; z-index: 1; left: 16px; top: max(16px, env(safe-area-inset-top)); display: flex; gap: 6px; }
 .preview-toolbar button { border: 1px solid #ffffff40; border-radius: 20px; color: #fff; background: #172330c9; padding: 10px 14px; cursor: pointer; touch-action: manipulation; }
 .preview-toolbar button[aria-pressed="true"] { border-color: #f0c040; color: #f0c040; }
+.lobby-choice-buttons { display: flex; gap: 8px; }
+.lobby-choice-buttons button { flex: 1; border: 1px solid #ffffff40; border-radius: 20px; color: #fff; background: #172330c9; padding: 10px 14px; cursor: pointer; }
+.lobby-choice-buttons button[aria-pressed="true"] { border-color: #f0c040; color: #f0c040; }
+#world-loading { position: fixed; inset: 0; z-index: 3000; background: #1a1a2e; color: #f0c040; flex-direction: column; align-items: center; justify-content: center; gap: 18px; font-size: 18px; }
+#world-loading:not([hidden]) { display: flex; }
+.world-loading-spinner { width: 40px; height: 40px; border: 3px solid #ffffff30; border-top-color: #f0c040; border-radius: 50%; animation: world-loading-spin .8s linear infinite; }
+#world-loading-back { padding: 10px 16px; background: transparent; border: 1px solid #f0c040; border-radius: 8px; color: #f0c040; cursor: pointer; }
+@keyframes world-loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .world-loading-spinner { animation: none; } }
 #preview-status { position: absolute; top: 50%; width: 100%; padding: 12px; text-align: center; color: #fff; }
 #preview-caption { position: absolute; bottom: 14px; left: 16px; right: 16px; font-size: 12px; color: #fff; text-shadow: 0 1px 4px #000; pointer-events: none; }
 @media (max-width: 700px) {
