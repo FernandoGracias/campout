@@ -391,9 +391,10 @@ export function createWinter(THREE, world) {
   const coneGeo = new THREE.LatheGeometry(coneProfile, 10);
   const coneMaterial = new THREE.MeshStandardMaterial({ color: 0x89512e, roughness: 1, flatShading: true });
   const PICKUP_DISTANCE = 0.65;
+  const MAX_PINECONES = 100;
   const cones = [];
   // Deterministic positions let every camper refer to the same cone by index.
-  for (let i = 0; i < treeColumns.length; i++) {
+  for (let i = 0; i < treeColumns.length && cones.length < MAX_PINECONES; i++) {
     const normal = treeColumns[i].direction;
     const basis = new THREE.Quaternion().setFromUnitVectors(up, normal);
     const angle = i * 2.399963229728653;
@@ -454,12 +455,16 @@ export function createWinter(THREE, world) {
       b.v.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(5);
     }
   }
-  function landCone(id, position) {
+  function landCone(id, position, notifyServer = true) {
     const cone = cones[id];
     if (!cone) return;
     cone.direction.copy(position).normalize();
     cone.position.copy(cone.direction).multiplyScalar(surface(cone.direction) + 0.075);
     cone.availableAt = 0; drawCone(id, true);
+    // Notify server of landing position
+    if (notifyServer && world.sendSignal) {
+      world.sendSignal({ type: 'projectile-land', cone: id, position: cone.position.toArray(), direction: cone.direction.toArray() });
+    }
   }
   function createOrbitTrail(position, kind) {
     const geometry = new THREE.BufferGeometry();
@@ -604,6 +609,57 @@ export function createWinter(THREE, world) {
     const flare = orbit && kind === 'snowball' ? createMoonFlare(mesh) : null;
     balls.push({ owner, mesh, velocity, kind, cone, orbit, trail, flare, age: 0, accumulator: 0 });
   }
+  
+  // Launch a projectile from server state (for new joiners or server broadcasts)
+  function launchFromServer(data, timeDelta = 0) {
+    if (!data || !data.position || !data.velocity) return;
+    const position = new THREE.Vector3().fromArray(data.position);
+    const velocity = new THREE.Vector3().fromArray(data.velocity);
+    // Advance the projectile by timeDelta to catch up to current server time
+    if (timeDelta > 0 && data.skyOrbit) {
+      const steps = Math.floor(timeDelta * 60); // 60 fps steps
+      for (let i = 0; i < steps && i < 3600; i++) { // Max 1 minute of catch-up
+        advanceOrbit(position, velocity, FLIGHT_STEP, GRAVITY_MU);
+      }
+    }
+    launch(data.owner || 'server', position, velocity, data.kind, data.cone, data.skyOrbit);
+  }
+  
+  // Apply full projectile state from server (on join)
+  function applyServerState(state, serverTime) {
+    if (!state) return;
+    const now = Date.now();
+    const timeDelta = serverTime ? (now - serverTime) / 1000 : 0;
+    
+    // Apply pinecone positions
+    if (state.pinecones && state.pinecones.length === cones.length) {
+      for (let i = 0; i < cones.length; i++) {
+        const saved = state.pinecones[i];
+        if (saved.position) cones[i].position.fromArray(saved.position);
+        if (saved.direction) cones[i].direction.fromArray(saved.direction);
+        cones[i].availableAt = saved.available ? 0 : Infinity;
+        drawCone(i, saved.available);
+      }
+    }
+    
+    // Apply orbiting projectiles
+    if (state.orbiting) {
+      for (const p of state.orbiting) {
+        const projectileAge = p.launchTime ? (now - p.launchTime) / 1000 : 0;
+        launchFromServer({ ...p, owner: 'server' }, projectileAge);
+      }
+    }
+  }
+  
+  // Initialize pinecone state on server (called by first player in room)
+  function getPineconeStateForServer() {
+    return cones.map(c => ({
+      position: c.position.toArray(),
+      direction: c.direction.toArray(),
+      available: c.availableAt === 0
+    }));
+  }
+  
   function throwState() {
     const inverse = world.getRotation().clone().invert();
     const facing = world.getFacing();
@@ -1345,6 +1401,7 @@ export function createWinter(THREE, world) {
   
   return { configure, movement, update, action, interact, receive, receivePickup, updateHints, toggleSkates,
     collide, receiveIceContact, sharedVelocity, getProjectileState, setProjectileState,
+    launchFromServer, applyServerState, getPineconeStateForServer, landCone,
     get snowy() { return enabled && (cover > 0 || snowfall > 0); },
     stop: () => velocity.set(0, 0),
     get holding() { return held && world.canAct(); },

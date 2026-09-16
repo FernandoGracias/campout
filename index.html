@@ -62,7 +62,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v213</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v214</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -109,7 +109,7 @@ canvas { display: block; }
     <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
     <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v213</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v214</div>
 </div>
 
 <!-- GAME OVER SCREEN -->
@@ -258,7 +258,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v213</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v214</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -854,6 +854,25 @@ async function handleSignalMessage(msg) {
       }
       case 'restart-request': {
         if (localPlayerId > msg.from) requestIceRestart(msg.from);
+        break;
+      }
+      case 'projectile-state': {
+        // Server sends current projectile state when we join
+        window.pendingProjectileState = msg;
+        break;
+      }
+      case 'projectile-throw': {
+        // Another player threw a projectile - launch it locally
+        if (window.launchRemoteProjectile) {
+          window.launchRemoteProjectile(msg.from, msg.data);
+        }
+        break;
+      }
+      case 'projectile-land': {
+        // A pinecone landed somewhere
+        if (window.landRemotePinecone) {
+          window.landRemotePinecone(msg.cone, msg.position, msg.direction);
+        }
         break;
       }
     }
@@ -1820,6 +1839,26 @@ const winter = createWinter(THREE, {
   send: message => {
     const encoded = JSON.stringify(message);
     for (const dc of Object.values(dataChannels)) if (dc.readyState === 'open' && dc.bufferedAmount < 65536) dc.send(encoded);
+    // Also send projectile events to signaling server for persistent state
+    if (signalingWs?.readyState === 1 && ['snowball', 'pinecone', 'pinecone-pickup'].includes(message.type)) {
+      if (message.type === 'pinecone-pickup') {
+        signalingWs.send(JSON.stringify({ type: 'pinecone-pickup', cone: message.cone }));
+      } else {
+        signalingWs.send(JSON.stringify({ 
+          type: 'projectile-throw', 
+          data: { 
+            kind: message.type, 
+            cone: message.cone, 
+            position: message.position, 
+            velocity: message.velocity, 
+            skyOrbit: message.skyOrbit 
+          } 
+        }));
+      }
+    }
+  },
+  sendSignal: message => {
+    if (signalingWs?.readyState === 1) signalingWs.send(JSON.stringify(message));
   },
 });
 window.receiveSnowball = winter.receive;
@@ -1827,6 +1866,22 @@ window.receivePineconePickup = winter.receivePickup;
 window.receiveIceContact = winter.receiveIceContact;
 window.getProjectileState = winter.getProjectileState;
 window.setProjectileState = winter.setProjectileState;
+window.launchRemoteProjectile = (from, data) => winter.launchFromServer({ ...data, owner: from });
+window.landRemotePinecone = (cone, position, direction) => {
+  if (position) winter.landCone(cone, new THREE.Vector3().fromArray(position), false);
+};
+window.applyServerProjectileState = (state, serverTime) => winter.applyServerState(state, serverTime);
+window.getPineconeStateForServer = winter.getPineconeStateForServer;
+
+// Apply pending projectile state from server (received before game started)
+if (window.pendingProjectileState) {
+  winter.applyServerState(window.pendingProjectileState, window.pendingProjectileState.serverTime);
+  delete window.pendingProjectileState;
+} else if (createdWorld && signalingWs?.readyState === 1) {
+  // First player in room - initialize pinecone state on server
+  signalingWs.send(JSON.stringify({ type: 'pinecone-state-init', pinecones: winter.getPineconeStateForServer() }));
+}
+
 document.getElementById('btn-snowball').addEventListener('click', winter.action);
 document.getElementById('btn-skates').addEventListener('click', winter.toggleSkates);
 
