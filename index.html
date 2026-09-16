@@ -62,7 +62,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v215</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v216</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -109,7 +109,7 @@ canvas { display: block; }
     <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
     <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v215</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v216</div>
 </div>
 
 <!-- GAME OVER SCREEN -->
@@ -258,7 +258,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v215</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v216</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -367,6 +367,9 @@ let lobbyTentColor = 'cc5522';
 let lobbyTentStyle = 'aframe';
 let autoEnterWorld = false;
 let signalingWs = null;
+let signalingReconnectTimer = null, signalingReconnectAttempts = 0;
+let lastSignalingDisconnect = null;
+let projectileProtocol = 0;
 let localPlayerId = null;
 let multiplayerReady = false;
 let turnRefreshTimer = null;
@@ -514,7 +517,9 @@ function publishCampState() {
   }
   if (window.syncCamps) window.syncCamps();
 }
-window.__mp = { peerConnections, dataChannels, pendingCandidates, get signalingWs() { return signalingWs; }, get localPlayerId() { return localPlayerId; } };
+window.__mp = { peerConnections, dataChannels, pendingCandidates, get signalingWs() { return signalingWs; },
+  get localPlayerId() { return localPlayerId; }, get projectileProtocol() { return projectileProtocol; },
+  get lastDisconnect() { return lastSignalingDisconnect; } };
 
 function networkError(error) {
   console.error(error);
@@ -699,11 +704,18 @@ function showLobby() {
 }
 
 function connectSignaling() {
+  if (signalingWs && signalingWs.readyState !== WebSocket.CLOSED) return;
+  clearTimeout(signalingReconnectTimer);
+  projectileProtocol = 0;
   const wsUrl = SIGNAL_SERVER.replace('https://', 'wss://') + '/api/room/' + roomId;
-  signalingWs = new WebSocket(wsUrl);
+  const socket = new WebSocket(wsUrl);
+  signalingWs = socket;
+  let openedAt = 0, processingError = null, lastMessageType = null;
 
-  signalingWs.addEventListener('open', () => {
-    signalingWs.send(JSON.stringify({
+  socket.addEventListener('open', () => {
+    if (socket !== signalingWs) return;
+    openedAt = Date.now();
+    socket.send(JSON.stringify({
       type: 'join',
       name: playerName || 'Camper',
       color: lobbyTentColor,
@@ -713,9 +725,11 @@ function connectSignaling() {
   });
 
   let messages = Promise.resolve();
-  signalingWs.addEventListener('message', event => {
+  socket.addEventListener('message', event => {
     messages = messages.then(async () => {
+      if (socket !== signalingWs || socket.readyState !== WebSocket.OPEN) return;
       const msg = JSON.parse(event.data);
+      lastMessageType = msg.type;
       try {
         await handleSignalMessage(msg);
       } catch (error) {
@@ -728,13 +742,23 @@ function connectSignaling() {
         }
       }
     }).catch(error => {
+      if (socket !== signalingWs) return;
+      processingError = { messageType: lastMessageType, message: error.message, stack: error.stack };
       networkError(error);
-      signalingWs.close(1000, 'Signaling processing failed');
+      socket.close(1000, 'Signaling processing failed');
     });
   });
-  signalingWs.addEventListener('error', () => showToast('World connection failed. Check the code or wait a minute, then reload.'));
-  signalingWs.addEventListener('close', event => {
+  socket.addEventListener('error', () => {
+    if (socket === signalingWs) showToast('World connection failed. Check the code or wait a minute, then reload.');
+  });
+  socket.addEventListener('close', event => {
+    if (socket !== signalingWs) return;
+    lastSignalingDisconnect = { code: event.code, reason: event.reason, wasClean: event.wasClean,
+      lastMessageType, processingError, projectileProtocol, at: new Date().toISOString() };
+    console.warn('Room connection closed', lastSignalingDisconnect);
+    const reason = processingError ? `${processingError.messageType}: ${processingError.message}` : event.reason || 'No close reason received';
     multiplayerReady = false;
+    projectileProtocol = 0;
     createdWorld = false;
     awaitingTeamDiscovery = false;
     clearTimeout(turnRefreshTimer);
@@ -742,16 +766,18 @@ function connectSignaling() {
     document.getElementById('btn-enter-world').disabled = true;
     for (const id of Object.keys(peerConnections)) removePeerConnection(id);
     
-    // Auto-reconnect after 2 seconds if we were in-game
+    // Back off repeated failures instead of exhausting TURN credential limits.
+    if (openedAt && Date.now() - openedAt >= 60000) signalingReconnectAttempts = 0;
+    const retryMs = Math.min(30000, 2000 * 2 ** Math.min(signalingReconnectAttempts++, 4));
     if (document.getElementById('game-screen').style.display === 'block') {
-      showToast('Connection lost. Reconnecting...');
-      setTimeout(() => {
-        if (!signalingWs || signalingWs.readyState === WebSocket.CLOSED) {
+      showToast(`Connection lost (${event.code}: ${reason}). Reconnecting in ${retryMs / 1000}s...`, 6000);
+      signalingReconnectTimer = setTimeout(() => {
+        if (socket === signalingWs && socket.readyState === WebSocket.CLOSED) {
           connectSignaling();
         }
-      }, 2000);
+      }, retryMs);
     } else {
-      showToast('Disconnected: ' + (event.reason || 'connection lost') + '. Reload to rejoin.');
+      showToast(`Disconnected (${event.code}: ${reason}). Reload to rejoin.`);
     }
   });
 }
@@ -793,7 +819,11 @@ async function handleSignalMessage(msg) {
       }
       case 'ready': {
         multiplayerReady = true;
-        window.syncProjectiles?.();
+        // Older workers close sockets on unknown message types. Negotiate
+        // support before sending any projectile sync/heartbeat messages.
+        projectileProtocol = msg.projectileProtocol === 1 ? 1 : 0;
+        if (projectileProtocol) window.syncProjectiles?.();
+        else showToast('Shared projectiles need the updated room server. Other multiplayer features remain connected.', 8000);
         document.getElementById('lobby-seed-display').textContent = 'seed: ' + worldSeed;
         document.getElementById('btn-enter-world').disabled = !localTeam;
         heartbeatTimer = setInterval(() => {
@@ -863,7 +893,7 @@ async function handleSignalMessage(msg) {
       case 'projectile-land':
       case 'projectile-rejected':
       case 'pinecone-picked-up':
-        window.receiveProjectileEvent?.(msg);
+        if (projectileProtocol) window.receiveProjectileEvent?.(msg);
         break;
     }
 }
@@ -1790,7 +1820,7 @@ const winter = createWinter(THREE, {
   scene, camera, globePivot, globe, trees, waterSphere, radius: GLOBE_RADIUS, waterRadius: WATER_RADIUS,
   get localId() { return localPlayerId; }, getPlayer: () => player, getPeers: () => otherPlayers,
   serverNow: roomNow,
-  projectilesOnline: () => multiplayerReady && signalingWs?.readyState === WebSocket.OPEN,
+  projectilesOnline: () => multiplayerReady && projectileProtocol === 1 && signalingWs?.readyState === WebSocket.OPEN,
   getRotation: () => globeRotation, getFacing: () => playerFacing,
   getCameraAngle: () => cameraAngle,
   getObstacles: () => [...rockData.map(r => r.obj), ...Array.from(campModels.values(), model => model.tent).filter(tent => tent.visible)],
@@ -1832,7 +1862,7 @@ const winter = createWinter(THREE, {
     for (const dc of Object.values(dataChannels)) if (dc.readyState === 'open' && dc.bufferedAmount < 65536) dc.send(encoded);
   },
   sendSignal: message => {
-    if (!multiplayerReady || signalingWs?.readyState !== WebSocket.OPEN) return false;
+    if (!multiplayerReady || projectileProtocol !== 1 || signalingWs?.readyState !== WebSocket.OPEN) return false;
     signalingWs.send(JSON.stringify(message));
     return true;
   },
@@ -2839,6 +2869,10 @@ document.addEventListener('keydown', (e) => {
 // --- EXIT WORLD ---
 document.getElementById('btn-exit-world').addEventListener('click', () => {
   clearSession();
+  clearTimeout(signalingReconnectTimer);
+  clearTimeout(turnRefreshTimer);
+  signalingReconnectAttempts = 0;
+  projectileProtocol = 0;
   if (signalingWs) {
     signalingWs.close(1000, 'User left');
     signalingWs = null;
