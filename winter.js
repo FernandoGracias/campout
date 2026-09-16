@@ -13,7 +13,6 @@ export function createWinter(THREE, world) {
   const BALL_RADIUS = 0.08, FLIGHT_STEP = 1 / 60, GRAVITY_MU = 12 * radius * radius;
   const throwPower = 20;
   const SKY_CLIMB_TIME = 2, SKY_DECAY_TURNS = 50;
-  const MAX_PROJECTILES = 100;
   const ORBIT_TRAIL_LENGTH = Math.PI * 2 * radius / 5 * 0.7, ORBIT_TRAIL_SECONDS = 1.4;
   const ORBIT_TRAIL_POINTS = Math.ceil(ORBIT_TRAIL_SECONDS / FLIGHT_STEP) + 2;
   const velocity = new THREE.Vector2();
@@ -418,7 +417,8 @@ export function createWinter(THREE, world) {
     groundCones.instanceMatrix.needsUpdate = true;
     groundCones.boundingSphere = null;
   }
-  cones.forEach((cone, index) => drawCone(index, true));
+  // Generated positions initialize a new room; show only the server's inventory.
+  cones.forEach((cone, index) => drawCone(index, false));
   function nearbyCone(preferred = null) {
     const foot = world.getPlayer().position.clone().applyQuaternion(world.getRotation().clone().invert());
     let nearest = null, distance = PICKUP_DISTANCE;
@@ -433,14 +433,11 @@ export function createWinter(THREE, world) {
     cones[id].availableAt = Infinity;
     drawCone(id, false);
   }
-  function receivePickup(id, message) {
-    const peer = world.getPeers()[id], cone = cones[message.cone];
-    if (enabled || !peer || !Number.isSafeInteger(message.cone) || !cone || cone.availableAt > elapsed) return;
-    const foot = up.clone().applyQuaternion(peer.currentGlobeRotation.clone().invert()).multiplyScalar(peer.mesh.position.length());
-    if (foot.distanceTo(cone.position) > PICKUP_DISTANCE + 0.25) return;
-    takeCone(message.cone);
-  }
-  const balls = [], receiveTimes = new Map();
+  const balls = [];
+  let projectileReady = false, projectileAuthority = null, projectileRevision = -1;
+  let pendingPickup = null, lastCheckpoint = 0, lastProjectileHeartbeat = 0;
+  let projectileClockOffset = world.serverNow() - Date.now();
+  const projectileNow = () => Date.now() + projectileClockOffset;
   let moonFlareTexture = null;
   const burstCount = 160, burstPositions = new Float32Array(burstCount * 3);
   const bursts = Array.from({ length: burstCount }, () => ({ life: 0, p: new THREE.Vector3(), v: new THREE.Vector3() }));
@@ -455,16 +452,13 @@ export function createWinter(THREE, world) {
       b.v.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(5);
     }
   }
-  function landCone(id, position, notifyServer = true) {
+  function landCone(id, position) {
     const cone = cones[id];
     if (!cone) return;
     cone.direction.copy(position).normalize();
-    cone.position.copy(cone.direction).multiplyScalar(surface(cone.direction) + 0.075);
+    // The server stores the final bounce endpoint, already placed on terrain.
+    cone.position.copy(position);
     cone.availableAt = 0; drawCone(id, true);
-    // Notify server of landing position
-    if (notifyServer && world.sendSignal) {
-      world.sendSignal({ type: 'projectile-land', cone: id, position: cone.position.toArray(), direction: cone.direction.toArray() });
-    }
   }
   function createOrbitTrail(position, kind) {
     const geometry = new THREE.BufferGeometry();
@@ -579,11 +573,6 @@ export function createWinter(THREE, world) {
     }
   }
   function launch(owner, position, velocity, kind = enabled ? 'snowball' : 'pinecone', cone = null, skyOrbit = false) {
-    if (balls.length >= MAX_PROJECTILES) {
-      const oldest = balls.shift();
-      if (oldest.kind === 'pinecone') landCone(oldest.cone, oldest.mesh.position);
-      removeProjectileVisuals(oldest);
-    }
     const mesh = new THREE.Mesh(kind === 'pinecone' ? coneGeo : ballGeo, kind === 'pinecone' ? coneMaterial : snowMaterial);
     mesh.position.copy(position); globePivot.add(mesh);
     let orbit = null;
@@ -607,57 +596,118 @@ export function createWinter(THREE, world) {
     }
     const trail = createOrbitTrail(position, kind);
     const flare = orbit && kind === 'snowball' ? createMoonFlare(mesh) : null;
-    balls.push({ owner, mesh, velocity, kind, cone, orbit, trail, flare, age: 0, accumulator: 0 });
+    const ball = { id: crypto.randomUUID(), owner, mesh, velocity, kind, cone, orbit, trail, flare,
+      age: 0, step: 0, launchTime: projectileNow(), confirmed: false };
+    balls.push(ball);
+    return ball;
   }
-  
-  // Launch a projectile from server state (for new joiners or server broadcasts)
-  function launchFromServer(data, timeDelta = 0) {
-    if (!data || !data.position || !data.velocity) return;
-    const position = new THREE.Vector3().fromArray(data.position);
-    const velocity = new THREE.Vector3().fromArray(data.velocity);
-    // Advance the projectile by timeDelta to catch up to current server time
-    if (timeDelta > 0 && data.skyOrbit) {
-      const steps = Math.floor(timeDelta * 60); // 60 fps steps
-      for (let i = 0; i < steps && i < 3600; i++) { // Max 1 minute of catch-up
-        advanceOrbit(position, velocity, FLIGHT_STEP, GRAVITY_MU);
-      }
+  function removeBall(id) {
+    const index = balls.findIndex(ball => ball.id === id);
+    if (index < 0) return;
+    removeProjectileVisuals(balls[index]); balls.splice(index, 1);
+  }
+  function serializeBall(ball) {
+    return { id: ball.id, kind: ball.kind, cone: ball.cone, position: ball.mesh.position.toArray(),
+      velocity: ball.velocity.toArray(), skyOrbit: !!ball.orbit, step: ball.step,
+      orbit: ball.orbit ? { ...ball.orbit, normal: ball.orbit.normal.toArray() } : null };
+  }
+  function launchFromServer(data, restoring = false) {
+    removeBall(data.id);
+    if (data.kind === 'pinecone' && cones[data.cone]) takeCone(data.cone);
+    const ball = launch(data.owner, new THREE.Vector3().fromArray(data.position),
+      new THREE.Vector3().fromArray(data.velocity), data.kind, data.cone, data.skyOrbit);
+    Object.assign(ball, { id: data.id, launchTime: data.launchTime, step: data.step, age: data.step * FLIGHT_STEP, confirmed: true });
+    ball.collisionStartStep = restoring ? Math.max(data.step, Math.floor((projectileNow() - data.launchTime) / (FLIGHT_STEP * 1000))) : 0;
+    if (data.orbit) ball.orbit = { ...data.orbit, normal: new THREE.Vector3().fromArray(data.orbit.normal) };
+    if (data.bounce) {
+      ball.bounce = { from: new THREE.Vector3().fromArray(data.bounce.from), to: new THREE.Vector3().fromArray(data.bounce.to), startedAt: data.bounce.startedAt };
+      removeOrbitTrail(ball);
     }
-    launch(data.owner || 'server', position, velocity, data.kind, data.cone, data.skyOrbit);
+    // Catch-up happens against the same flight physics in updateBalls, with
+    // historical player hits disabled. Never show a stale launch as a new shot.
+    ball.mesh.visible = false; if (ball.trail) ball.trail.line.visible = false;
+    return ball;
   }
-  
-  // Apply full projectile state from server (on join)
-  function applyServerState(state, serverTime) {
-    if (!state) return;
-    const now = Date.now();
-    const timeDelta = serverTime ? (now - serverTime) / 1000 : 0;
-    
-    // Apply pinecone positions
-    if (state.pinecones && state.pinecones.length === cones.length) {
+  function syncProjectiles() {
+    projectileReady = false; pendingPickup = null;
+    world.sendSignal({ type: 'projectile-sync', active: !document.hidden, clientTime: Date.now(), pinecones: cones.map(c => c.position.toArray()) });
+  }
+  function receiveProjectileEvent(message) {
+    if (message.type === 'projectile-authority') {
+      const changingRole = message.authority !== projectileAuthority &&
+        (message.authority === world.localId || projectileAuthority === world.localId);
+      projectileAuthority = message.authority;
+      // Replay from the committed checkpoint when collision responsibility
+      // changes, so an obstacle crossed during handover cannot be missed.
+      if (changingRole) syncProjectiles();
+      return;
+    }
+    if (message.type === 'projectile-rejected') { removeBall(message.id); return; }
+    if (!Number.isSafeInteger(message.revision) || message.revision < projectileRevision) return;
+    projectileRevision = message.revision;
+    if (message.type === 'projectile-state') {
+      // Round-trip clock estimate keeps different clients on the same flight
+      // step without changing their environment/day-night clock.
+      if (Number.isSafeInteger(message.clientTime) && Number.isSafeInteger(message.serverTime)) {
+        projectileClockOffset = message.serverTime - (message.clientTime + Date.now()) / 2;
+      }
+      for (const ball of balls) removeProjectileVisuals(ball);
+      balls.length = 0;
+      if (heldCone !== null) held = false;
+      heldCone = null; pendingPickup = null;
       for (let i = 0; i < cones.length; i++) {
-        const saved = state.pinecones[i];
-        if (saved.position) cones[i].position.fromArray(saved.position);
-        if (saved.direction) cones[i].direction.fromArray(saved.direction);
-        cones[i].availableAt = saved.available ? 0 : Infinity;
-        drawCone(i, saved.available);
+        const saved = message.pinecones?.[i];
+        if (!saved) { takeCone(i); continue; }
+        cones[i].position.fromArray(saved.position); cones[i].direction.copy(cones[i].position).normalize();
+        cones[i].availableAt = saved.available ? 0 : Infinity; drawCone(i, saved.available);
+        if (saved.holder === world.localId && !enabled) { heldCone = i; held = true; }
+      }
+      projectileAuthority = message.authority;
+      projectileReady = Array.isArray(message.pinecones);
+      for (const data of message.projectiles || []) launchFromServer(data, true);
+    } else if (message.type === 'projectile-throw') {
+      for (const id of message.removed || []) removeBall(id);
+      launchFromServer(message.data);
+    } else if (message.type === 'pinecone-picked-up') {
+      if (cones[message.cone]) takeCone(message.cone);
+      if (message.holder === world.localId) {
+        pendingPickup = null;
+        if (enabled || !world.canAct()) world.sendSignal({ type: 'pinecone-release', cone: message.cone });
+        else { held = true; heldCone = message.cone; }
+      }
+    } else if (message.type === 'projectile-land') {
+      removeBall(message.id);
+      landCone(message.cone, new THREE.Vector3().fromArray(message.position));
+      if (heldCone === message.cone) { heldCone = null; held = false; }
+    } else if (message.type === 'projectile-impact') {
+      const ball = balls.find(b => b.id === message.id);
+      if (ball) {
+        ball.pendingImpact = null; removeOrbitTrail(ball);
+        if (message.bounce) {
+          ball.bounce = { from: new THREE.Vector3().fromArray(message.bounce.from), to: new THREE.Vector3().fromArray(message.bounce.to), startedAt: message.bounce.startedAt };
+          ball.mesh.visible = true;
+        } else {
+          if (projectileNow() - message.occurredAt < 1000) splat(new THREE.Vector3().fromArray(message.position));
+          removeBall(message.id);
+        }
+      }
+      // Apply hit effects once, from the accepted room event, not independently
+      // on every predicting client. Old catch-up collisions never score hits.
+      const victim = message.victim === world.localId ? world.getPlayer() : world.getPeers()[message.victim]?.mesh;
+      if (victim) {
+        victim.userData.snowHitUntil = elapsed + 0.45;
+        if (message.victim === world.localId) {
+          floatScore(victim, -1);
+          const team = world.getPlayerTeam?.(world.localId);
+          if (team) world.addTeamScore?.(team === 'red' ? 'blue' : 'red', 1);
+        } else if (message.owner === world.localId) floatScore(victim, 1);
+      } else if (message.tentOwner && message.owner === world.localId && world.isTentOccupied?.(message.tentOwner)) {
+        floatScoreAt(new THREE.Vector3().fromArray(message.position).applyQuaternion(world.getRotation()), 1);
+        const team = world.getPlayerTeam?.(world.localId);
+        if (team) world.addTeamScore?.(team, 1);
       }
     }
-    
-    // Apply orbiting projectiles
-    if (state.orbiting) {
-      for (const p of state.orbiting) {
-        const projectileAge = p.launchTime ? (now - p.launchTime) / 1000 : 0;
-        launchFromServer({ ...p, owner: 'server' }, projectileAge);
-      }
-    }
-  }
-  
-  // Initialize pinecone state on server (called by first player in room)
-  function getPineconeStateForServer() {
-    return cones.map(c => ({
-      position: c.position.toArray(),
-      direction: c.direction.toArray(),
-      available: c.availableAt === 0
-    }));
+    updateCrosshair();
   }
   
   function throwState() {
@@ -703,14 +753,14 @@ export function createWinter(THREE, world) {
     return { position, velocity: viewDirection.multiplyScalar(throwPower).applyQuaternion(inverse), skyOrbit: true };
   }
   function action(preferredCone = null) {
-    if (!world.canAct() || elapsed - lastAction < 0.3 || packing > 0) return;
+    if (!world.canAct() || !projectileReady || !world.projectilesOnline() || pendingPickup !== null || elapsed - lastAction < 0.3 || packing > 0) return;
     const player = world.getPlayer();
     if (!held) {
       if (!enabled) {
         const id = nearbyCone(Number.isInteger(preferredCone) ? preferredCone : null);
         if (id === null) return;
-        takeCone(id); held = true; heldCone = id; lastAction = elapsed;
-        world.send({ type: 'pinecone-pickup', cone: id });
+        pendingPickup = id; lastAction = elapsed;
+        world.sendSignal({ type: 'pinecone-pickup', cone: id });
         updateCrosshair(); refreshHints();
         return;
       }
@@ -723,8 +773,8 @@ export function createWinter(THREE, world) {
     const shot = throwState();
     held = false; lastAction = elapsed; throwPose = 0.3;
     updateCrosshair();
-    launch(world.localId, shot.position, shot.velocity, enabled ? 'snowball' : 'pinecone', heldCone, shot.skyOrbit);
-    world.send({ type: enabled ? 'snowball' : 'pinecone', cone: heldCone, position: shot.position.toArray(), velocity: shot.velocity.toArray(), skyOrbit: shot.skyOrbit === true });
+    const ball = launch(world.localId, shot.position, shot.velocity, enabled ? 'snowball' : 'pinecone', heldCone, shot.skyOrbit);
+    world.sendSignal({ type: 'projectile-throw', data: serializeBall(ball) });
     heldCone = null;
   }
   function pointerHit(pointerRay) {
@@ -752,27 +802,11 @@ export function createWinter(THREE, world) {
     action();
     return true;
   }
-  function receive(id, message) {
-    if (!world.getPeers()[id] || elapsed - (receiveTimes.get(id) ?? -10) < 0.3) return;
-    if (message.type !== (enabled ? 'snowball' : 'pinecone')) return;
-    if (message.skyOrbit !== undefined && typeof message.skyOrbit !== 'boolean') return;
-    if (![message.position, message.velocity].every(v => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite))) return;
-    const position = new THREE.Vector3(...message.position), speed = new THREE.Vector3(...message.velocity);
-    const peer = world.getPeers()[id];
-    const direction = up.clone().applyQuaternion(peer.currentGlobeRotation.clone().invert());
-    if (position.length() < (enabled ? iceRadius : waterRadius) || position.length() > radius + 9 || speed.length() > 20.01 || speed.length() < 2.99 ||
-        direction.distanceTo(position.clone().normalize()) * radius > 2) return;
-    if (message.type === 'pinecone') {
-      if (!Number.isSafeInteger(message.cone) || !cones[message.cone]) return;
-      takeCone(message.cone);
-    }
-    receiveTimes.set(id, elapsed); launch(id, position, speed, message.type, message.cone, message.skyOrbit === true);
-  }
   const flightRay = new THREE.Raycaster();
   const iceBounds = new THREE.Sphere(new THREE.Vector3(), iceRadius);
   let flightObstacles = [];
   // Swept collisions and a fixed timestep keep fast throws from tunneling.
-  function flightHit(from, to, owner, inverse) {
+  function flightHit(from, to, owner, inverse, historical = false) {
     if (Math.min(from.length(), to.length()) > radius + 12) return null;
     const travel = to.clone().sub(from), length = travel.length();
     flightRay.set(from, travel.clone().normalize());
@@ -786,7 +820,7 @@ export function createWinter(THREE, world) {
     };
     iceBounds.radius = enabled ? iceRadius : waterRadius;
     accept(flightRay.ray.intersectSphere(iceBounds, new THREE.Vector3()));
-    const campers = [[world.localId, world.getPlayer()], ...Object.entries(world.getPeers()).map(([id, p]) => [id, p.mesh])];
+    const campers = historical ? [] : [[world.localId, world.getPlayer()], ...Object.entries(world.getPeers()).map(([id, p]) => [id, p.mesh])];
     for (const [id, mesh] of campers) {
       if (id === owner || !mesh.visible) continue;
       const radial = mesh.position.clone().normalize();
@@ -823,7 +857,7 @@ export function createWinter(THREE, world) {
     if (!nearest && to.length() < iceBounds.radius) nearest = { point: to.clone().normalize().multiplyScalar(iceBounds.radius), mesh: null, tent: null };
     return nearest;
   }
-  function advanceFlight(position, speed, orbit) {
+  function advanceFlight(position, speed, orbit, dt = FLIGHT_STEP) {
     const next = position.clone();
     if (!orbit) {
       // Must match ballisticArcs exactly: no sky-only forces on solved shots.
@@ -835,10 +869,17 @@ export function createWinter(THREE, world) {
     // Integrate the rotation exactly to avoid numerical decay across 50 laps.
     // The launch's outward speed fades without reversing into a plunging return.
     const r = position.length();
-    const damping = Math.exp(-FLIGHT_STEP / SKY_CLIMB_TIME);
+    const damping = Math.exp(-dt / SKY_CLIMB_TIME);
     const climb = orbit.radialSpeed * SKY_CLIMB_TIME * (1 - damping);
-    const angle = orbit.tangentSpeed * FLIGHT_STEP / Math.max(1, r + climb / 2);
-    const nextRadius = Math.max(0.1, r + climb - orbit.decayPerRadian * angle);
+    let angle = orbit.tangentSpeed * dt / Math.max(1, r + climb / 2);
+    let nextRadius = Math.max(0.1, r + climb - orbit.decayPerRadian * angle);
+    if (Math.abs(orbit.radialSpeed) < 1e-5) {
+      // Exact slow spiral after the climb settles: dr/dtheta = -decay.
+      // The same expression advances a live frame or hours of empty high sky.
+      orbit.radialSpeed = 0;
+      nextRadius = Math.sqrt(Math.max(0.01, r * r - 2 * orbit.decayPerRadian * orbit.tangentSpeed * dt));
+      angle = (r - nextRadius) / orbit.decayPerRadian;
+    }
     const radial = next.divideScalar(r).applyAxisAngle(orbit.normal, angle);
     orbit.radialSpeed *= damping;
     speed.copy(orbit.normal).cross(radial).multiplyScalar(orbit.tangentSpeed)
@@ -916,72 +957,100 @@ export function createWinter(THREE, world) {
     }
   }
   function updateBalls(delta, inverse) {
+    const now = projectileNow();
+    if (world.projectilesOnline() && now - lastProjectileHeartbeat >= 5000) {
+      lastProjectileHeartbeat = now;
+      world.sendSignal({ type: 'projectile-heartbeat', active: !document.hidden });
+    }
+    let budget = 1200;
     for (let i = balls.length - 1; i >= 0; i--) {
-      const ball = balls[i]; let impact = false;
+      const ball = balls[i];
+      if (!world.projectilesOnline()) {
+        projectileReady = false; ball.mesh.visible = false;
+        if (ball.trail) ball.trail.line.visible = false;
+        continue;
+      }
+      if (!ball.confirmed && now - ball.launchTime > 5000 && !ball.confirmationRequested) {
+        ball.confirmationRequested = true; syncProjectiles();
+      }
       if (ball.bounce) {
-        ball.bounce.age += delta;
-        const t = Math.min(1, ball.bounce.age / 0.45);
+        const t = THREE.MathUtils.clamp((now - ball.bounce.startedAt) / 450, 0, 1);
+        ball.mesh.visible = true;
         ball.mesh.position.lerpVectors(ball.bounce.from, ball.bounce.to, t)
           .addScaledVector(ball.bounce.to.clone().normalize(), Math.sin(Math.PI * t) * 0.3);
         ball.mesh.rotateX(delta * 9);
-        if (t === 1) {
-          landCone(ball.cone, ball.bounce.to);
-          removeProjectileVisuals(ball); balls.splice(i, 1);
+        // The server commits and broadcasts the final resting position, even
+        // if the throwing player disconnects halfway through this animation.
+        continue;
+      }
+      if (ball.pendingImpact) {
+        if (ball.confirmed && (projectileAuthority === world.localId || ball.pendingImpact.message.victim === world.localId) && now - ball.pendingImpact.sentAt > 500) {
+          world.sendSignal(ball.pendingImpact.message); ball.pendingImpact.sentAt = now;
         }
         continue;
       }
-      ball.accumulator += delta;
-      while (ball.accumulator >= FLIGHT_STEP && !impact) {
-        ball.accumulator -= FLIGHT_STEP;
+      const targetStep = Math.max(0, Math.floor((now - ball.launchTime) / (FLIGHT_STEP * 1000)));
+      let work = 0;
+      while (ball.step < targetStep && budget > 0 && work++ < 240) {
+        budget--;
         const from = ball.mesh.position.clone();
-        const to = advanceFlight(from, ball.velocity, ball.orbit);
-        const hit = flightHit(from, to, ball.age < 0.4 ? ball.owner : null, inverse);
-        if (hit) {
-          to.copy(hit.point); impact = true;
-          removeOrbitTrail(ball);
-          if (hit.mesh) {
-            // Hit a player
-            hit.mesh.userData.snowHitUntil = elapsed + 0.45;
-            if (hit.mesh === world.getPlayer()) {
-              floatScore(hit.mesh, -1);
-              // Team scoring: other team gets a point
-              const myTeam = world.getPlayerTeam?.(world.localId);
-              if (myTeam) world.addTeamScore?.(myTeam === 'red' ? 'blue' : 'red', 1);
-            } else if (ball.owner === world.localId) {
-              floatScore(hit.mesh, 1);
-              // Team scoring: my team gets a point
-              const myTeam = world.getPlayerTeam?.(world.localId);
-              if (myTeam) world.addTeamScore?.(myTeam, 1);
-            }
-          } else if (hit.tent && ball.owner === world.localId) {
-            // Hit a tent - check if occupied
-            const tentOwner = hit.tent.owner;
-            if (world.isTentOccupied?.(tentOwner)) {
-              // Show +1/-1 animation at tent position
-              const tentPos = hit.tent.mesh.position.clone();
-              floatScoreAt(tentPos, 1);
-              // Team scoring
-              const myTeam = world.getPlayerTeam?.(world.localId);
-              if (myTeam) world.addTeamScore?.(myTeam, 1);
-            }
+        // Empty high-altitude coasting can be advanced analytically. Stop
+        // above all collision geometry, then replay actual swept flight below.
+        if (ball.orbit && Math.abs(ball.orbit.radialSpeed) < 1e-5 && from.length() > radius + 12.1) {
+          const coastSeconds = (from.lengthSq() - (radius + 12.1) ** 2) /
+            (2 * ball.orbit.decayPerRadian * ball.orbit.tangentSpeed);
+          const steps = Math.min(targetStep - ball.step, Math.floor(coastSeconds / FLIGHT_STEP));
+          if (steps > 1) {
+            ball.mesh.position.copy(advanceFlight(from, ball.velocity, ball.orbit, steps * FLIGHT_STEP));
+            ball.step += steps; ball.age = ball.step * FLIGHT_STEP;
+            // Don't draw one giant chord through the globe after catch-up.
+            if (steps > ORBIT_TRAIL_POINTS) {
+              removeOrbitTrail(ball); ball.trail = createOrbitTrail(ball.mesh.position, ball.kind);
+            } else if (targetStep - ball.step <= ORBIT_TRAIL_POINTS) updateOrbitTrail(ball);
+            continue;
           }
+        }
+        const historical = targetStep - ball.step > 30 || ball.step < (ball.collisionStartStep || 0);
+        const to = advanceFlight(from, ball.velocity, ball.orbit);
+        const contact = flightHit(from, to, ball.age < 0.4 ? ball.owner : null, inverse, historical);
+        // One active simulator reports world collisions; each camper can also
+        // report being struck at their own current position. Other clients
+        // keep rendering until the room commits that single shared impact.
+        const hit = projectileAuthority === world.localId || contact?.mesh === world.getPlayer() ? contact : null;
+        ball.step++; ball.age = ball.step * FLIGHT_STEP;
+        if (hit) {
+          to.copy(hit.point);
+          removeOrbitTrail(ball);
+          let landing = null;
           if (ball.kind === 'pinecone') {
             const base = hit.mesh ? hit.mesh.position.clone().applyQuaternion(inverse) : to.clone();
             const radial = base.clone().normalize();
             const away = ball.velocity.clone().negate().addScaledVector(radial, ball.velocity.dot(radial)).normalize();
             const direction = base.addScaledVector(away, 0.4).normalize();
-            ball.bounce = { from: to.clone(), to: direction.clone().multiplyScalar(surface(direction) + 0.075), age: 0 };
+            landing = direction.multiplyScalar(surface(direction) + 0.075).toArray();
           }
+          const victim = hit.mesh === world.getPlayer() ? world.localId :
+            Object.entries(world.getPeers()).find(([, peer]) => peer.mesh === hit.mesh)?.[0] || null;
+          const message = { type: 'projectile-impact', id: ball.id, position: to.toArray(), landing,
+            step: ball.step, victim, tentOwner: historical ? null : hit.tent?.owner || null };
+          ball.mesh.position.copy(to); ball.mesh.visible = !historical;
+          ball.pendingImpact = { message, sentAt: now };
+          if (ball.confirmed) world.sendSignal(message);
+          break;
         }
         ball.mesh.position.copy(to);
-        ball.age += FLIGHT_STEP;
-        updateOrbitTrail(ball);
+        if (targetStep - ball.step <= ORBIT_TRAIL_POINTS) updateOrbitTrail(ball);
       }
-      if (impact) {
-        if (ball.kind === 'pinecone') continue;
-        if (ball.kind === 'snowball') splat(ball.mesh.position);
-        removeProjectileVisuals(ball); balls.splice(i, 1);
+      if (!ball.pendingImpact) {
+        ball.mesh.visible = ball.step >= targetStep - 1;
+        if (ball.trail) ball.trail.line.visible = ball.mesh.visible;
       }
+    }
+    if (projectileReady && projectileAuthority === world.localId && world.projectilesOnline() && now - lastCheckpoint >= 5000) {
+      lastCheckpoint = now;
+      const checkpoints = balls.filter(b => b.confirmed && !b.pendingImpact && !b.bounce && b.mesh.visible).map(serializeBall);
+      // Keep messages below the signaling server's per-message size limit.
+      for (let i = 0; i < checkpoints.length; i += 10) world.sendSignal({ type: 'projectile-checkpoint', projectiles: checkpoints.slice(i, i + 10) });
     }
     for (let i = 0; i < burstCount; i++) {
       const b = bursts[i]; b.life -= delta;
@@ -1143,7 +1212,7 @@ export function createWinter(THREE, world) {
     }
     if (wasEnabled !== enabled) {
       if (heldCone !== null) {
-        landCone(heldCone, world.getPlayer().position.clone().applyQuaternion(world.getRotation().clone().invert()));
+        world.sendSignal({ type: 'pinecone-release', cone: heldCone });
         heldCone = null;
       }
       clearTracks(); velocity.set(0, 0); held = false; packing = 0;
@@ -1152,11 +1221,8 @@ export function createWinter(THREE, world) {
       for (const flake of flakes) flake.live = false;
       flakeWeather.fill(0); flakePositions.fill(0); floorCache.clear(); flakeCursor = 0;
       flakeGeo.attributes.position.needsUpdate = flakeGeo.attributes.weather.needsUpdate = true;
-      for (const ball of balls) {
-        if (ball.kind === 'pinecone') landCone(ball.cone, ball.mesh.position);
-        removeProjectileVisuals(ball);
-      }
-      balls.length = 0;
+      // Existing flights and landed inventory belong to the room, not the
+      // current equipment season. Only the server removes world projectiles.
       while (scoreFloats.length) removeScore(0);
     }
     if (cover === 0 && wasCover > 0) clearTracks();
@@ -1311,7 +1377,7 @@ export function createWinter(THREE, world) {
     }
     if (throwPose > 0) { throwPose -= delta; player.userData.rightArm.rotation.x = -2.2 * Math.max(0, throwPose / 0.3); }
     refreshHints();
-    button.disabled = !canAct || (!enabled && !held && nearbyCone() === null);
+    button.disabled = !canAct || !projectileReady || !world.projectilesOnline() || pendingPickup !== null || (!enabled && !held && nearbyCone() === null);
     if (enabled) {
     updateTrack(world.localId, player, inverse, delta);
     updateSkateTracks(world.localId, player, inverse, skates && (player.userData.onIce || cover > 0.05) && canAct);
@@ -1321,7 +1387,7 @@ export function createWinter(THREE, world) {
     }
     for (const [id, track] of tracks) if (id !== world.localId && !world.getPeers()[id]) {
       disposeTrack(track);
-      tracks.delete(id); receiveTimes.delete(id);
+        tracks.delete(id);
       disposeCuts(id);
       iceContacts.delete(id);
     }
@@ -1332,76 +1398,8 @@ export function createWinter(THREE, world) {
     updateScores(delta);
   }
   
-  // Serialize pinecone positions and orbiting projectiles for session persistence
-  function getProjectileState() {
-    // Pinecones: save position and direction for cones that have moved (availableAt !== 0 means taken/in-flight)
-    const pinecones = cones.map((c, i) => ({
-      position: c.position.toArray(),
-      direction: c.direction.toArray(),
-      available: c.availableAt === 0
-    }));
-    // Orbiting projectiles: only save those with orbit (in stable orbit)
-    const projectiles = balls.filter(b => b.orbit).map(b => ({
-      kind: b.kind,
-      cone: b.cone,
-      position: b.mesh.position.toArray(),
-      velocity: b.velocity.toArray(),
-      orbit: {
-        normal: b.orbit.normal.toArray(),
-        radialSpeed: b.orbit.radialSpeed,
-        tangentSpeed: b.orbit.tangentSpeed,
-        decayPerRadian: b.orbit.decayPerRadian
-      },
-      age: b.age
-    }));
-    return { pinecones, projectiles };
-  }
-  
-  // Restore pinecone positions and orbiting projectiles from saved state
-  function setProjectileState(state) {
-    if (!state) return;
-    // Restore pinecone positions
-    if (state.pinecones && state.pinecones.length === cones.length) {
-      for (let i = 0; i < cones.length; i++) {
-        const saved = state.pinecones[i];
-        cones[i].position.fromArray(saved.position);
-        cones[i].direction.fromArray(saved.direction);
-        cones[i].availableAt = saved.available ? 0 : Infinity;
-        drawCone(i, saved.available);
-      }
-    }
-    // Restore orbiting projectiles
-    if (state.projectiles) {
-      for (const p of state.projectiles) {
-        const position = new THREE.Vector3().fromArray(p.position);
-        const velocity = new THREE.Vector3().fromArray(p.velocity);
-        const orbit = {
-          normal: new THREE.Vector3().fromArray(p.orbit.normal),
-          radialSpeed: p.orbit.radialSpeed,
-          tangentSpeed: p.orbit.tangentSpeed,
-          decayPerRadian: p.orbit.decayPerRadian
-        };
-        // Create the projectile mesh
-        const mesh = new THREE.Mesh(
-          p.kind === 'pinecone' ? coneGeo : ballGeo,
-          p.kind === 'pinecone' ? coneMaterial : snowMaterial
-        );
-        mesh.position.copy(position);
-        globePivot.add(mesh);
-        const trail = createOrbitTrail(position, p.kind);
-        const flare = p.kind === 'snowball' ? createMoonFlare(mesh) : null;
-        balls.push({
-          owner: world.localId, // Restored projectiles belong to local player
-          mesh, velocity, kind: p.kind, cone: p.cone, orbit, trail, flare,
-          age: p.age || 0, accumulator: 0
-        });
-      }
-    }
-  }
-  
-  return { configure, movement, update, action, interact, receive, receivePickup, updateHints, toggleSkates,
-    collide, receiveIceContact, sharedVelocity, getProjectileState, setProjectileState,
-    launchFromServer, applyServerState, getPineconeStateForServer, landCone,
+  return { configure, movement, update, action, interact, updateHints, toggleSkates,
+    collide, receiveIceContact, sharedVelocity, receiveProjectileEvent, syncProjectiles,
     get snowy() { return enabled && (cover > 0 || snowfall > 0); },
     stop: () => velocity.set(0, 0),
     get holding() { return held && world.canAct(); },
