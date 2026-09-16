@@ -24,6 +24,7 @@ export function createLobbyWeather({ getEnvironment, getHour, canEdit, publish }
   function sync() {
     const env = getEnvironment();
     document.getElementById('lobby-weather').disabled = !env || !canEdit();
+    document.getElementById('lobby-weather').hidden = !env || !canEdit();
     if (!env || previous === env) return;
     previous = env;
     document.getElementById('lobby-winter').checked = env.winter === true;

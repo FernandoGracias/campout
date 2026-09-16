@@ -18,7 +18,8 @@ There is no build step. Deploy the HTML, CSS and JavaScript files together.
 | `winter.js` | Seasonal equipment, snow/ice, projectile simulation and room-event reconciliation |
 | `winter-physics.js` | Ice impulses, orbit integration and ballistic targeting |
 | `pinecones.js` | Cone geometry, inventory, pickup and raycast resting positions |
-| `pinecone-fire.js` | Flame visuals for held, flying and resting pinecones |
+| `pinecone-fire.js` | Pooled fire/smoke trails and impact embers in planet coordinates |
+| `fire-particles.js` | Fire and smoke motion shared by campfires and pinecones |
 | `launch-preview.js` | Disposable lobby renderer using the shared world/character/tent builders |
 | `lobby-weather.js` | Lobby controls for the shared room environment |
 | `launch-screen.css` | Desktop and mobile preview/menu layout |
@@ -33,13 +34,19 @@ animation frame, listeners and GPU resources are disposed before entering play.
 The mobile lobby reserves the top third for the preview; the lower two-thirds
 scroll independently. Both views share the same controls as desktop.
 
-## Projectile confirmation
+## Immediate projectile collisions
 
-The room authority and the receiver report projectile impacts. Every client can
-predict a snowball's **visual** contact, immediately hiding the projectile and
-showing the impact without waiting for the round trip. Scores still come only
-from accepted room events. Confirmation does not repeat a predicted impact effect;
-a delayed prediction requests a room snapshot to reconcile with authoritative state.
+Snowballs and pinecones use the same swept collision path on every client.
+Contact immediately stops flight: snowballs burst and pinecones bounce locally.
+The client then reports the hit; the server accepts the first valid report and
+deduplicates the rest for shared scoring/inventory. Neither a delayed throw echo
+nor a room snapshot restarts a locally collided projectile. Recent snapshot
+catch-up checks player collisions instead of skipping them until the present.
+
+Flaming pinecones use the campfire's particle motion. Flight directs fire backward;
+black smoke stays behind in planet coordinates, expands and fades. Impacts leave
+a short-lived ember burst. Particle pools are bounded and trails outlive removal
+of the projectile itself.
 
 Pinecones retain their land support offset. In water, a raycast against the actual
 water triangles places the laid-down cone's center on the surface. The same rule
@@ -50,8 +57,8 @@ is used for landing, bounce endpoints and restored room snapshots.
 The room server persists weather and time settings with the room, including when
 the last camper disconnects. The creator receives a per-world ownership token at
 creation, saved locally and presented on reconnect. Only that creator can update
-the server's room settings. Joining campers have read-only world controls in both
-the lobby and the game; their character and tent controls remain editable.
+the server's room settings. World/weather controls are hidden entirely for joining
+campers in both menus; their character and tent controls remain available.
 
 Deploy `campout-server` before the v221 frontend. Include `src/room-settings.js`
 and `src/projectiles.js` in the server deployment. Newly created worlds have
