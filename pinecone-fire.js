@@ -24,10 +24,8 @@ export function createPineconeFire(THREE, globePivot, mobile = false) {
     varying vec3 vColor;
     varying float vAlpha;
     void main() {
-      float radius = length(gl_PointCoord - vec2(0.5));
-      float alpha = vAlpha * (1.0 - smoothstep(0.15, 0.5, radius));
-      if (alpha < 0.005) discard;
-      gl_FragColor = vec4(vColor, alpha);
+      if (vAlpha < 0.005) discard;
+      gl_FragColor = vec4(vColor, vAlpha);
       #include <colorspace_fragment>
     }`;
   function pool(count, smoke = false) {

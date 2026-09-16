@@ -63,7 +63,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v223</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v224</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -142,7 +142,7 @@ canvas { display: block; }
     <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
     <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
   </div>
-  <div class="lobby-version">v223</div>
+  <div class="lobby-version">v224</div>
   </div>
 </div>
 
@@ -298,7 +298,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v223</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v224</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -312,7 +312,7 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=223';
+import { createWinter } from './winter.js?v=224';
 import { advanceFireParticle, advanceSmokeParticle } from './fire-particles.js';
 import { createSeasonalSky } from './seasonal-sky.js';
 import { createSwimming } from './swimming.js';
@@ -1687,17 +1687,26 @@ const winter = createWinter(THREE, {
   projectilesOnline: () => multiplayerReady && projectileProtocol === 1 && signalingWs?.readyState === WebSocket.OPEN,
   canCarryPinecones: () => !isSleeping && !minigamesOpen,
   supportsPineconeFire: () => pineconeFireProtocol === 1,
-  getCampfireDistance: () => {
-    // Use the same surface distance and visible/shared fires as the Sit prompt.
-    const here = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert());
-    let distance = Infinity;
+  isPineconeTouchingFire: mesh => {
+    if (!mesh?.visible) return false;
+    mesh.updateWorldMatrix(true, false);
+    if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+    const coneBounds = mesh.geometry.boundingSphere.clone().applyMatrix4(mesh.matrixWorld);
+    const point = new THREE.Vector3();
     for (const model of campModels.values()) {
       if (!model.fireAnchor.visible) continue;
-      model.group.updateMatrix();
-      const fire = model.fireAnchor.position.clone().applyMatrix4(model.group.matrix).normalize();
-      distance = Math.min(distance, here.distanceTo(fire) * GLOBE_RADIUS);
+      model.fireAnchor.updateWorldMatrix(true, false);
+      const positions = model.campFireGeo.attributes.position;
+      for (let i = 0; i < positions.count; i++) {
+        // Match the actual flame particles: their emitter is 0.2 above the
+        // anchor and each particle is 0.25 wide. Ignore the larger Sit target.
+        point.fromBufferAttribute(positions, i);
+        point.y += 0.2;
+        point.applyMatrix4(model.fireAnchor.matrixWorld);
+        if (coneBounds.distanceToPoint(point) <= 0.125) return true;
+      }
     }
-    return distance;
+    return false;
   },
   getRotation: () => globeRotation, getFacing: () => playerFacing,
   getCameraAngle: () => cameraAngle,

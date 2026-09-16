@@ -1,7 +1,7 @@
 import { iceImpulse, advanceOrbit, ballisticArcs } from './winter-physics.js?v=190';
 import { CLOUD_FIELD_GLSL } from './seasonal-sky.js';
 import { createPinecones } from './pinecones.js?v=221';
-import { createPineconeFire } from './pinecone-fire.js?v=223';
+import { createPineconeFire } from './pinecone-fire.js?v=224';
 
 // Seasonal equipment uses planet-local coordinates, including summer pinecones.
 export function createWinter(THREE, world) {
@@ -1320,8 +1320,11 @@ export function createWinter(THREE, world) {
     if (!canAct) packing = 0;
     const fireNow = projectileNow();
     const heldBurning = !enabled && held && (cones[heldCone]?.burningUntil || 0) > fireNow;
+    equip(player, held && (canAct || canCarry), enabled && skates, velocity.lengthSq() > 0.0001,
+      enabled ? 'snowball' : 'pinecone', heldBurning);
     if (canCarry && held && !player.userData.swimming && !heldBurning &&
-        world.projectilesOnline() && elapsed - lastIgniteRequest > 1 && world.getCampfireDistance?.() <= 2.3) {
+        world.projectilesOnline() && elapsed - lastIgniteRequest > 1 &&
+        world.isPineconeTouchingFire?.(player.userData.winterEquipment?.ball)) {
       if (world.supportsPineconeFire?.()) {
         lastIgniteRequest = elapsed;
         world.sendSignal({ type: 'pinecone-ignite', cone: heldCone });
@@ -1330,8 +1333,6 @@ export function createWinter(THREE, world) {
         world.toast('Flaming pinecones need the updated campout-server. Deploy it and rejoin the world.', 8000);
       }
     }
-    equip(player, held && (canAct || canCarry), enabled && skates, velocity.lengthSq() > 0.0001,
-      enabled ? 'snowball' : 'pinecone', heldBurning);
     for (const peer of Object.values(world.getPeers())) {
       const fresh = performance.now() - peer.motionReceivedAt < 2000;
       equip(peer.mesh, fresh && !!(peer.motion?.snowball || peer.motion?.pinecone),

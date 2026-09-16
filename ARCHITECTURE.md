@@ -65,7 +65,8 @@ and `src/projectiles.js` in the server deployment. Newly created worlds have
 creator ownership from creation; legacy worlds can migrate a creator who still
 has creator state, but cannot recover ownership from a session that never stored it.
 
-Carrying a pinecone within the campfire interaction range (2.3 surface units)
-ignites it for 30 seconds, whether standing or sitting, including shared fires.
+A held pinecone ignites for 30 seconds only when its geometry bounds touch an
+actual campfire flame particle, including shared fires. Sitting/proximity alone
+does not ignite it. Fire, smoke and embers render as square particles.
 Its burning deadline is stored by the room and shared in inventory/flight events.
 Pinecones tumble in flight, and water impacts extinguish them.
