@@ -700,7 +700,13 @@ export function createWinter(THREE, world) {
     updateCrosshair();
   }
   
-  function throwState() {
+  const aimArc = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({
+    color: 0xff2222, dashSize: 0.45, gapSize: 0.3, toneMapped: false, depthWrite: false,
+  }));
+  aimArc.visible = false;
+  globePivot.add(aimArc);
+
+  function throwState(preview = false) {
     const inverse = world.getRotation().clone().invert();
     const facing = world.getFacing();
     const player = world.getPlayer(), ball = player.userData.winterEquipment?.ball;
@@ -716,25 +722,29 @@ export function createWinter(THREE, world) {
     if (hit && hit.point.clone().sub(hand).dot(viewDirection) > 0.2) {
       const target = hit.point.clone().applyQuaternion(inverse);
       flightObstacles = world.getObstacles();
-      let fallback = null;
+      let fallback = null, fallbackPoints = null;
       for (const arc of ballisticArcs(position, target, GRAVITY_MU, enabled ? iceRadius : waterRadius, throwPower)) {
         const velocity = new THREE.Vector3(arc.velocity.x, arc.velocity.y, arc.velocity.z);
         fallback ??= velocity;
         let blocked = false;
+        const points = preview ? [position.clone()] : null;
         for (let i = 1; i < arc.points.length; i++) {
           const from = arc.points[i-1], to = arc.points[i];
           const contact = flightHit(new THREE.Vector3(from.x,from.y,from.z), new THREE.Vector3(to.x,to.y,to.z),
             i <= 24 ? world.localId : null, inverse);
           if (contact) {
+            points?.push(contact.point.clone());
             blocked = contact.point.distanceTo(target) > BALL_RADIUS*2+0.04;
             break;
           }
+          points?.push(new THREE.Vector3(to.x, to.y, to.z));
         }
-        if (!blocked) return { position, velocity };
+        fallbackPoints ??= points;
+        if (!blocked) return { position, velocity, points };
       }
       // Cover may block every route. Still use a globe-clearing arc, never the
       // straight underground chord. Real collisions remain authoritative.
-      if (fallback) return { position, velocity: fallback };
+      if (fallback) return { position, velocity: fallback, points: fallbackPoints };
       const radial = position.clone().normalize();
       const tangent = target.clone().addScaledVector(radial,-target.dot(radial)).normalize();
       return { position, velocity: tangent.add(radial).normalize().multiplyScalar(throwPower), skyOrbit: true };
@@ -1416,6 +1426,19 @@ export function createWinter(THREE, world) {
     }
     updateCrosshair();
     updateBalls(delta, inverse);
+    aimArc.visible = false;
+    if (held && canAct && world.camera.position.distanceTo(player.position) > radius) {
+      const { points } = throwState(true);
+      if (points?.length > 1) {
+        aimArc.geometry.dispose();
+        aimArc.geometry = new THREE.BufferGeometry().setFromPoints(points);
+        aimArc.computeLineDistances();
+        const distances = aimArc.geometry.attributes.lineDistance;
+        for (let i = 0; i < distances.count; i++) distances.array[i] -= elapsed * 1.5;
+        distances.needsUpdate = true;
+        aimArc.visible = true;
+      }
+    }
     // Emit only after holding/throwing poses and hit reactions are finalized.
     for (const mesh of [player, ...Object.values(world.getPeers()).map(peer => peer.mesh)]) {
       const equipment = mesh.userData.winterEquipment;
