@@ -701,7 +701,7 @@ export function createWinter(THREE, world) {
   }
   
   const aimArc = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({
-    color: 0xff2222, dashSize: 0.45, gapSize: 0.3, toneMapped: false, depthWrite: false,
+    color: 0xe32636, dashSize: 0.45, gapSize: 0.3, linewidth: 2, toneMapped: false, depthWrite: false,
   }));
   aimArc.visible = false;
   globePivot.add(aimArc);
