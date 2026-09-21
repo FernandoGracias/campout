@@ -35,7 +35,7 @@ export function createPropCollisions() {
       for (const child of node.children) visit(child, matrix);
     }
     visit(root, identity);
-    objects.set(id, { parts, broad });
+    objects.set(id, { parts, broad, soft: root.userData.softCollision === true });
   }
   function intersectsSegment(a, b, box) {
     let start = 0, end = 1;
@@ -48,11 +48,13 @@ export function createPropCollisions() {
     }
     return true;
   }
-  function blocks(from, to, playerId) {
+  function contact(from, to, playerId, soft) {
     const radius = 0.24;
     const fromUp = from.clone().normalize(), toUp = to.clone().normalize();
     const fromMid = from.clone().addScaledVector(fromUp, 0.65), toMid = to.clone().addScaledVector(toUp, 0.65);
-    for (const { broad, parts } of objects.values()) {
+    for (const object of objects.values()) {
+      if (object.soft !== soft) continue;
+      const { broad, parts } = object;
       if (!intersectsSegment(fromMid, toMid, broad.clone().expandByScalar(0.9))) continue;
       for (const part of parts) {
         if (part.ignorePlayer && part.ignorePlayer === playerId) continue;
@@ -64,12 +66,15 @@ export function createPropCollisions() {
           const before = part.bounds.distanceToPoint(a), after = part.bounds.distanceToPoint(b);
           // If someone placed a prop against us, permit escape without allowing
           // movement farther into it. The swept test catches even thin posts.
-          if (before <= r && after >= before - 1e-6) continue;
+          if (!soft && before <= r && after >= before - 1e-6) continue;
           if (intersectsSegment(a, b, expanded)) return true;
         }
       }
     }
     return false;
   }
-  return { update, blocks, remove: id => objects.delete(id) };
+  return { update,
+    blocks: (from, to, playerId) => contact(from, to, playerId, false),
+    speedFactor: (from, to, playerId) => contact(from, to, playerId, true) ? 0.4 : 1,
+    remove: id => objects.delete(id) };
 }

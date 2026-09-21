@@ -10,13 +10,36 @@ const ICONS = {
   web: '<path d="M12 2v20M2 12h20M5 5l14 14M5 19L19 5M12 4l6 2 2 6-2 6-6 2-6-2-2-6 2-6zM12 8l3 1 1 3-1 3-3 1-3-1-1-3 1-3z"/>',
   remove: '<path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/>',
 };
-export function createDecorationControl(getSelection, cycle) {
+export function createDecorationControl(getSelection, cycle, getDeleteState, toggleDelete) {
   const button = document.getElementById('btn-decoration');
   const hint = document.createElement('span'); hint.className = 'winter-hint';
-  let mode = 'keyboard', last = '';
+  const deleteButton = document.getElementById('btn-decoration-delete');
+  const deleteHint = document.createElement('span'); deleteHint.className = 'winter-hint';
+  deleteButton.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS.remove}</svg>`;
+  deleteButton.append(deleteHint);
+  let mode = 'keyboard', last = '', lastDelete = '';
   button.addEventListener('click', cycle);
+  deleteButton.addEventListener('click', toggleDelete);
   function update(inputMode = mode) {
     mode = inputMode;
+    const deletion = getDeleteState();
+    deleteButton.style.display = deletion ? 'flex' : 'none';
+    if (deletion) {
+      deleteButton.disabled = deletion.disabled;
+      const key = `${deletion.active}:${mode}`;
+      if (key !== lastDelete) {
+        lastDelete = key;
+        const action = deletion.active ? 'Exit delete decoration mode' : 'Enter delete decoration mode';
+        deleteButton.setAttribute('aria-label', action);
+        deleteButton.setAttribute('aria-pressed', String(deletion.active));
+        deleteButton.style.borderColor = deletion.active ? '#f0c040' : '';
+        deleteButton.style.color = deletion.active ? '#f0c040' : '';
+        deleteHint.textContent = mode === 'gamepad' ? 'Y' : 'Del';
+        deleteHint.style.display = mode === 'touch' ? 'none' : 'block';
+        deleteHint.style.borderRadius = mode === 'gamepad' ? '50%' : '4px';
+        deleteButton.title = `${mode === 'gamepad' ? 'Y' : mode === 'touch' ? 'Tap' : 'Delete'} · ${action}`;
+      }
+    } else lastDelete = '';
     const selection = getSelection();
     button.style.display = selection ? 'flex' : 'none';
     if (!selection) { last = ''; return; }

@@ -3,6 +3,7 @@ import * as THREE from 'three';
 // Small, static world props. No per-prop lights or per-frame geometry uploads.
 export function buildMinigameProp(kind, options = {}) {
   const group = new THREE.Group();
+  group.userData.softCollision = kind === 'lights' || kind === 'web';
   const materials = new Map();
   const mat = (color, glow = false) => {
     const key = `${color}:${glow}`;
@@ -55,7 +56,7 @@ export function buildMinigameProp(kind, options = {}) {
     for (let i = 0; i < 3; i++) mesh(new THREE.ConeGeometry(0.65 - i * 0.16, 0.85, 9), 0x23683b, 0, 0.7 + i * 0.45, 0);
     for (let i = 0; i < 15; i++) {
       const y = 0.5 + i * 0.09, angle = i * 2.4, r = 0.54 - i * 0.023;
-      ball(0.055, i % 2 ? 0xffd95c : 0xe6464c, Math.cos(angle) * r, y, Math.sin(angle) * r, i % 3 === 0);
+      ball(0.055, [0xe6464c, 0xffd95c, 0x6eb8ff, 0x63e080][i % 4], Math.cos(angle) * r, y, Math.sin(angle) * r, true);
     }
     mesh(new THREE.OctahedronGeometry(0.16), 0xffdf6e, 0, 2.08, 0, true);
   } else if (kind === 'pumpkin') {

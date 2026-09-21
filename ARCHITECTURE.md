@@ -93,8 +93,9 @@ Tag and freeze games end when fewer than two campers remain.
 
 The existing Mini Games modal holds all nine modes, ballot counts, descriptions,
 results and Back to camping. Decoration choices use a circular side button with
-the selected item's SVG icon: click/tap, C or controller RB cycles the choices
-(including removal). Hints show only the active input method. The existing camp interaction
+the selected item's SVG icon: click/tap, C or controller RB cycles the choices.
+A separate trash button toggles delete-decoration mode (Delete or controller Y);
+it also works for snowmen and highlights while active. Hints show only the active input method. The existing camp interaction
 prompt handles placement, removal and snowball stacking with E, controller A or
 touch. Name-label sprites provide overhead IT/SEEKER/FROZEN markers. Hide-and-seek
 suppresses player labels and clears the seeker's scene while counting. Team freeze
@@ -147,6 +148,9 @@ campers. Creations use compound oriented collision boxes around individual
 visible meshes and web strands, updated as rolling balls move/grow. Walking,
 sliding, bumps and automatic camp approaches respect those boxes; a camper's own
 actively rolling section is exempt, while stacked sections remain solid.
+Lights and webs are soft obstacles: contact slows movement to 40% instead of
+blocking it, using the same close-fitting geometry. Christmas-tree ornaments all
+glow, cycling through red, gold, blue and green without adding per-ornament lights.
 
 ## First-person view
 

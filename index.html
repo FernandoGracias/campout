@@ -63,7 +63,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v231</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v232</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -142,7 +142,7 @@ canvas { display: block; }
     <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
     <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
   </div>
-  <div class="lobby-version">v231</div>
+  <div class="lobby-version">v232</div>
   </div>
 </div>
 
@@ -293,6 +293,7 @@ canvas { display: block; }
   <!-- Winter supplies shared SVG icons when the game initializes. -->
   <button id="btn-skates" class="winter-action" style="display:none;"></button>
   <button id="btn-decoration" class="winter-action" style="display:none;" aria-label="Cycle decoration"></button>
+  <button id="btn-decoration-delete" class="winter-action" style="display:none;" aria-label="Enter delete decoration mode" aria-pressed="false"></button>
   <button id="btn-snowball" class="winter-action" style="display:none;"></button>
 </div>
 <style>@media(pointer:coarse){#winter-actions{left:auto!important;right:12px;bottom:calc(110px + env(safe-area-inset-bottom,0px))!important;align-items:flex-end!important}.winter-action{min-height:48px;min-width:48px;touch-action:manipulation}#lever-zone{touch-action:none}} </style>
@@ -306,7 +307,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v231</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v232</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -321,7 +322,7 @@ canvas { display: block; }
 <script type="module">
 import * as THREE from 'three';
 import { createWinter } from './winter.js?v=230';
-import { createMinigames } from './minigames.js?v=231';
+import { createMinigames } from './minigames.js?v=232';
 import { advanceFireParticle, advanceSmokeParticle } from './fire-particles.js';
 import { createSeasonalSky } from './seasonal-sky.js';
 import { createSwimming } from './swimming.js';
@@ -1823,6 +1824,7 @@ document.addEventListener('keydown', e => {
     if (e.key.toLowerCase() === 'q') { e.preventDefault(); winter.action(); }
     if (e.key.toLowerCase() === 'i') { e.preventDefault(); winter.toggleSkates(); }
     if (e.key.toLowerCase() === 'c' && minigames?.cycleDecoration()) e.preventDefault();
+    if (e.key === 'Delete' && minigames?.toggleDelete()) e.preventDefault();
   }
 });
 renderer.domElement.addEventListener('pointerdown', e => {
@@ -3721,7 +3723,9 @@ function animate() {
     }
   }
   // Tent entry and waking are exclusively A interactions.
-  if (gamepadY && !isSleeping && (sittingFireId !== null || walkingToFire)) standUp();
+  if (gamepadY && !minigamesOpen) {
+    if (!minigames?.toggleDelete() && !isSleeping && (sittingFireId !== null || walkingToFire)) standUp();
+  }
 
   let moveInput = 0;
   let strafeInput = 0;  // Gamepad strafe (left stick X in pan mode)
@@ -3773,6 +3777,7 @@ function animate() {
       const correction = new THREE.Quaternion().setFromUnitVectors(towardSeat, up);
       const candidate = globeRotation.clone().premultiply(new THREE.Quaternion().slerp(correction,
         angle < 1e-6 ? 1 : Math.min(1, 0.2 * delta / angle))).normalize();
+      minigames?.slowMovement(candidate);
       const blockedByProp = minigames?.blocksMovement(candidate);
       if (blockedByProp) standUp();
       else globeRotation.copy(candidate);
@@ -3804,6 +3809,7 @@ function animate() {
         const correction = new THREE.Quaternion().setFromUnitVectors(towardTent, up);
         const step = new THREE.Quaternion().slerp(correction, Math.min(1, walkSpeed / angle));
         const candidate = globeRotation.clone().premultiply(step).normalize();
+        minigames?.slowMovement(candidate);
         if (minigames?.blocksMovement(candidate)) walkingToTent = false;
         else globeRotation.copy(candidate);
       }
@@ -3846,6 +3852,7 @@ function animate() {
     const rotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), totalX);
     const rotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -totalZ);
     const newRotation = globeRotation.clone().premultiply(rotX).premultiply(rotZ);
+    minigames?.slowMovement(newRotation);
 
     const playerWorldPos = new THREE.Vector3(0, GLOBE_RADIUS, 0);
     let canMove = minigames?.allowMove(newRotation) !== false && !minigames?.blocksMovement(newRotation);
@@ -3906,6 +3913,7 @@ function animate() {
         const sRotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), step * 0.8 * Math.cos(slideAngle));
         const sRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -step * 0.8 * Math.sin(slideAngle));
         const slideRotation = globeRotation.clone().premultiply(sRotX).premultiply(sRotZ);
+        minigames?.slowMovement(slideRotation);
         let slideOk = minigames?.allowMove(slideRotation) !== false && !minigames?.blocksMovement(slideRotation);
         for (const c of activeColliders) {
           const sObjPos = latLonToWorld(c.lat, c.lon).applyQuaternion(slideRotation);
@@ -3941,6 +3949,7 @@ function animate() {
     const distance = BUMP_DISTANCE * (bumpTravel(next) - bumpTravel(b.elapsed));
     const candidate = globeRotation.clone().multiply(
       new THREE.Quaternion().setFromAxisAngle(b.axis, distance / GLOBE_RADIUS));
+    minigames?.slowMovement(candidate);
     const origin = new THREE.Vector3(0, GLOBE_RADIUS, 0);
     const blocked = [...collidables, ...tentColliders].some(c => {
       const pos = latLonToWorld(c.lat, c.lon);

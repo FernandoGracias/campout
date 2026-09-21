@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import { createNameLabel, updateNameLabel } from './player-labels.js';
 import { disposeObject } from './game-utils.js';
-import { buildMinigameProp } from './minigame-models.js?v=231';
+import { buildMinigameProp } from './minigame-models.js?v=232';
 import { createSledFlight } from './sled-physics.js';
 import { createSnowmanTracks } from './snowman-tracks.js';
-import { createDecorationControl } from './decoration-control.js';
+import { createDecorationControl } from './decoration-control.js?v=232';
 import { findDecorationAnchors } from './decoration-anchors.js';
-import { createPropCollisions } from './prop-collisions.js';
+import { createPropCollisions } from './prop-collisions.js?v=232';
 
 const GAMES = [
   ['tag', 'Tag', 'One camper is IT. Touch someone to pass it on. No immediate tag-backs.'],
@@ -47,19 +47,27 @@ export function createMinigames(world) {
   const snowTracks = createSnowmanTracks(world.globePivot, surface, world.mobile);
   const decorationControl = createDecorationControl(() => {
     if (!PALETTES[mode()]) return null;
-    const choice = removeMode ? ['remove', 'Remove creation'] : PALETTES[mode()].find(p => p[0] === selectedProp);
-    return { id: choice[0], name: choice[1], disabled: world.menuOpen() || !world.canInteract() };
-  }, cycleDecoration);
+    const choice = PALETTES[mode()].find(p => p[0] === selectedProp);
+    return { id: choice[0], name: choice[1], disabled: removeMode || world.menuOpen() || !world.canInteract() };
+  }, cycleDecoration, () => {
+    if (!PALETTES[mode()] && mode() !== 'snowman') return null;
+    return { active: removeMode, disabled: world.menuOpen() || !world.canInteract() };
+  }, toggleDelete);
   function cycleDecoration() {
     const palette = PALETTES[mode()];
-    if (!palette || world.menuOpen() || !world.canInteract()) return false;
-    const choices = [...palette, ['remove', 'Remove creation']];
-    const index = choices.findIndex(([id]) => id === (removeMode ? 'remove' : selectedProp));
-    const [id, name] = choices[(index + 1) % choices.length];
-    removeMode = id === 'remove';
-    if (!removeMode) selectedProp = id;
+    if (!palette || removeMode || world.menuOpen() || !world.canInteract()) return false;
+    const index = palette.findIndex(([id]) => id === selectedProp);
+    const [id, name] = palette[(index + 1) % palette.length];
+    selectedProp = id;
     decorationControl.update();
     world.toast(`${name} selected.`, 1500);
+    return true;
+  }
+  function toggleDelete() {
+    if ((!PALETTES[mode()] && mode() !== 'snowman') || world.menuOpen() || !world.canInteract()) return false;
+    removeMode = !removeMode;
+    decorationControl.update();
+    world.toast(removeMode ? 'Delete decoration mode. Use the nearby creation prompt to delete.' : 'Delete decoration mode off.', 2500);
     return true;
   }
   function surface(direction) {
@@ -155,13 +163,11 @@ export function createMinigames(world) {
       const vote = state.vote?.mode === 'camping' ? state.vote : null;
       add('camping', 'Back to camping', vote ? `${vote.yes.length}/${Math.floor(vote.eligible.length / 2) + 1} votes needed · Select to vote yes` : 'Vote to end the current activity for everyone.', 'vote', 'camping');
     }
-    if (mode() === 'snowman') add('remove', removeMode ? 'Selected · Remove creation' : 'Remove creation', 'Remove a nearby creation you placed. The world creator can remove any creation.', 'remove', '');
     list.replaceChildren(fragment);
     world.restoreSelection?.(oldKey);
   }
   function select(row) {
     if (!row) return;
-    if (row.dataset.action === 'remove') { removeMode = !removeMode; world.closeMenu(); return; }
     const game = row.dataset.value;
     if (game === mode()) { world.toast(GAMES.find(g => g[0] === game)?.[2] || ''); return; }
     if (!world.online()) { world.toast('Mini games need the updated room server and an active connection.'); return; }
@@ -335,7 +341,7 @@ export function createMinigames(world) {
     if (removeMode) {
       const object = nearbyRemoval();
       if (!object) return null;
-      action = 'Remove creation';
+      action = object.kind === 'snowman' ? 'Delete snowman' : 'Delete decoration';
     } else if (PALETTES[mode()]) action = `Place ${PALETTES[mode()].find(p => p[0] === selectedProp)?.[1] || 'decoration'}`;
     else if (mode() === 'snowman') {
       const ball = state.creations.find(o => o.holder === world.localId && !o.complete);
@@ -547,6 +553,16 @@ export function createMinigames(world) {
     const to = UP.clone().applyQuaternion(rotation.clone().invert()).multiplyScalar(height);
     return propCollisions.blocks(from, to, world.localId);
   }
+  function slowMovement(rotation) {
+    const height = world.player.position.y;
+    const from = here().multiplyScalar(height);
+    const to = UP.clone().applyQuaternion(rotation.clone().invert()).multiplyScalar(height);
+    const factor = propCollisions.speedFactor(from, to, world.localId);
+    if (factor < 1) {
+      const target = rotation.clone();
+      rotation.copy(world.getRotation()).slerp(target, factor);
+    }
+  }
   function sync() { if (world.online()) world.send({ type: 'minigame-sync', active: true, team: world.getTeam() }); }
   function reset() {
     if (previousSkates !== null) world.winter.setSkates(previousSkates);
@@ -558,8 +574,8 @@ export function createMinigames(world) {
   }
   renderMenu();
   return { receive, select, renderMenu, sync, reset, update, locked, interaction, interact, sledMovement, allowMove,
-    blocksMovement, obstacles: () => [...props.values()],
-    sledAvailable, toggleSled, ridesSled, sledHeight, cycleDecoration,
+    blocksMovement, slowMovement, obstacles: () => [...props.values()],
+    sledAvailable, toggleSled, ridesSled, sledHeight, cycleDecoration, toggleDelete,
     updateHints: inputMode => decorationControl.update(inputMode),
     get sledLift() { return sledPose.lift; }, get sledPitch() { return sledPose.pitch; },
     get competitive() { return COMPETITIVE.has(mode()); },
