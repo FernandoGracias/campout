@@ -11,7 +11,7 @@ export function createDecorationLightField(world) {
   texture.format = THREE.RGBAFormat; texture.type = THREE.UnsignedByteType;
   texture.minFilter = texture.magFilter = THREE.LinearFilter;
   texture.unpackAlignment = 1; texture.needsUpdate = true;
-  const field = { value: texture }, inverse = { value: new THREE.Matrix4() }, strength = { value: 1 };
+  const field = { value: texture }, inverse = { value: new THREE.Matrix4() }, strength = { value: 0 };
   const materials = new WeakSet();
   let bulbs = [], dirty = false, clock = 0, nextMaterials = 0, nextBake = 0;
   function hookMaterials() {
@@ -25,18 +25,22 @@ export function createDecorationLightField(world) {
           shader.uniforms.decorationField = field;
           shader.uniforms.decorationInverse = inverse;
           shader.uniforms.decorationStrength = strength;
-          shader.vertexShader = 'uniform mat4 decorationInverse; varying vec3 vDecorationPosition;\n' + shader.vertexShader;
+          shader.vertexShader = 'uniform mat4 decorationInverse; uniform float decorationStrength; varying vec3 vDecorationPosition;\n' + shader.vertexShader;
           shader.vertexShader = shader.vertexShader.replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+            if (decorationStrength > 0.0) {
             #ifdef USE_INSTANCING
               vDecorationPosition = (decorationInverse * modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
             #else
               vDecorationPosition = (decorationInverse * modelMatrix * vec4(transformed, 1.0)).xyz;
-            #endif`);
+            #endif
+            } else { vDecorationPosition = vec3(0.0); }`);
           shader.fragmentShader = 'uniform highp sampler3D decorationField; uniform float decorationStrength; varying vec3 vDecorationPosition;\n' + shader.fragmentShader;
           shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-            totalEmissiveRadiance += texture(decorationField, (vDecorationPosition + 32.0) / 64.0).rgb * 3.0 * decorationStrength;`);
+            if (decorationStrength > 0.0) {
+              totalEmissiveRadiance += texture(decorationField, (vDecorationPosition + 32.0) / 64.0).rgb * decorationStrength * diffuseColor.rgb;
+            }`);
         };
-        material.customProgramCacheKey = () => `${key}|decoration-field-1`;
+        material.customProgramCacheKey = () => `${key}|decoration-field-2`;
         material.needsUpdate = true;
       }
     });
@@ -59,17 +63,27 @@ export function createDecorationLightField(world) {
       }
     }
     for (let i = 0, j = 0; i < values.length; i += 3, j += 4) {
-      data[j] = Math.min(255, Math.round(values[i] * 85));
-      data[j + 1] = Math.min(255, Math.round(values[i + 1] * 85));
-      data[j + 2] = Math.min(255, Math.round(values[i + 2] * 85));
+      // Compress overlapping lamps together, preserving their RGB proportions
+      // instead of clipping each channel into a broad white patch.
+      const scale = 255 / (1 + Math.max(values[i], values[i + 1], values[i + 2]));
+      data[j] = Math.round(values[i] * scale);
+      data[j + 1] = Math.round(values[i + 1] * scale);
+      data[j + 2] = Math.round(values[i + 2] * scale);
     }
     texture.needsUpdate = true; dirty = false;
   }
-  function setBulbs(next) { bulbs = next; dirty = true; if (bulbs.length) hookMaterials(); }
+  function setBulbs(next) {
+    bulbs = next; dirty = true;
+    if (bulbs.length && world.getDaylight() <= 0) hookMaterials();
+  }
   function update(delta) {
     clock += delta;
+    // Keep the self-lit bulb/ghost materials and halos, but switch projected
+    // light off in daylight. Skip both CPU work and the shader texture lookup.
+    const casting = bulbs.length > 0 && world.getDaylight() <= 0;
+    strength.value = casting ? 0.22 : 0;
+    if (!casting) return;
     inverse.value.copy(world.globePivot.matrixWorld).invert();
-    strength.value = 0.5 + (1 - THREE.MathUtils.clamp(world.getDaylight(), 0, 1)) * 0.5;
     if (dirty && clock >= nextBake) { bake(); nextBake = clock + 0.15; }
     if (bulbs.length && clock >= nextMaterials) { hookMaterials(); nextMaterials = clock + 1; }
   }

@@ -8,7 +8,7 @@ import { createDecorationControl } from './decoration-control.js?v=232';
 import { findDecorationAnchors } from './decoration-anchors.js?v=233';
 import { createPropCollisions } from './prop-collisions.js?v=233';
 import { planLightPlacement, lightEndpoints, overlappingLightSpan } from './light-placement.js?v=233';
-import { createDecorationGlow } from './decoration-glow.js?v=234';
+import { createDecorationGlow } from './decoration-glow.js?v=235';
 import { createGhostCatching } from './ghost-catching.js?v=234';
 
 const GAMES = [

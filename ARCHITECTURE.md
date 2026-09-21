@@ -167,6 +167,11 @@ reassigns lamps or projected colors. Standard materials sample it with one GPU
 lookup, preserving existing shaders and shadows. On iOS/iPadOS neither effect is
 allocated; inexpensive self-lit bulbs and ghost bodies remain. No post-processing
 pass, camera-dependent point-light pool, or per-frame lighting upload is used.
+Projected light switches off in daylight: no field rebuilds, material scans,
+coordinate transforms or shader texture sampling. The bulbs and ghosts still
+look lit. At night, spill is capped at 0.22, modulated by the receiving surface's
+color, and overlapping emitters are compressed without independently clipping
+RGB channels into white patches.
 
 Ghost catching is available only from 18:00 to 06:00 on the shared room clock.
 It never forces night and ends automatically at dawn (or a creator's daylight

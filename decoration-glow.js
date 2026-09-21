@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createDecorationLightField } from './decoration-light-field.js?v=234';
+import { createDecorationLightField } from './decoration-light-field.js?v=235';
 
 export function isIOSDevice(device) {
   return /iPhone|iPad|iPod/i.test(device.userAgent || '') ||
