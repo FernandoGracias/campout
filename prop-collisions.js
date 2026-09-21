@@ -7,6 +7,7 @@ export function createPropCollisions() {
   const up = new THREE.Vector3(0, 1, 0);
   const identity = new THREE.Matrix4();
   function update(id, root) {
+    if (root.userData.noPlayerCollision) { objects.delete(id); return; }
     const parts = [], broad = new THREE.Box3();
     function add(bounds, matrix, ignorePlayer) {
       const scale = new THREE.Vector3().setFromMatrixScale(matrix);

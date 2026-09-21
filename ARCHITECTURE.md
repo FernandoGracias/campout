@@ -23,6 +23,8 @@ There is no build step. Deploy the HTML, CSS and JavaScript files together.
 | `snowman-tracks.js` | Bounded terrain-conforming rolling tracks with GPU fading |
 | `decoration-control.js` | Cycling decoration side button and active-input hints |
 | `decoration-anchors.js` | Nearby scenery attachment points for hanging lights/webs |
+| `light-placement.js` | Non-overlapping light spans and reuse of existing endpoints/posts |
+| `decoration-glow.js` | Batched bulb halos, bounded local illumination and iOS exclusion |
 | `prop-collisions.js` | Swept, per-mesh oriented collision boxes for creations |
 | `pinecones.js` | Cone geometry, inventory, pickup and raycast resting positions |
 | `pinecone-fire.js` | Pooled fire/smoke trails and impact embers in planet coordinates |
@@ -148,9 +150,18 @@ campers. Creations use compound oriented collision boxes around individual
 visible meshes and web strands, updated as rolling balls move/grow. Walking,
 sliding, bumps and automatic camp approaches respect those boxes; a camper's own
 actively rolling section is exempt, while stacked sections remain solid.
-Lights and webs are soft obstacles: contact slows movement to 40% instead of
-blocking it, using the same close-fitting geometry. Christmas-tree ornaments all
-glow, cycling through red, gold, blue and green without adding per-ornament lights.
+Webs are soft obstacles: contact slows movement to 40% instead of blocking it,
+using the same close-fitting geometry. Light strips have no collision or slowdown.
+Christmas-tree ornaments all glow, using red, gold, saturated blue and green.
+
+Light placement avoids duplicate/overlapping spans and preferentially reuses
+existing strip endpoints and posts, including pending local placements. New posts
+fill nearby gaps; moving along the chain lets campers extend it across the world.
+The server independently rejects duplicate spans, including concurrent placements.
+Visible glow uses one bounded, static GPU point batch plus a fixed pool of nearby
+unshadowed point lights (four desktop, two Android). On iOS/iPadOS neither effect
+is allocated; the inexpensive self-lit bulbs remain. Halos do not require a
+post-processing pass or per-frame geometry uploads.
 
 ## First-person view
 

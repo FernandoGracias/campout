@@ -63,7 +63,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v232</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v233</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -142,7 +142,7 @@ canvas { display: block; }
     <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
     <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
   </div>
-  <div class="lobby-version">v232</div>
+  <div class="lobby-version">v233</div>
   </div>
 </div>
 
@@ -307,7 +307,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v232</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v233</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -322,7 +322,8 @@ canvas { display: block; }
 <script type="module">
 import * as THREE from 'three';
 import { createWinter } from './winter.js?v=230';
-import { createMinigames } from './minigames.js?v=232';
+import { createMinigames } from './minigames.js?v=233';
+import { isIOSDevice } from './decoration-glow.js?v=233';
 import { advanceFireParticle, advanceSmokeParticle } from './fire-particles.js';
 import { createSeasonalSky } from './seasonal-sky.js';
 import { createSwimming } from './swimming.js';
@@ -4237,6 +4238,8 @@ window.syncCamps = syncCamps;
 syncCamps();
 
 minigames = createMinigames({
+  disableDecorationGlow: isIOSDevice(navigator), getDaylight: () => sun.intensity / 1.2,
+  getViewportHeight: () => renderer.domElement.height,
   mobile: mobileGraphics, getSnowfall: () => sharedEnvironment?.snowfall || 0,
   scene, camera, globePivot, globe, player, localLabel: localNameLabel, winter, waterRadius: WATER_RADIUS,
   get localId() { return localPlayerId; }, getPeers: () => otherPlayers,

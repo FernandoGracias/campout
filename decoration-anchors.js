@@ -3,7 +3,7 @@ import * as THREE from 'three';
 // Find real attachment surfaces near the placement point. Two supports mean no
 // posts; one support needs only one fallback post. Endpoints are stored by the
 // room in globe coordinates, so every camper builds the same hanging prop.
-export function findDecorationAnchors(position, forward, world) {
+export function collectDecorationSupports(position, world) {
   const rotation = world.getRotation(), inverse = rotation.clone().invert();
   const normal = position.clone().normalize();
   const center = position.clone().addScaledVector(normal, 1.6).applyQuaternion(rotation);
@@ -25,6 +25,11 @@ export function findDecorationAnchors(position, forward, world) {
   }
   supports.sort((a, b) => a.point.distanceTo(position) - b.point.distanceTo(position));
   supports.length = Math.min(supports.length, 8);
+  return supports;
+}
+export function findDecorationAnchors(position, forward, world) {
+  const normal = position.clone().normalize();
+  const supports = collectDecorationSupports(position, world);
   let pair = null, score = Infinity;
   for (let i = 0; i < supports.length; i++) for (let j = i + 1; j < supports.length; j++) {
     const a = supports[i], b = supports[j], span = a.point.distanceTo(b.point);

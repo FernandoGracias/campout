@@ -3,7 +3,9 @@ import * as THREE from 'three';
 // Small, static world props. No per-prop lights or per-frame geometry uploads.
 export function buildMinigameProp(kind, options = {}) {
   const group = new THREE.Group();
-  group.userData.softCollision = kind === 'lights' || kind === 'web';
+  group.userData.softCollision = kind === 'web';
+  group.userData.noPlayerCollision = kind === 'lights';
+  group.userData.glowBulbs = [];
   const materials = new Map();
   const mat = (color, glow = false) => {
     const key = `${color}:${glow}`;
@@ -17,6 +19,12 @@ export function buildMinigameProp(kind, options = {}) {
     group.add(m); return m;
   };
   const ball = (r, color, x, y, z, glow = false) => mesh(new THREE.SphereGeometry(r, 10, 8), color, x, y, z, glow);
+  const bulb = (r, color, x, y, z) => {
+    const m = ball(r, color, x, y, z, true);
+    m.material.toneMapped = false;
+    group.userData.glowBulbs.push(m);
+    return m;
+  };
   const box = (w, h, d, color, x, y, z) => mesh(new THREE.BoxGeometry(w, h, d), color, x, y, z);
   const pole = (height, x = 0, z = 0) => mesh(new THREE.CylinderGeometry(0.035, 0.05, height, 6), 0x69452c, x, height / 2, z);
   const rod = (a, b, radius, color) => {
@@ -38,7 +46,7 @@ export function buildMinigameProp(kind, options = {}) {
       const p = ends[0].point.clone().lerp(ends[1].point, t);
       p.y -= Math.sin(t * Math.PI) * Math.min(0.55, span * 0.12);
       rod(last, p, 0.012, 0x233526);
-      if (i < count) ball(0.06, [0xff5959, 0xffd664, 0x63e080, 0x6eb8ff][i % 4], p.x, p.y - 0.06, p.z, true);
+      if (i < count) bulb(0.06, [0xff5959, 0xffd664, 0x00ff00, 0x0000ff][i % 4], p.x, p.y - 0.06, p.z);
       last = p;
     }
   } else if (kind === 'ornament') {
@@ -56,7 +64,7 @@ export function buildMinigameProp(kind, options = {}) {
     for (let i = 0; i < 3; i++) mesh(new THREE.ConeGeometry(0.65 - i * 0.16, 0.85, 9), 0x23683b, 0, 0.7 + i * 0.45, 0);
     for (let i = 0; i < 15; i++) {
       const y = 0.5 + i * 0.09, angle = i * 2.4, r = 0.54 - i * 0.023;
-      ball(0.055, [0xe6464c, 0xffd95c, 0x6eb8ff, 0x63e080][i % 4], Math.cos(angle) * r, y, Math.sin(angle) * r, true);
+      bulb(0.055, [0xe6464c, 0xffd95c, 0x0000ff, 0x00ff00][i % 4], Math.cos(angle) * r, y, Math.sin(angle) * r);
     }
     mesh(new THREE.OctahedronGeometry(0.16), 0xffdf6e, 0, 2.08, 0, true);
   } else if (kind === 'pumpkin') {

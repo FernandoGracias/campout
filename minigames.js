@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import { createNameLabel, updateNameLabel } from './player-labels.js';
 import { disposeObject } from './game-utils.js';
-import { buildMinigameProp } from './minigame-models.js?v=232';
+import { buildMinigameProp } from './minigame-models.js?v=233';
 import { createSledFlight } from './sled-physics.js';
 import { createSnowmanTracks } from './snowman-tracks.js';
 import { createDecorationControl } from './decoration-control.js?v=232';
-import { findDecorationAnchors } from './decoration-anchors.js';
-import { createPropCollisions } from './prop-collisions.js?v=232';
+import { findDecorationAnchors } from './decoration-anchors.js?v=233';
+import { createPropCollisions } from './prop-collisions.js?v=233';
+import { planLightPlacement, lightEndpoints, overlappingLightSpan } from './light-placement.js?v=233';
+import { createDecorationGlow } from './decoration-glow.js?v=233';
 
 const GAMES = [
   ['tag', 'Tag', 'One camper is IT. Touch someone to pass it on. No immediate tag-backs.'],
@@ -35,6 +37,8 @@ export function createMinigames(world) {
   const sledFlight = createSledFlight();
   const props = new Map(), markers = new Map(), sleds = new Map();
   const propCollisions = createPropCollisions();
+  const decorationGlow = createDecorationGlow(world);
+  let pendingLights = [];
   const gates = new THREE.Group();
   world.globePivot.add(gates);
   const list = document.getElementById('minigames-list');
@@ -197,7 +201,7 @@ export function createMinigames(world) {
       }
       return;
     }
-    if (message.type === 'minigame-notice') { world.toast(message.message); return; }
+    if (message.type === 'minigame-notice') { pendingLights = []; world.toast(message.message); return; }
     if (message.type === 'minigame-correction') {
       if (state?.epoch === message.epoch && state.iceRace && Array.isArray(message.position)) {
         teleport(message.position, state.course[member()?.checkpoint]); world.toast(message.message);
@@ -209,6 +213,7 @@ export function createMinigames(world) {
     const previous = mode();
     state = next;
     if (previous !== mode()) {
+      pendingLights = [];
       if (previous === 'sledding') setSledMounted(false);
       removeMode = false;
       selectedProp = PALETTES[mode()]?.[0][0] || 'lights';
@@ -246,11 +251,15 @@ export function createMinigames(world) {
   function syncProps() {
     snowTracks.update(0, world.winter.enabled && world.winter.snowCover > 0.05, world.getSnowfall());
     const ids = new Set((state?.creations || []).map(o => o.id));
-    for (const [id, model] of props) if (!ids.has(id)) { disposeObject(model); props.delete(id); propCollisions.remove(id); snowTracks.forget(id); }
+    const spans = (state?.creations || []).filter(o => o.kind === 'lights').map(lightEndpoints);
+    pendingLights = pendingLights.filter(p => p.until > elapsed && !overlappingLightSpan(...lightEndpoints(p), spans));
+    let glowChanged = false;
+    for (const [id, model] of props) if (!ids.has(id)) { disposeObject(model); props.delete(id); propCollisions.remove(id); snowTracks.forget(id); glowChanged = true; }
     for (const object of state?.creations || []) {
       let model = props.get(object.id);
       const fresh = !model;
       if (!model) {
+        glowChanged = true;
         const origin = new THREE.Vector3(...object.position);
         const inverse = new THREE.Quaternion().setFromUnitVectors(UP, origin.clone().normalize()).invert();
         const local = p => new THREE.Vector3(...p).sub(origin).applyQuaternion(inverse);
@@ -282,6 +291,7 @@ export function createMinigames(world) {
       }
       if (fresh || object.kind === 'snowman') propCollisions.update(object.id, model);
     }
+    if (glowChanged) decorationGlow.setModels(props);
   }
   function updateSnowmen(delta) {
     for (const object of state?.creations || []) {
@@ -363,7 +373,17 @@ export function createMinigames(world) {
       const forward = new THREE.Vector3(Math.sin(world.getFacing()), 0, Math.cos(world.getFacing())).applyQuaternion(world.getRotation().clone().invert());
       const direction = here().multiplyScalar(20).addScaledVector(forward, 1.1).normalize();
       const position = groundPosition(direction);
-      const anchors = ['lights', 'web'].includes(selectedProp) ? findDecorationAnchors(position, forward, { ...world, groundPosition }) : null;
+      if (selectedProp === 'lights') {
+        pendingLights = pendingLights.filter(p => p.until > elapsed);
+        if (pendingLights.length >= 12) return true;
+        const existing = [...state.creations.filter(o => o.kind === 'lights'), ...pendingLights];
+        const placement = planLightPlacement(position, forward, { ...world, groundPosition, actorPosition: localPoint(),
+          canPlantPost: d => clearGround(d) || world.winter.enabled && surface(d) < world.winter.iceRadius }, existing);
+        if (!placement) { world.toast('No open light connection in reach. Move a little farther along the lights.'); return true; }
+        if (send({ type: 'minigame-build', action: 'place', kind: 'lights', ...placement })) pendingLights.push({ kind: 'lights', ...placement, until: elapsed + 5 });
+        return true;
+      }
+      const anchors = selectedProp === 'web' ? findDecorationAnchors(position, forward, { ...world, groundPosition }) : null;
       if (!anchors && !clearGround(direction) && !world.player.userData.onIce) { world.toast('Choose clear ground for this decoration.'); return true; }
       send({ type: 'minigame-build', action: 'place', kind: selectedProp, position: position.toArray(), ...(anchors ? { anchors } : {}) });
     }
@@ -386,7 +406,7 @@ export function createMinigames(world) {
     const aim = world.isFirstPerson() ? world.camera.getWorldDirection(new THREE.Vector3()) : new THREE.Vector3(Math.sin(world.getFacing()), 0, Math.cos(world.getFacing()));
     if (beam && direction.dot(aim) < Math.cos(Math.PI * 0.08)) return false;
     const ray = new THREE.Raycaster(a, direction, 0, Math.max(0, distance - 0.15));
-    return ray.intersectObjects([world.globe, ...world.getObstacles(), ...props.values()], true).length === 0;
+    return ray.intersectObjects([world.globe, ...world.getObstacles(), ...obstacles()], true).length === 0;
   }
   function contacts() {
     if (!['tag', 'freeze-tag', 'flashlight-tag', 'hide-seek'].includes(mode()) || !['playing', 'seeking'].includes(state.phase) || locked() || member()?.spectator) return;
@@ -490,6 +510,7 @@ export function createMinigames(world) {
   }
   function update(delta) {
     elapsed += delta;
+    decorationGlow.update(delta);
     snowTracks.update(delta, world.winter.enabled && world.winter.snowCover > 0.05, world.getSnowfall());
     updateSnowmen(delta);
     decorationControl.update();
@@ -567,14 +588,16 @@ export function createMinigames(world) {
   function reset() {
     if (previousSkates !== null) world.winter.setSkates(previousSkates);
     previousSkates = null; state = null; roundKey = ''; sledMounted = false;
+    pendingLights = [];
     sledFlight.reset(); sledPose = { lift: 0, pitch: 0 };
     clearGates();
     world.restoreVisibility(); world.refreshTeams(); world.refreshScores();
     renderMenu(); decorationControl.update();
   }
   renderMenu();
+  function obstacles() { return [...props.values()].filter(model => !model.userData.noPlayerCollision); }
   return { receive, select, renderMenu, sync, reset, update, locked, interaction, interact, sledMovement, allowMove,
-    blocksMovement, slowMovement, obstacles: () => [...props.values()],
+    blocksMovement, slowMovement, obstacles,
     sledAvailable, toggleSled, ridesSled, sledHeight, cycleDecoration, toggleDelete,
     updateHints: inputMode => decorationControl.update(inputMode),
     get sledLift() { return sledPose.lift; }, get sledPitch() { return sledPose.pitch; },
