@@ -1,14 +1,15 @@
 import * as THREE from 'three';
 import { createNameLabel, updateNameLabel } from './player-labels.js';
 import { disposeObject } from './game-utils.js';
-import { buildMinigameProp } from './minigame-models.js?v=233';
+import { buildMinigameProp } from './minigame-models.js?v=234';
 import { createSledFlight } from './sled-physics.js';
 import { createSnowmanTracks } from './snowman-tracks.js';
 import { createDecorationControl } from './decoration-control.js?v=232';
 import { findDecorationAnchors } from './decoration-anchors.js?v=233';
 import { createPropCollisions } from './prop-collisions.js?v=233';
 import { planLightPlacement, lightEndpoints, overlappingLightSpan } from './light-placement.js?v=233';
-import { createDecorationGlow } from './decoration-glow.js?v=233';
+import { createDecorationGlow } from './decoration-glow.js?v=234';
+import { createGhostCatching } from './ghost-catching.js?v=234';
 
 const GAMES = [
   ['tag', 'Tag', 'One camper is IT. Touch someone to pass it on. No immediate tag-backs.'],
@@ -20,13 +21,14 @@ const GAMES = [
   ['halloween', 'Halloween decorations', 'Cycle decorations with the side button, then place using the interaction prompt. Creations stay in the world.'],
   ['snowman', 'Build a snowman', 'Start a snowball, walk to roll it bigger, then stack three balls and add a face and hat. Winter required.'],
   ['flashlight-tag', 'Flashlight freeze tag', 'Nighttime team freeze tag. Shine your flashlight on opponents; touch teammates to thaw them.'],
+  ['ghost-catching', 'Ghost catching', 'Night only (18:00–06:00). Hold the suction gun on a ghost within 10 units to catch it. Each catch earns your team 1 point.'],
 ];
 const PALETTES = {
   christmas: [['lights', 'String lights'], ['ornament', 'Ornament'], ['wreath', 'Wreath'], ['christmas-tree', 'Christmas tree']],
   halloween: [['pumpkin', 'Pumpkin'], ['lantern', 'Lantern'], ['ghost', 'Ghost'], ['web', 'Cobweb']],
 };
 const TEAM_MODES = new Set(['freeze-tag', 'flashlight-tag']);
-const COMPETITIVE = new Set(['tag', 'freeze-tag', 'hide-seek', 'race', 'sledding', 'flashlight-tag']);
+const COMPETITIVE = new Set(['tag', 'freeze-tag', 'hide-seek', 'race', 'sledding', 'flashlight-tag', 'ghost-catching']);
 const UP = new THREE.Vector3(0, 1, 0);
 
 export function createMinigames(world) {
@@ -47,6 +49,11 @@ export function createMinigames(world) {
   const member = () => state?.roster?.[world.localId];
   const mode = () => state?.mode;
   const send = message => world.send({ ...message, epoch: state?.epoch });
+  const ghostGame = createGhostCatching({ ...world, getState: () => state, send,
+    get localId() { return world.localId; },
+    disableGlow: world.disableDecorationGlow,
+    canUse: () => state?.phase === 'playing' && world.canInteract() && !world.menuOpen() && !locked(),
+    getObstacles: () => [world.globe, ...world.getObstacles(), ...obstacles()] });
   const localPoint = () => here().multiplyScalar(world.player.userData.groundY || world.player.position.y);
   const snowTracks = createSnowmanTracks(world.globePivot, surface, world.mobile);
   const decorationControl = createDecorationControl(() => {
@@ -154,7 +161,7 @@ export function createMinigames(world) {
       if (mode() === id) {
         text += `\n${state.phase === 'hiding' ? 'Hiding' : state.phase === 'results' ? 'Results' : state.phase === 'countdown' ? 'Starting' : 'Playing'} · Round ${state.round}`;
         if (state.it) text += ` · ${state.roster[state.it]?.name || 'Camper'} is ${id === 'tag' ? 'IT' : 'seeking'}`;
-        if (TEAM_MODES.has(id)) text += `\nRed ${state.scores.red} · Blue ${state.scores.blue}`;
+        if (TEAM_MODES.has(id) || id === 'ghost-catching') text += `\nRed ${state.scores.red} · Blue ${state.scores.blue}`;
         if (['race', 'sledding', 'hide-seek'].includes(id)) {
           const racers = Object.values(state.roster).sort((a, b) => (a.finish ?? Infinity) - (b.finish ?? Infinity) || b.checkpoint - a.checkpoint);
           text += '\n' + racers.map(p => `${p.name}: ${p.spectator ? 'watching' : id === 'hide-seek' ? `${p.score} points${p.found ? ' · found' : ''}` : p.finish !== null ? `${(p.finish / 1000).toFixed(1)}s` : `${Math.max(0, p.checkpoint - (id === 'race' ? 1 : 0))}/${state.course.length - (id === 'race' ? 1 : 0)} checkpoints`}`).join('\n');
@@ -245,6 +252,7 @@ export function createMinigames(world) {
       }
     }
     syncProps(); renderMenu(); world.refreshScores();
+    ghostGame.sync();
     decorationControl.update();
     if (message.message) world.toast(message.message);
   }
@@ -393,9 +401,9 @@ export function createMinigames(world) {
     if (!world.online()) return;
     const inverse = world.getRotation().clone().invert();
     send({ type: 'minigame-pose', position: localPoint().toArray(),
-      heading: (mode() === 'flashlight-tag' && world.isFirstPerson() ? world.camera.getWorldDirection(new THREE.Vector3()) : new THREE.Vector3(Math.sin(world.getFacing()), 0, Math.cos(world.getFacing()))).applyQuaternion(inverse).toArray(),
+      heading: (ghostGame.active() ? ghostGame.getAim() : mode() === 'flashlight-tag' && world.isFirstPerson() ? world.camera.getWorldDirection(new THREE.Vector3()) : new THREE.Vector3(Math.sin(world.getFacing()), 0, Math.cos(world.getFacing()))).applyQuaternion(inverse).toArray(),
       flashlight: world.flashlightOn(), ice: !!world.player.userData.onIce, skates: world.winter.skating, sledding: ridesSled(),
-      snow: world.winter.snowy && !world.player.userData.onIce && world.canInteract() });
+      snow: world.winter.snowy && !world.player.userData.onIce && world.canInteract(), vacuum: ghostGame.vacuuming() });
   }
   function visibleContact(target, beam) {
     const a = world.player.position.clone().addScaledVector(UP, 0.8);
@@ -513,6 +521,7 @@ export function createMinigames(world) {
     decorationGlow.update(delta);
     snowTracks.update(delta, world.winter.enabled && world.winter.snowCover > 0.05, world.getSnowfall());
     updateSnowmen(delta);
+    ghostGame.update(delta);
     decorationControl.update();
     if (mode() && world.online() && elapsed - sentAt > 0.12) { sentAt = elapsed; pose(); }
     if (elapsed - contactedAt > 0.22) { contactedAt = elapsed; contacts(); }
@@ -588,6 +597,7 @@ export function createMinigames(world) {
   function reset() {
     if (previousSkates !== null) world.winter.setSkates(previousSkates);
     previousSkates = null; state = null; roundKey = ''; sledMounted = false;
+    ghostGame.sync();
     pendingLights = [];
     sledFlight.reset(); sledPose = { lift: 0, pitch: 0 };
     clearGates();
@@ -599,6 +609,11 @@ export function createMinigames(world) {
   return { receive, select, renderMenu, sync, reset, update, locked, interaction, interact, sledMovement, allowMove,
     blocksMovement, slowMovement, obstacles,
     sledAvailable, toggleSled, ridesSled, sledHeight, cycleDecoration, toggleDelete,
+    setVacuum: ghostGame.setVacuum,
+    get ghostGame() { return ghostGame.active(); },
+    get ghostVacuum() { return ghostGame.vacuuming(); },
+    get ghostCanUse() { return ghostGame.active() && state?.phase === 'playing' && world.canInteract() && !world.menuOpen() && !locked(); },
+    ghostAim: () => ghostGame.getAim().applyQuaternion(world.getRotation().clone().invert()).toArray(),
     updateHints: inputMode => decorationControl.update(inputMode),
     get sledLift() { return sledPose.lift; }, get sledPitch() { return sledPose.pitch; },
     get competitive() { return COMPETITIVE.has(mode()); },

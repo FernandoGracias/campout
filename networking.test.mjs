@@ -148,11 +148,12 @@ test('sled motion accepts bounded lift and pitch and strips malformed airborne d
   context.channel = { readyState: 'open', bufferedAmount: 0, send() {} };
   vm.runInContext("handleGameMessage = (id, data) => received.push(data); setupDataChannel('camper', channel);", context);
   const motion = { phase: 0, rate: 0, amplitude: 0.5, waddle: 0.04, swing: 0, roll: 0,
-    flashlight: false, skating: true, sledding: true, sledLift: 2, sledPitch: -0.4 };
+    flashlight: false, skating: true, sledding: true, sledLift: 2, sledPitch: -0.4, ghostVacuum: true, ghostAim: [0, 1, 0] };
   const send = m => context.channel.onmessage({ data: JSON.stringify({ type: 'pos', qx: 0, qy: 0, qz: 0, qw: 1, facing: 0, motion: m }) });
   send(motion);
   assert.equal(received.at(-1).motion.sledLift, 2);
-  for (const invalid of [{ sledLift: -1 }, { sledLift: 9 }, { sledLift: null }, { sledPitch: 1 }, { sledding: 'true' }]) {
+  for (const invalid of [{ sledLift: -1 }, { sledLift: 9 }, { sledLift: null }, { sledPitch: 1 }, { sledding: 'true' },
+    { ghostVacuum: 'true' }, { ghostAim: [0, 0, 0] }, { ghostAim: [2, 0, 0] }, { ghostAim: [0, null, 1] }]) {
     send({ ...motion, ...invalid });
     assert.equal(received.at(-1).motion, undefined);
   }

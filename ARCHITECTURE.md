@@ -25,6 +25,9 @@ There is no build step. Deploy the HTML, CSS and JavaScript files together.
 | `decoration-anchors.js` | Nearby scenery attachment points for hanging lights/webs |
 | `light-placement.js` | Non-overlapping light spans and reuse of existing endpoints/posts |
 | `decoration-glow.js` | Batched bulb halos, bounded local illumination and iOS exclusion |
+| `decoration-light-field.js` | Fixed globe-space illumination volume, independent of camera position |
+| `ghost-catching.js` | Roaming ghost visuals, suction gun/beam and capture input |
+| `ghost-motion.js` | Shared room-time ghost orbits (matches server ghost-game.js) |
 | `prop-collisions.js` | Swept, per-mesh oriented collision boxes for creations |
 | `pinecones.js` | Cone geometry, inventory, pickup and raycast resting positions |
 | `pinecone-fire.js` | Pooled fire/smoke trails and impact embers in planet coordinates |
@@ -93,7 +96,7 @@ Votes expire after 30 seconds. Join/departure updates eligibility. Races and
 hide-and-seek admit late arrivals as spectators; other modes admit them directly.
 Tag and freeze games end when fewer than two campers remain.
 
-The existing Mini Games modal holds all nine modes, ballot counts, descriptions,
+The existing Mini Games modal holds the games and activities, ballot counts, descriptions,
 results and Back to camping. Decoration choices use a circular side button with
 the selected item's SVG icon: click/tap, C or controller RB cycles the choices.
 A separate trash button toggles delete-decoration mode (Delete or controller Y);
@@ -158,10 +161,24 @@ Light placement avoids duplicate/overlapping spans and preferentially reuses
 existing strip endpoints and posts, including pending local placements. New posts
 fill nearby gaps; moving along the chain lets campers extend it across the world.
 The server independently rejects duplicate spans, including concurrent placements.
-Visible glow uses one bounded, static GPU point batch plus a fixed pool of nearby
-unshadowed point lights (four desktop, two Android). On iOS/iPadOS neither effect
-is allocated; the inexpensive self-lit bulbs remain. Halos do not require a
-post-processing pass or per-frame geometry uploads.
+Visible glow uses one bounded, static GPU point batch plus a globe-space 3D
+lighting field. The field is rebuilt only when decorations change; walking never
+reassigns lamps or projected colors. Standard materials sample it with one GPU
+lookup, preserving existing shaders and shadows. On iOS/iPadOS neither effect is
+allocated; inexpensive self-lit bulbs and ghost bodies remain. No post-processing
+pass, camera-dependent point-light pool, or per-frame lighting upload is used.
+
+Ghost catching is available only from 18:00 to 06:00 on the shared room clock.
+It never forces night and ends automatically at dawn (or a creator's daylight
+change). Eighteen ghosts follow deterministic globe-wide orbits evaluated from
+room time on both clients and server. The existing weapon button becomes a
+suction gun: hold left mouse, Q, controller RT or the touch button. A ghost must
+remain in range (10 units) and under aim for 1.2 seconds. The server owns capture
+progress, deduplicates competing captures, adds one point to the catcher's team,
+and hides the ghost for 12 seconds before it returns. Browsers check sight lines
+against the terrain and props; range, timing, night eligibility, roles and scores
+are checked by the server. Gun aim and beam state are bounded multiplayer motion
+fields. Releasing input, losing focus, or leaving the mode stops suction.
 
 ## First-person view
 

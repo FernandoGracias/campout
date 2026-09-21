@@ -889,9 +889,9 @@ export function createWinter(THREE, world) {
   }
   function updateCrosshair() {
     let canShow = false;
-    try { canShow = world.canAct() && world.canThrow?.() !== false; } catch { /* not yet initialized */ }
+    try { canShow = world.canAct() && (world.canThrow?.() !== false || world.ghostGame?.()); } catch { /* not yet initialized */ }
     crosshair.style.display = canShow ? 'block' : 'none';
-    if (canShow) crosshair.innerHTML = held ? targetIcon : dotIcon;
+    if (canShow) crosshair.innerHTML = held || world.ghostGame?.() ? targetIcon : dotIcon;
   }
   const scoreTextures = new Map(), scoreFloats = [];
   function removeScore(index) {
@@ -1093,7 +1093,7 @@ export function createWinter(THREE, world) {
       });
       s.winterEquipment = { ball, blades };
     }
-    const hand = carrying ? s.leftArm : s.rightArm;
+    const hand = carrying || s.ghostGun ? s.leftArm : s.rightArm;
     if (s.flashlightStick.parent !== hand) {
       hand.add(s.flashlightStick);
       s.flashlightStick.position.x = carrying ? 0.01 : -0.01;
@@ -1188,6 +1188,7 @@ export function createWinter(THREE, world) {
   // Only the solid half has an arc; the flake half has three branching arms.
   const snowballIcon = icon('<path d="M12 2a10 10 0 0 1 0 20Z" fill="currentColor" fill-opacity=".3"/><path d="M12 2v20M12 12L3.34 7M12 12l-8.66 5M12 6l-3-2M12 18l-3 2M6.8 9l-.2-3.5M6.8 9l-3.2 1.5M6.8 15l-3.2-1.5M6.8 15l-.2 3.5"/>');
   const pineconeIcon = icon('<path d="M12 3c-3 0-7 7-7 12s3 7 7 7 7-2 7-7S15 3 12 3Z" fill="#89512e" fill-opacity=".7"/><path d="M12 3V1M8 7l4 3 4-3M6 11l6 4 6-4M5 16l7 4 7-4M12 10v5M8 13v5M16 13v5"/>');
+  const ghostGunIcon = icon('<path d="M3 9h9v7H3zM6 16v5h4v-5M12 10l5-3v11l-5-3M20 7l-2 3 2 3M23 9l-2 3 2 3"/>');
   button.innerHTML = snowballIcon;
   const targetIcon = icon('<circle cx="12" cy="12" r="7"/><path d="M12 1v22M1 12h22"/>');
   const dotIcon = icon('<circle cx="12" cy="12" r="3" fill="#e32636" stroke="none"/>');
@@ -1202,11 +1203,12 @@ export function createWinter(THREE, world) {
   skatesButton.setAttribute('aria-label', 'Toggle ice skates');
   function refreshHints() {
     const sled = !!world.sledEquipment?.();
-    const next = [enabled, packing > 0, held, skates, inputMode, sled].join(':');
+    const ghost = !!world.ghostGame?.();
+    const next = [enabled, packing > 0, held, skates, inputMode, sled, ghost].join(':');
     if (hintState === next) return;
     hintState = next;
-    button.querySelector('svg').outerHTML = enabled ? snowballIcon : pineconeIcon;
-    button.setAttribute('aria-label', enabled ? 'Load or throw snowball' : 'Pick up nearby pinecone or throw');
+    button.querySelector('svg').outerHTML = ghost ? ghostGunIcon : enabled ? snowballIcon : pineconeIcon;
+    button.setAttribute('aria-label', ghost ? 'Hold to vacuum ghosts' : enabled ? 'Load or throw snowball' : 'Pick up nearby pinecone or throw');
     skatesButton.innerHTML = sled ? skates ? sledOffIcon : sledIcon : skates ? skateNoIcon : skateIcon;
     const equipmentAction = sled ? skates ? 'Get off sled' : 'Get on sled' : 'Toggle ice skates';
     skatesButton.setAttribute('aria-label', equipmentAction);
@@ -1222,6 +1224,7 @@ export function createWinter(THREE, world) {
     skatesHint.style.borderRadius = '4px';  // LB/I are both squirkles (bumpers, keyboard)
     button.title = inputMode === 'gamepad' ? 'Right trigger: load / throw. Right stick: look.' : 'Left-click: load / throw. Move the camera to aim at the center crosshair.';
     if (!enabled) button.title += ' Stand within arm’s reach of a pinecone to pick it up.';
+    if (ghost) button.title = inputMode === 'gamepad' ? 'Hold RT to vacuum a ghost within range.' : inputMode === 'touch' ? 'Hold to vacuum a ghost within range.' : 'Hold Q or left mouse to vacuum a ghost within range.';
     skatesButton.setAttribute('aria-pressed', String(skates));
   }
   function updateHints(mode) {
@@ -1352,6 +1355,7 @@ export function createWinter(THREE, world) {
     spray.visible = true;
     const player = world.getPlayer();
     player.userData.sledding = !!world.isSledding?.(world.localId);
+    player.userData.ghostGun = !!world.ghostGame?.();
     const canAct = world.canAct();
     const canThrow = canAct && world.canThrow?.() !== false;
     const canCarry = !enabled && (world.canCarryPinecones?.() ?? canAct);
@@ -1438,7 +1442,7 @@ export function createWinter(THREE, world) {
     }
     if (throwPose > 0) { throwPose -= delta; player.userData.rightArm.rotation.x = -2.2 * Math.max(0, throwPose / 0.3); }
     refreshHints();
-    button.disabled = !canAct || !projectileReady || !world.projectilesOnline() || pendingPickup !== null || (!enabled && !held && nearbyCone() === null);
+    button.disabled = world.ghostGame?.() ? !world.canGhostVacuum?.() : !canAct || !projectileReady || !world.projectilesOnline() || pendingPickup !== null || (!enabled && !held && nearbyCone() === null);
     if (enabled) {
     updateTrack(world.localId, player, inverse, delta);
     updateSkateTracks(world.localId, player, inverse, skates && !player.userData.sledding && (player.userData.onIce || cover > 0.05) && canAct);
@@ -1456,7 +1460,7 @@ export function createWinter(THREE, world) {
     updateCrosshair();
     updateBalls(delta, inverse);
     aimArc.visible = false;
-    if (held && canAct && world.camera.position.distanceTo(player.position) > radius) {
+    if (held && canThrow && world.camera.position.distanceTo(player.position) > radius) {
       const { points } = throwState(true);
       if (points?.length > 1) {
         aimArc.geometry.dispose();

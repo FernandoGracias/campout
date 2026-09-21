@@ -79,9 +79,10 @@ export function buildMinigameProp(kind, options = {}) {
     mesh(new THREE.ConeGeometry(0.3, 0.2, 4), 0x292734, 0, 1.3, 0);
     for (const x of [-0.16, 0.16]) for (const z of [-0.16, 0.16]) box(0.035, 0.4, 0.035, 0x292734, x, 1.05, z);
   } else if (kind === 'ghost') {
-    pole(1.6);
-    ball(0.3, 0xf0f0ec, 0, 1.4, 0);
-    mesh(new THREE.CylinderGeometry(0.28, 0.42, 0.6, 10, 1, true), 0xf0f0ec, 0, 1.08, 0);
+    if (!options.floating) pole(1.6);
+    const head = bulb(0.3, 0xf0f0ec, 0, 1.4, 0);
+    head.userData.glowSize = 1.6; head.userData.glowPower = 2;
+    mesh(new THREE.CylinderGeometry(0.28, 0.42, 0.6, 10, 1, true), 0xf0f0ec, 0, 1.08, 0, true);
     for (const x of [-0.1, 0.1]) ball(0.055, 0x242333, x, 1.45, 0.27);
     ball(0.07, 0x242333, 0, 1.26, 0.28);
   } else if (kind === 'web') {
@@ -118,6 +119,11 @@ export function buildMinigameProp(kind, options = {}) {
     }
     for (const child of [...group.children]) if (!before.has(child)) accessories.add(child);
     group.add(accessories);
+  } else if (kind === 'ghost-gun') {
+    box(0.2, 0.3, 0.22, 0x447799, 0, -0.22, 0);
+    mesh(new THREE.CylinderGeometry(0.1, 0.15, 0.27, 10, 1, true), 0xaebdc4, 0, -0.47, 0);
+    mesh(new THREE.TorusGeometry(0.12, 0.025, 5, 12), 0x66ddff, 0, -0.6, 0, true).rotation.x = Math.PI / 2;
+    group.userData.muzzle = new THREE.Vector3(0, -0.62, 0);
   } else if (kind === 'sled') {
     box(0.6, 0.09, 1, 0xb95732, 0, 0.12, 0.1);
     for (const x of [-0.25, 0.25]) {
