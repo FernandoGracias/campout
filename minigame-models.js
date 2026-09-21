@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { webLayout, buildWebGeometry, WEB_STRAND_RADIUS } from './web-geometry.js?v=237';
+import { webLayout, buildWebGeometry, WEB_STRAND_RADIUS } from './web-geometry.js?v=238';
 
 // Small, static world props. No per-prop lights or per-frame geometry uploads.
 export function buildMinigameProp(kind, options = {}) {
