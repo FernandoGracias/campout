@@ -1103,8 +1103,8 @@ export function createWinter(THREE, world) {
     s.winterEquipment.ball.visible = carrying && mesh.visible;
     s.winterEquipment.burning = carrying && kind === 'pinecone' && burning;
     if (carrying) s.rightArm.rotation.x = -1.2;
-    for (const blade of s.winterEquipment.blades) blade.visible = enabled && skating;
-    if (enabled && skating && s.onIce) {
+    for (const blade of s.winterEquipment.blades) blade.visible = enabled && skating && !s.sledding;
+    if (enabled && skating && s.onIce && !s.sledding) {
       const push = moving ? Math.sin(elapsed * 5) : 0;
       s.leftLeg.rotation.set(-0.08 + Math.max(0, push) * 0.18, 0, 0.04 + Math.max(0, push) * 0.16);
       s.rightLeg.rotation.set(-0.08 + Math.max(0, -push) * 0.18, 0, -0.04 - Math.max(0, -push) * 0.16);
@@ -1164,6 +1164,7 @@ export function createWinter(THREE, world) {
     colors.needsUpdate = true;
   }
   function toggleSkates() {
+    if (enabled && world.sledEquipment?.()) { world.toggleSled?.(); return; }
     if (!enabled || !world.canAct() || world.lockSkates?.()) return;
     if (!skates && !world.getPlayer().userData.onIce) return;
     skates = !skates; world.getPlayer().userData.skating = skates;
@@ -1181,6 +1182,9 @@ export function createWinter(THREE, world) {
   const skatePaths = '<path d="M5 3h7v5c0 2 2 3 5 4l2 .6c1.3.4 2 1.4 2 2.4v1H4V9z" fill="currentColor" fill-opacity=".15"/><path d="M9 6h3M9 9h3M11 12l2-1M7 16v4M17 16v4M3 20h16q3 0 3-3"/>';
   const skateIcon = icon(skatePaths);
   const skateNoIcon = icon(skatePaths + '<path d="M3 3l18 18" stroke="#e32636" stroke-width="2.3"/>');
+  const sledPaths = '<path d="M4 10h15M6 10V7h11v3M7 11v6m9-6v6M3 18h15q4 0 4-4M4 14v4"/><path d="M5 7l2-3m9 3 2-3"/>';
+  const sledIcon = icon(sledPaths);
+  const sledOffIcon = icon(sledPaths + '<path d="M3 3l18 18" stroke="#e32636" stroke-width="2.3"/>');
   // Only the solid half has an arc; the flake half has three branching arms.
   const snowballIcon = icon('<path d="M12 2a10 10 0 0 1 0 20Z" fill="currentColor" fill-opacity=".3"/><path d="M12 2v20M12 12L3.34 7M12 12l-8.66 5M12 6l-3-2M12 18l-3 2M6.8 9l-.2-3.5M6.8 9l-3.2 1.5M6.8 15l-3.2-1.5M6.8 15l-.2 3.5"/>');
   const pineconeIcon = icon('<path d="M12 3c-3 0-7 7-7 12s3 7 7 7 7-2 7-7S15 3 12 3Z" fill="#89512e" fill-opacity=".7"/><path d="M12 3V1M8 7l4 3 4-3M6 11l6 4 6-4M5 16l7 4 7-4M12 10v5M8 13v5M16 13v5"/>');
@@ -1197,12 +1201,16 @@ export function createWinter(THREE, world) {
   button.setAttribute('aria-label', 'Load or throw snowball');
   skatesButton.setAttribute('aria-label', 'Toggle ice skates');
   function refreshHints() {
-    const next = [enabled, packing > 0, held, skates, inputMode].join(':');
+    const sled = !!world.sledEquipment?.();
+    const next = [enabled, packing > 0, held, skates, inputMode, sled].join(':');
     if (hintState === next) return;
     hintState = next;
     button.querySelector('svg').outerHTML = enabled ? snowballIcon : pineconeIcon;
     button.setAttribute('aria-label', enabled ? 'Load or throw snowball' : 'Pick up nearby pinecone or throw');
-    skatesButton.innerHTML = skates ? skateNoIcon : skateIcon;
+    skatesButton.innerHTML = sled ? skates ? sledOffIcon : sledIcon : skates ? skateNoIcon : skateIcon;
+    const equipmentAction = sled ? skates ? 'Get off sled' : 'Get on sled' : 'Toggle ice skates';
+    skatesButton.setAttribute('aria-label', equipmentAction);
+    skatesButton.title = `${inputMode === 'gamepad' ? 'LB' : inputMode === 'touch' ? 'Tap' : 'I'} · ${equipmentAction}`;
     skatesButton.append(skatesHint);  // Re-append after innerHTML replacement
     // Update border colors to indicate active states
     button.style.borderColor = packing > 0 ? '#f0c040' : 'rgba(255,255,255,0.15)';
@@ -1313,8 +1321,19 @@ export function createWinter(THREE, world) {
     contact.state.serial = message.serial;
     addImpulse(impulse);
   }
-  function movement(forward, strafe, facing, delta, locked) {
+  function movement(forward, strafe, facing, delta, locked, sled = null) {
     if (locked) { velocity.set(0, 0); return velocity; }
+    if (sled) {
+      // Sledding shares the skate momentum/contact state, including braking
+      // and collision impulses; snow slopes add acceleration to that state.
+      const acceleration = sled.airborne ? -0.008 : sled.slope * 0.25 + Math.max(0, -forward) * 0.12 - Math.max(0, forward) * 0.8 - 0.035;
+      const speed = THREE.MathUtils.clamp(velocity.length() + acceleration * delta, 0, 0.46);
+      const steering = facing - strafe * 0.5;
+      const target = new THREE.Vector2(-Math.cos(steering), -Math.sin(steering));
+      if (velocity.lengthSq() > 0.000001) velocity.normalize().lerp(target, 1 - Math.exp(-(sled.airborne ? 0.7 : 8) * delta)).normalize();
+      else velocity.copy(target);
+      return velocity.multiplyScalar(speed);
+    }
     const target = new THREE.Vector2(forward * Math.cos(facing) - strafe * Math.sin(facing),
       forward * Math.sin(facing) + strafe * Math.cos(facing));
     if (target.length() > 1) target.normalize();
@@ -1332,6 +1351,7 @@ export function createWinter(THREE, world) {
     falling.visible = enabled && snowfall > 0;
     spray.visible = true;
     const player = world.getPlayer();
+    player.userData.sledding = !!world.isSledding?.(world.localId);
     const canAct = world.canAct();
     const canThrow = canAct && world.canThrow?.() !== false;
     const canCarry = !enabled && (world.canCarryPinecones?.() ?? canAct);
@@ -1358,8 +1378,9 @@ export function createWinter(THREE, world) {
         peer.motion?.pinecone ? 'pinecone' : 'snowball', fresh && peer.motion?.flamingPinecone === true);
       if (peer.torch?.visible) peer.mesh.userData.flashlightLens.getWorldPosition(peer.torch.position);
     }
-    skatesButton.style.display = enabled && (skates || player.userData.onIce) ? 'flex' : 'none';
-    skatesButton.disabled = !canAct || !!world.lockSkates?.();
+    const sledEquipment = !!world.sledEquipment?.();
+    skatesButton.style.display = enabled && (sledEquipment || skates || player.userData.onIce) ? 'flex' : 'none';
+    skatesButton.disabled = sledEquipment ? !world.canToggleSled?.() : !canAct || !!world.lockSkates?.();
     const inverse = world.getRotation().clone().invert();
     flightObstacles = world.getObstacles();
     const lighting = world.getLighting?.();
@@ -1420,10 +1441,10 @@ export function createWinter(THREE, world) {
     button.disabled = !canAct || !projectileReady || !world.projectilesOnline() || pendingPickup !== null || (!enabled && !held && nearbyCone() === null);
     if (enabled) {
     updateTrack(world.localId, player, inverse, delta);
-    updateSkateTracks(world.localId, player, inverse, skates && (player.userData.onIce || cover > 0.05) && canAct);
+    updateSkateTracks(world.localId, player, inverse, skates && !player.userData.sledding && (player.userData.onIce || cover > 0.05) && canAct);
     for (const [id, peer] of Object.entries(world.getPeers())) {
       updateTrack(id, peer.mesh, inverse, delta);
-      updateSkateTracks(id, peer.mesh, inverse, peer.mesh.visible && peer.mesh.userData.skating && (peer.mesh.userData.onIce || cover > 0.05));
+      updateSkateTracks(id, peer.mesh, inverse, peer.mesh.visible && peer.mesh.userData.skating && !peer.mesh.userData.sledding && (peer.mesh.userData.onIce || cover > 0.05));
     }
     for (const [id, track] of tracks) if (id !== world.localId && !world.getPeers()[id]) {
       disposeTrack(track);
@@ -1481,5 +1502,7 @@ export function createWinter(THREE, world) {
     get holding() { return held && world.canThrow?.() !== false && (enabled ? world.canAct() : (world.canCarryPinecones?.() ?? world.canAct())); },
     get flamingPinecone() { return !enabled && held && (cones[heldCone]?.burningUntil || 0) > projectileNow(); },
     get skating() { return enabled && skates; },
+    get speed() { return velocity.length(); },
+    get snowCover() { return enabled ? cover : 0; },
     get enabled() { return enabled; }, iceRadius };
 }

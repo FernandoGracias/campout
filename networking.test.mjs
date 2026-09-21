@@ -125,6 +125,23 @@ test('simultaneous bumps do not restart the reaction or send another impulse', (
   assert.equal(sends, 2);
 });
 
+test('sled motion accepts bounded lift and pitch and strips malformed airborne data', () => {
+  const { context } = browser();
+  const received = [];
+  context.received = received;
+  context.channel = { readyState: 'open', bufferedAmount: 0, send() {} };
+  vm.runInContext("handleGameMessage = (id, data) => received.push(data); setupDataChannel('camper', channel);", context);
+  const motion = { phase: 0, rate: 0, amplitude: 0.5, waddle: 0.04, swing: 0, roll: 0,
+    flashlight: false, skating: true, sledding: true, sledLift: 2, sledPitch: -0.4 };
+  const send = m => context.channel.onmessage({ data: JSON.stringify({ type: 'pos', qx: 0, qy: 0, qz: 0, qw: 1, facing: 0, motion: m }) });
+  send(motion);
+  assert.equal(received.at(-1).motion.sledLift, 2);
+  for (const invalid of [{ sledLift: -1 }, { sledLift: 9 }, { sledLift: null }, { sledPitch: 1 }, { sledding: 'true' }]) {
+    send({ ...motion, ...invalid });
+    assert.equal(received.at(-1).motion, undefined);
+  }
+});
+
 test('retreat starts at contact and travels the same distance at different frame rates', () => {
   const context = vm.createContext({});
   vm.runInContext('const BUMP_TRAVEL_TIME = 0.28; ' + moduleSource.slice(

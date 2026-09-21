@@ -63,7 +63,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v228</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v230</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -142,7 +142,7 @@ canvas { display: block; }
     <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
     <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
   </div>
-  <div class="lobby-version">v228</div>
+  <div class="lobby-version">v230</div>
   </div>
 </div>
 
@@ -285,6 +285,7 @@ canvas { display: block; }
 <div id="winter-actions" style="position:fixed;bottom:160px;left:24px;z-index:101;display:flex;flex-direction:column;align-items:flex-start;gap:8px;">
   <!-- Winter supplies shared SVG icons when the game initializes. -->
   <button id="btn-skates" class="winter-action" style="display:none;"></button>
+  <button id="btn-decoration" class="winter-action" style="display:none;" aria-label="Cycle decoration"></button>
   <button id="btn-snowball" class="winter-action" style="display:none;"></button>
 </div>
 <style>@media(pointer:coarse){#winter-actions{left:auto!important;right:12px;bottom:calc(110px + env(safe-area-inset-bottom,0px))!important;align-items:flex-end!important}.winter-action{min-height:48px;min-width:48px;touch-action:manipulation}#lever-zone{touch-action:none}} </style>
@@ -298,7 +299,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v228</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v230</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -312,8 +313,8 @@ canvas { display: block; }
 </script>
 <script type="module">
 import * as THREE from 'three';
-import { createWinter } from './winter.js?v=225';
-import { createMinigames } from './minigames.js';
+import { createWinter } from './winter.js?v=230';
+import { createMinigames } from './minigames.js?v=230';
 import { advanceFireParticle, advanceSmokeParticle } from './fire-particles.js';
 import { createSeasonalSky } from './seasonal-sky.js';
 import { createSwimming } from './swimming.js';
@@ -1401,7 +1402,9 @@ function setupDataChannel(peerId, channel) {
           ![0, 8, 12].includes(m.rate) || ![0.35, 0.5].includes(m.amplitude) || ![0.03, 0.04].includes(m.waddle) ||
           !Number.isFinite(m.swing) || Math.abs(m.swing) > 0.5 || !Number.isFinite(m.roll) || Math.abs(m.roll) > 0.1 ||
           typeof m.flashlight !== 'boolean' ||
-          ['snowball', 'pinecone', 'flamingPinecone', 'skating'].some(key => m[key] !== undefined && typeof m[key] !== 'boolean') ||
+          ['snowball', 'pinecone', 'flamingPinecone', 'skating', 'sledding'].some(key => m[key] !== undefined && typeof m[key] !== 'boolean') ||
+          (m.sledLift !== undefined && (!Number.isFinite(m.sledLift) || m.sledLift < 0 || m.sledLift > 8)) ||
+          (m.sledPitch !== undefined && (!Number.isFinite(m.sledPitch) || Math.abs(m.sledPitch) > 0.6)) ||
           (m.iceVelocity !== undefined && (!Array.isArray(m.iceVelocity) || m.iceVelocity.length !== 3 ||
             !m.iceVelocity.every(n => Number.isFinite(n) && Math.abs(n) <= 0.6) || Math.hypot(...m.iceVelocity) > 0.61))) {
         console.warn('Ignoring bad motion data:', m);
@@ -1740,6 +1743,10 @@ const winter = createWinter(THREE, {
   canAct: () => !isSleeping && sittingFireId === null && !walkingToTent && !walkingToFire && !minigamesOpen && !minigames?.locked(),
   canThrow: () => !minigames?.competitive,
   lockSkates: () => !!minigames?.iceRace,
+  sledEquipment: () => !!minigames?.sledAvailable(),
+  toggleSled: () => minigames?.toggleSled(),
+  isSledding: id => !!minigames?.ridesSled(id),
+  canToggleSled: () => !minigamesOpen && !isSleeping && sittingFireId === null && !walkingToTent && !walkingToFire,
   toast: message => showToast(message),
   // Get tent owner info for hit detection
   getTentOwner: (tentMesh) => {
@@ -1797,6 +1804,7 @@ document.addEventListener('keydown', e => {
   if (!e.repeat && !e.target.closest('input, select, textarea, [contenteditable]')) {
     if (e.key.toLowerCase() === 'q') { e.preventDefault(); winter.action(); }
     if (e.key.toLowerCase() === 'i') { e.preventDefault(); winter.toggleSkates(); }
+    if (e.key.toLowerCase() === 'c' && minigames?.cycleDecoration()) e.preventDefault();
   }
 });
 renderer.domElement.addEventListener('pointerdown', e => {
@@ -2032,11 +2040,17 @@ function animateOtherPlayers(delta) {
 
     const motionAge = (performance.now() - p.motionReceivedAt) / 1000;
     m.userData.skating = winter.enabled && !!p.motion?.skating && motionAge < 2;
+    m.userData.sledding = !!minigames?.ridesSled(id);
     const swimmingMoving = motionAge < 0.5 && p.motion
       ? (p.motion.moving ?? p.motion.rate > 0)
       : p.isWalking && p.interpT < 1;
     const swimRadius = updateSwimming(m, m.position.length(), swimmingMoving, delta, winter);
     m.position.copy(wDir).multiplyScalar(swimRadius);
+    const sledLift = m.userData.sledding ? p.motion?.sledLift || 0 : 0;
+    m.userData.sledLift = m.userData.sledding ? THREE.MathUtils.lerp(m.userData.sledLift || 0, sledLift, 1 - Math.exp(-15 * delta)) : 0;
+    m.userData.sledPitch = m.userData.sledding ? THREE.MathUtils.lerp(m.userData.sledPitch || 0, p.motion?.sledPitch || 0, 1 - Math.exp(-15 * delta)) : 0;
+    m.position.addScaledVector(wDir, m.userData.sledLift);
+    if (m.userData.sledLift > 0.05) m.userData.onIce = false;
     resetSwimLimbs(m);
     const torchOn = !!p.motion?.flashlight && m.visible && motionAge < 2;
     p.torch.visible = torchOn;
@@ -2225,6 +2239,7 @@ document.getElementById('minigames-list').addEventListener('click', e => {
 // Detect input mode and show appropriate hints
 function updateControlHints() {
   winter.updateHints(lastInputMode);
+  minigames?.updateHints(lastInputMode);
   const isMobile = lastInputMode === 'touch';
   const hintPitch = document.getElementById('hint-pitch');
   const hintFlashlight = document.getElementById('hint-flashlight');
@@ -3578,6 +3593,8 @@ function animate() {
     gamepadState.snowWasPressed = snowPressed;
     if (gp.buttons[4]?.pressed && !gamepadState.skatesWasPressed) winter.toggleSkates();
     gamepadState.skatesWasPressed = !!gp.buttons[4]?.pressed;
+    if (gp.buttons[5]?.pressed && !gamepadState.decorationWasPressed) minigames?.cycleDecoration();
+    gamepadState.decorationWasPressed = !!gp.buttons[5]?.pressed;
     // A=buttons[0], B=buttons[1], X=buttons[2], Y=buttons[3]
     if (gp.buttons[0]?.pressed && !gamepadState.aWasPressed) { gamepadA = true; gamepadState.aWasPressed = true; }
     else if (!gp.buttons[0]?.pressed) gamepadState.aWasPressed = false;
@@ -3897,6 +3914,8 @@ function animate() {
   player.userData.terrainY = terrainY;
   player.position.y = updateSwimming(player, terrainY, isWalking && !isSleeping, delta, winter);
   player.userData.groundY = player.position.y;
+  player.position.y = minigames?.sledHeight(player.position.y, delta) ?? player.position.y;
+  if (minigames?.sledLift > 0.05) player.userData.onIce = false;
   resetSwimLimbs(player);
 
   // Camera: cameraHeight is tilt (1=ground level, 12=overhead), cameraDistance is total distance
@@ -3905,7 +3924,7 @@ function animate() {
   const tentFocus = isSleeping ? campModels.get(localPlayerId)?.tent.getWorldPosition(new THREE.Vector3()) : null;
   const focusX = tentFocus?.x ?? 0;
   const focusZ = tentFocus?.z ?? 0;
-  const playerY = tentFocus?.y ?? player.userData.groundY ?? player.position.y;
+  const playerY = tentFocus?.y ?? (minigames?.ridesSled() ? player.position.y : player.userData.groundY ?? player.position.y);
   cameraGroundY = cameraGroundY === null ? playerY
     : THREE.MathUtils.lerp(cameraGroundY, playerY, 1 - Math.exp(-10 * delta));
   const camY = cameraGroundY + tiltFraction * viewDistance;
@@ -3959,6 +3978,9 @@ function animate() {
       pinecone: !winter.enabled && winter.holding,
       flamingPinecone: winter.flamingPinecone,
       skating: winter.skating,
+      sledding: !!minigames?.ridesSled(),
+      sledLift: minigames?.sledLift || 0,
+      sledPitch: minigames?.sledPitch || 0,
       iceVelocity: winter.sharedVelocity(),
     });
   }
@@ -4137,6 +4159,7 @@ window.syncCamps = syncCamps;
 syncCamps();
 
 minigames = createMinigames({
+  mobile: mobileGraphics, getSnowfall: () => sharedEnvironment?.snowfall || 0,
   scene, camera, globePivot, globe, player, localLabel: localNameLabel, winter, waterRadius: WATER_RADIUS,
   get localId() { return localPlayerId; }, getPeers: () => otherPlayers,
   getRotation: () => globeRotation, getFacing: () => playerFacing,
