@@ -162,6 +162,9 @@ Webs additionally raycast for actual surrounding support corners (up to eight),
 including terrain and tree branches. Their polygonal weave stays inside that
 supported outline; absent upper supports do not get floating spokes. Threads are
 round 0.022-radius meshes merged into one draw call, and the central knot is white.
+Spokes bow under gravity and the outer frame and inner rings form scalloped
+curves between their supports. Ring junctions sample those curved spokes so
+the weave stays connected, with collisions following the sagging threads.
 Webs are soft obstacles: contact slows movement to 40% instead of blocking it,
 using the same close-fitting geometry. Light strips have no collision or slowdown.
 Christmas-tree ornaments all glow, using red, gold, saturated blue and green.

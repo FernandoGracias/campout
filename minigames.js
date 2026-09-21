@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createNameLabel, updateNameLabel } from './player-labels.js';
 import { disposeObject } from './game-utils.js';
-import { buildMinigameProp } from './minigame-models.js?v=236';
+import { buildMinigameProp } from './minigame-models.js?v=237';
 import { createSledFlight } from './sled-physics.js';
 import { createSnowmanTracks } from './snowman-tracks.js';
 import { createDecorationControl } from './decoration-control.js?v=232';
@@ -9,7 +9,7 @@ import { findWebAnchors, expandWebAnchors } from './decoration-anchors.js?v=236'
 import { createPropCollisions } from './prop-collisions.js?v=236';
 import { planLightPlacement, lightEndpoints, overlappingLightSpan } from './light-placement.js?v=236';
 import { createDecorationGlow } from './decoration-glow.js?v=235';
-import { createGhostCatching } from './ghost-catching.js?v=236';
+import { createGhostCatching } from './ghost-catching.js?v=237';
 
 const GAMES = [
   ['tag', 'Tag', 'One camper is IT. Touch someone to pass it on. No immediate tag-backs.'],

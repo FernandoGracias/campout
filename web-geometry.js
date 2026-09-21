@@ -1,6 +1,17 @@
 import * as THREE from 'three';
 
 export const WEB_STRAND_RADIUS = 0.022;
+const curvePoint = (a, control, b, t) => a.clone().multiplyScalar((1 - t) ** 2)
+  .addScaledVector(control, 2 * t * (1 - t)).addScaledVector(b, t * t);
+function curveSegments(a, control, b, steps) {
+  const segments = [];
+  let previous = a;
+  for (let step = 1; step <= steps; step++) {
+    const point = curvePoint(a, control, b, step / steps);
+    segments.push([previous, point]); previous = point;
+  }
+  return segments;
+}
 
 // Clip the web to the convex outline of real attachment points. Radial threads
 // end at supported corners; no full-circle spokes terminate in empty space.
@@ -19,7 +30,9 @@ export function webLayout(anchors) {
   if (area < 0.000001) {
     const ordered = points.sort((a, b) => a.clone().sub(origin).dot(across) - b.clone().sub(origin).dot(across));
     const a = ordered[0], b = ordered.at(-1);
-    return { center: a.clone().add(b).multiplyScalar(0.5), segments: [[a, b]], boundary: [a, b] };
+    const control = a.clone().add(b).multiplyScalar(0.5);
+    control.y -= Math.min(0.8, a.distanceTo(b) * 0.22);
+    return { center: curvePoint(a, control, b, 0.5), segments: curveSegments(a, control, b, 10), boundary: [a, b] };
   }
   const up = new THREE.Vector3().crossVectors(normal.normalize(), across).normalize();
   const projected = points.map(point => { const p = point.clone().sub(origin); return { x: p.dot(across), y: p.dot(up), point }; })
@@ -35,17 +48,32 @@ export function webLayout(anchors) {
   }
   const boundary = [...half(projected), ...half([...projected].reverse())].map(p => p.point);
   const center = boundary.reduce((sum, p) => sum.add(p), new THREE.Vector3()).divideScalar(boundary.length);
-  const segments = boundary.map(p => [center.clone(), p.clone()]);
-  for (const fraction of [0.2, 0.4, 0.6, 0.8, 1]) for (let i = 0; i < boundary.length; i++) {
-    const a = center.clone().lerp(boundary[i], fraction);
-    const b = center.clone().lerp(boundary[(i + 1) % boundary.length], fraction);
-    const inward = a.clone().add(b).multiplyScalar(0.5).lerp(center, fraction === 1 ? 0 : 0.09);
-    let previous = a;
-    for (let step = 1; step <= 3; step++) {
-      const t = step / 3;
-      const p = a.clone().multiplyScalar((1 - t) ** 2).addScaledVector(inward, 2 * t * (1 - t)).addScaledVector(b, t * t);
-      segments.push([previous, p]); previous = p;
+  // Keep curved control points inside the actual support footprint. Threads
+  // can bow down/out of the plane, but never grow unsupported outer spokes.
+  const outline = boundary.map(point => { const p = point.clone().sub(origin); return { x: p.dot(across), y: p.dot(up) }; });
+  function supportedControl(control) {
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const p = control.clone().sub(origin), point = { x: p.dot(across), y: p.dot(up) };
+      if (outline.every((a, i) => cross(a, outline[(i + 1) % outline.length], point) >= -0.000001)) break;
+      control.lerp(center, 0.35);
     }
+    return control;
+  }
+  const radialControls = boundary.map(p => {
+    const control = center.clone().add(p).multiplyScalar(0.5);
+    control.y -= Math.min(0.22, center.distanceTo(p) * 0.12);
+    return supportedControl(control);
+  });
+  const radialPoint = (i, fraction) => curvePoint(center, radialControls[i], boundary[i], fraction);
+  const segments = boundary.flatMap((p, i) => curveSegments(center.clone(), radialControls[i], p, 10));
+  for (const fraction of [0.2, 0.4, 0.6, 0.8, 1]) for (let i = 0; i < boundary.length; i++) {
+    // Rings join the curved spokes at the same samples, rather than leaving
+    // floating junctions when the radial threads sag.
+    const a = radialPoint(i, fraction);
+    const b = radialPoint((i + 1) % boundary.length, fraction);
+    const inward = a.clone().add(b).multiplyScalar(0.5).lerp(center, 0.32);
+    inward.y -= Math.min(0.18, a.distanceTo(b) * 0.06);
+    segments.push(...curveSegments(a, supportedControl(inward), b, 6));
   }
   return { center, segments, boundary };
 }
