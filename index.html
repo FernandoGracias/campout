@@ -63,7 +63,7 @@ canvas { display: block; }
       <button id="btn-join-room" style="padding:12px 20px;font-size:16px;background:#2266aa;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;">Join</button>
     </div>
   </div>
-  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v235</div>
+  <div style="position:absolute;bottom:8px;left:8px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;">v236</div>
 </div>
 
 <!-- LOBBY SCREEN -->
@@ -142,7 +142,7 @@ canvas { display: block; }
     <div id="lobby-peers" style="color:#aaa;font-size:12px;margin-top:8px;"></div>
     <button id="btn-enter-world" style="margin-top:12px;padding:14px;font-size:16px;background:#f0c040;color:#1a1a2e;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-family:system-ui,sans-serif;">Enter World</button>
   </div>
-  <div class="lobby-version">v235</div>
+  <div class="lobby-version">v236</div>
   </div>
 </div>
 
@@ -307,7 +307,7 @@ canvas { display: block; }
   #snow-crosshair svg{width:100%;height:100%}
 </style>
 <div id="snow-crosshair" aria-hidden="true"></div>
-<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v235</div>
+<div id="build" style="position:fixed;bottom:4px;left:4px;color:rgba(255,255,255,0.3);font-size:10px;font-family:monospace;z-index:50;">v236</div>
 </div><!-- /game-screen -->
 <div id="mp-status" role="status" style="position:fixed;top:12px;left:12px;color:#0f0;font-size:11px;font-family:monospace;z-index:1100;background:rgba(0,0,0,0.6);padding:4px 8px;border-radius:4px;display:none;white-space:pre-line;max-width:calc(100vw - 24px);overflow-wrap:anywhere;pointer-events:none;"></div>
 
@@ -322,8 +322,9 @@ canvas { display: block; }
 <script type="module">
 import * as THREE from 'three';
 import { createWinter } from './winter.js?v=234';
-import { createMinigames } from './minigames.js?v=235';
+import { createMinigames } from './minigames.js?v=236';
 import { isIOSDevice } from './decoration-glow.js?v=235';
+import { createMenuPointerLock } from './menu-pointer-lock.js?v=236';
 import { advanceFireParticle, advanceSmokeParticle } from './fire-particles.js';
 import { createSeasonalSky } from './seasonal-sky.js';
 import { createSwimming } from './swimming.js';
@@ -2242,11 +2243,14 @@ document.addEventListener('mousemove', () => {
 
 // Minigames modal
 let minigamesOpen = false;
+const minigamesPointerLock = createMenuPointerLock(renderer.domElement, document,
+  () => showToast('Click the world to resume mouse look.', 2500));
 let minigamesSelectedIndex = 0;
 const minigameItems = () => document.querySelectorAll('.minigame-item');
 
 function openMinigames() {
-  if (isSleeping) return;
+  if (isSleeping || minigamesOpen) return;
+  minigamesPointerLock.open();
   minigamesOpen = true;
   minigamesSelectedIndex = 0;
   const modal = document.getElementById('minigames-modal');
@@ -2255,9 +2259,11 @@ function openMinigames() {
   updateMinigamesSelection();
 }
 
-function closeMinigames() {
+function closeMinigames(restorePointerLock = false) {
+  if (!minigamesOpen) return;
   minigamesOpen = false;
   document.getElementById('minigames-modal').style.display = 'none';
+  minigamesPointerLock.close(restorePointerLock === true);
 }
 
 function updateMinigamesSelection() {
@@ -2270,7 +2276,10 @@ function updateMinigamesSelection() {
 }
 
 function selectMinigame() {
-  minigames?.select(minigameItems()[minigamesSelectedIndex]);
+  const item = minigameItems()[minigamesSelectedIndex];
+  if (!item || !minigames) return;
+  closeMinigames(true);
+  minigames.select(item);
 }
 
 document.getElementById('btn-minigames').addEventListener('click', openMinigames);
@@ -2453,7 +2462,7 @@ window.addEventListener('blur', () => { isDragging = false; });
 renderer.domElement.addEventListener('click', e => {
   if (e.pointerType === 'touch' || lastInputMode === 'touch') return;
   if (document.pointerLockElement !== renderer.domElement && !isSleeping && sittingFireId === null) {
-    renderer.domElement.requestPointerLock();
+    minigamesPointerLock.request();
   }
 });
 document.addEventListener('pointerlockchange', () => {
@@ -4270,6 +4279,9 @@ minigames = createMinigames({
   getColliders: () => [...collidables, ...tentColliders],
   getAttachmentMeshes: () => [...trees.map(t => t.obj.children[0]), ...rockData.map(r => r.obj),
     ...Array.from(campModels.values(), m => m.tent).filter(t => t.visible)],
+  getWebSupportMeshes: () => [globe, ...trees.map(t => t.obj), ...rockData.map(r => r.obj),
+    ...Array.from(campModels.values(), m => m.tent).filter(t => t.visible)],
+  getNaturalWebSupportMeshes: () => [globe, ...trees.map(t => t.obj), ...rockData.map(r => r.obj)],
   getObstacles: () => [...trees.map(t => t.obj), ...rockData.map(r => r.obj),
     ...Array.from(campModels.values(), m => m.tent).filter(t => t.visible)],
   canEditWorld: () => worldSettingsOwner,

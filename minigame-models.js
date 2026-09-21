@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { webLayout, buildWebGeometry, WEB_STRAND_RADIUS } from './web-geometry.js?v=236';
 
 // Small, static world props. No per-prop lights or per-frame geometry uploads.
 export function buildMinigameProp(kind, options = {}) {
@@ -89,21 +90,12 @@ export function buildMinigameProp(kind, options = {}) {
     const ends = anchors || [{ point: new THREE.Vector3(-0.8, 1.05, 0), foot: new THREE.Vector3(-0.8, 0, 0) },
       { point: new THREE.Vector3(0.8, 1.05, 0), foot: new THREE.Vector3(0.8, 0, 0) }];
     for (const a of ends) if (a.foot) rod(a.foot, a.point, 0.04, 0x69452c);
-    const center = ends[0].point.clone().add(ends[1].point).multiplyScalar(0.5);
-    const across = ends[1].point.clone().sub(ends[0].point), width = across.length() / 2;
-    across.normalize();
-    const up = new THREE.Vector3(0, 1, 0).addScaledVector(across, -across.y).normalize();
-    const height = Math.max(0.2, Math.min(1.1, width, center.y - 0.12));
-    const webPoint = (angle, fraction) => center.clone().addScaledVector(across, Math.cos(angle) * width * fraction).addScaledVector(up, Math.sin(angle) * height * fraction).toArray();
-    const positions = [];
-    const segment = (a, b) => positions.push(...a, ...b);
-    for (let i = 0; i < 8; i++) {
-      const a = i * Math.PI / 4, b = (i + 1) * Math.PI / 4;
-      segment(center.toArray(), webPoint(a, 1));
-      for (const r of [0.25, 0.5, 0.75, 1]) segment(webPoint(a, r), webPoint(b, r));
-    }
-    group.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)), new THREE.LineBasicMaterial({ color: 0xdedee9 })));
-    ball(0.06, 0x222222, center.x, center.y, center.z + 0.02);
+    const { center, segments } = webLayout(ends);
+    const threads = new THREE.Mesh(buildWebGeometry(segments), mat(0xdedee9, true));
+    threads.userData.webStrands = segments;
+    threads.userData.strandRadius = WEB_STRAND_RADIUS;
+    group.add(threads);
+    ball(0.06, 0xffffff, center.x, center.y, center.z, true);
   } else if (kind === 'snowman') {
     group.userData.balls = [0.55, 0.4, 0.28].map((r, i) => ball(r, 0xf5f9ff, 0, [0.5, 1.24, 1.79][i], 0));
     const accessories = new THREE.Group();

@@ -29,6 +29,8 @@ There is no build step. Deploy the HTML, CSS and JavaScript files together.
 | `ghost-catching.js` | Roaming ghost visuals, suction gun/beam and capture input |
 | `ghost-motion.js` | Shared room-time ghost orbits (matches server ghost-game.js) |
 | `prop-collisions.js` | Swept, per-mesh oriented collision boxes for creations |
+| `web-geometry.js` | Support-bounded web layout and batched thick strand geometry |
+| `menu-pointer-lock.js` | Restores the pre-menu pointer-lock state on selection |
 | `pinecones.js` | Cone geometry, inventory, pickup and raycast resting positions |
 | `pinecone-fire.js` | Pooled fire/smoke trails and impact embers in planet coordinates |
 | `fire-particles.js` | Fire and smoke motion shared by campfires and pinecones |
@@ -105,6 +107,9 @@ prompt handles placement, removal and snowball stacking with E, controller A or
 touch. Name-label sprites provide overhead IT/SEEKER/FROZEN markers. Hide-and-seek
 suppresses player labels and clears the seeker's scene while counting. Team freeze
 games reuse the existing hats and team scoreboard; scores can go below zero.
+Selecting a game immediately closes the menu. Opening the menu releases pointer
+lock, and selection requests it back within the same input gesture only if it
+was locked before opening. Server vote updates never acquire pointer lock.
 
 Winter Race uses 12 fixed flag sites spaced by distance along the existing
 meandering river and across the lake. The start flag doubles as the finish after
@@ -153,6 +158,10 @@ campers. Creations use compound oriented collision boxes around individual
 visible meshes and web strands, updated as rolling balls move/grow. Walking,
 sliding, bumps and automatic camp approaches respect those boxes; a camper's own
 actively rolling section is exempt, while stacked sections remain solid.
+Webs additionally raycast for actual surrounding support corners (up to eight),
+including terrain and tree branches. Their polygonal weave stays inside that
+supported outline; absent upper supports do not get floating spokes. Threads are
+round 0.022-radius meshes merged into one draw call, and the central knot is white.
 Webs are soft obstacles: contact slows movement to 40% instead of blocking it,
 using the same close-fitting geometry. Light strips have no collision or slowdown.
 Christmas-tree ornaments all glow, using red, gold, saturated blue and green.

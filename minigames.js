@@ -1,15 +1,15 @@
 import * as THREE from 'three';
 import { createNameLabel, updateNameLabel } from './player-labels.js';
 import { disposeObject } from './game-utils.js';
-import { buildMinigameProp } from './minigame-models.js?v=234';
+import { buildMinigameProp } from './minigame-models.js?v=236';
 import { createSledFlight } from './sled-physics.js';
 import { createSnowmanTracks } from './snowman-tracks.js';
 import { createDecorationControl } from './decoration-control.js?v=232';
-import { findDecorationAnchors } from './decoration-anchors.js?v=233';
-import { createPropCollisions } from './prop-collisions.js?v=233';
-import { planLightPlacement, lightEndpoints, overlappingLightSpan } from './light-placement.js?v=233';
+import { findWebAnchors, expandWebAnchors } from './decoration-anchors.js?v=236';
+import { createPropCollisions } from './prop-collisions.js?v=236';
+import { planLightPlacement, lightEndpoints, overlappingLightSpan } from './light-placement.js?v=236';
 import { createDecorationGlow } from './decoration-glow.js?v=235';
-import { createGhostCatching } from './ghost-catching.js?v=234';
+import { createGhostCatching } from './ghost-catching.js?v=236';
 
 const GAMES = [
   ['tag', 'Tag', 'One camper is IT. Touch someone to pass it on. No immediate tag-backs.'],
@@ -271,7 +271,11 @@ export function createMinigames(world) {
         const origin = new THREE.Vector3(...object.position);
         const inverse = new THREE.Quaternion().setFromUnitVectors(UP, origin.clone().normalize()).invert();
         const local = p => new THREE.Vector3(...p).sub(origin).applyQuaternion(inverse);
-        const anchors = object.anchors?.map(a => ({ point: local(a.point), foot: a.foot ? local(a.foot) : null }));
+        // Existing two-anchor webs get the same support-aware shape using only
+        // seeded scenery, so joining clients do not depend on camp sync timing.
+        const supports = object.kind === 'web' && object.anchors?.length === 2
+          ? expandWebAnchors(origin, object.anchors, { ...world, getWebSupportMeshes: world.getNaturalWebSupportMeshes }) : object.anchors;
+        const anchors = supports?.map(a => ({ point: local(a.point), foot: a.foot ? local(a.foot) : null }));
         model = buildMinigameProp(object.kind, { anchors }); props.set(object.id, model); world.globePivot.add(model);
       }
       const position = object.base || object.position;
@@ -391,7 +395,9 @@ export function createMinigames(world) {
         if (send({ type: 'minigame-build', action: 'place', kind: 'lights', ...placement })) pendingLights.push({ kind: 'lights', ...placement, until: elapsed + 5 });
         return true;
       }
-      const anchors = selectedProp === 'web' ? findDecorationAnchors(position, forward, { ...world, groundPosition }) : null;
+      const anchors = selectedProp === 'web' ? findWebAnchors(position, forward, { ...world, groundPosition,
+        canPlantPost: d => clearGround(d) || world.winter.enabled && surface(d) < world.winter.iceRadius }) : null;
+      if (selectedProp === 'web' && !anchors) { world.toast('No clear support for this web here.'); return true; }
       if (!anchors && !clearGround(direction) && !world.player.userData.onIce) { world.toast('Choose clear ground for this decoration.'); return true; }
       send({ type: 'minigame-build', action: 'place', kind: selectedProp, position: position.toArray(), ...(anchors ? { anchors } : {}) });
     }

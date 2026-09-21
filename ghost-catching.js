@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ghostPosition } from './ghost-motion.js?v=234';
-import { buildMinigameProp } from './minigame-models.js?v=234';
+import { buildMinigameProp } from './minigame-models.js?v=236';
 import { disposeObject } from './game-utils.js';
 
 const UP = new THREE.Vector3(0, 1, 0);

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { collectDecorationSupports } from './decoration-anchors.js?v=233';
+import { collectDecorationSupports } from './decoration-anchors.js?v=236';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const CLOSE = 0.35;

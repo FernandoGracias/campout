@@ -19,7 +19,15 @@ export function createPropCollisions() {
       if (!node.visible) return;
       node.updateMatrix();
       const matrix = new THREE.Matrix4().multiplyMatrices(parent, node.matrix);
-      if (node.isMesh) {
+      if (node.userData.webStrands) {
+        for (const [a, b] of node.userData.webStrands) {
+          const direction = b.clone().sub(a), length = direction.length(), radius = node.userData.strandRadius;
+          if (length < 0.001) continue;
+          const strand = new THREE.Matrix4().compose(a.clone().add(b).multiplyScalar(0.5),
+            new THREE.Quaternion().setFromUnitVectors(up, direction.normalize()), new THREE.Vector3(1, 1, 1));
+          add(new THREE.Box3(new THREE.Vector3(-radius, -length / 2, -radius), new THREE.Vector3(radius, length / 2, radius)), matrix.clone().multiply(strand));
+        }
+      } else if (node.isMesh) {
         if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
         add(node.geometry.boundingBox.clone(), matrix, node.userData.rollingHolder);
       } else if (node.isLineSegments) {
