@@ -17,6 +17,8 @@ There is no build step. Deploy the HTML, CSS and JavaScript files together.
 | `seasonal-sky.js` | Seasonal sky shader and regional cloud field |
 | `winter.js` | Seasonal equipment, snow/ice, projectile simulation and room-event reconciliation |
 | `winter-physics.js` | Ice impulses, orbit integration and ballistic targeting |
+| `minigames.js` | Existing-menu voting, interactions, game roles, courses and sled movement |
+| `minigame-models.js` | Static decoration, snowman, checkpoint and sled models |
 | `pinecones.js` | Cone geometry, inventory, pickup and raycast resting positions |
 | `pinecone-fire.js` | Pooled fire/smoke trails and impact embers in planet coordinates |
 | `fire-particles.js` | Fire and smoke motion shared by campfires and pinecones |
@@ -70,3 +72,43 @@ actual campfire flame particle, including shared fires. Sitting/proximity alone
 does not ignite it. Fire, smoke and embers render as square particles.
 Its burning deadline is stored by the room and shared in inventory/flight events.
 Pinecones tumble in flight, and water impacts extinguish them.
+
+## World-wide minigames
+
+Deploy the matching `campout-server` changes before this frontend. The ready
+handshake advertises `minigameProtocol: 1`; older servers are never sent unknown
+minigame messages. Both repositories have changes for this feature.
+
+`campout-server/src/minigames.js` owns a serialized state machine for votes,
+roles, freeze/thaw, scoring, rounds, race progress and creations. Every camper
+inside the world has one vote; a strict majority starts, switches or ends a mode.
+Votes expire after 30 seconds. Join/departure updates eligibility. Races and
+hide-and-seek admit late arrivals as spectators; other modes admit them directly.
+Tag and freeze games end when fewer than two campers remain.
+
+The existing Mini Games modal holds all nine modes, ballot counts, descriptions,
+results, decoration choices and Back to camping. The existing camp interaction
+prompt handles placement, removal and snowball stacking with E, controller A or
+touch. Name-label sprites provide overhead IT/SEEKER/FROZEN markers. Hide-and-seek
+suppresses player labels and clears the seeker's scene while counting. Team freeze
+games reuse the existing hats and team scoreboard; scores can go below zero.
+
+Winter Race uses 78 ordered checkpoints along the existing meandering river and
+across the lake to close a full globe lap. Movement stays on the ice and skates
+are equipped for the race, then restored. Summer footraces select a clear land
+loop; sledding selects a clear downhill foothill route using actual terrain and
+colliders. Courses do not modify the world geometry. Checkpoint flags reuse
+in-world labels, with progress/results in the existing menu.
+
+Creations persist with the room (maximum 100). Snowballs grow with travel, and
+stacking anchors the lower balls while the next ball is rolled. Campers can
+resume abandoned snowmen. Only an object's creator or the world owner may remove
+it, and only nearby. Live modes/ballots are transient across a Worker restart;
+creations survive. Mode changes preserve the underlying weather and time settings;
+flashlight freeze tag renders nighttime and allows switched-off flashlights to
+recharge. Other competitive modes do not permit camp entry or projectile actions.
+
+As with existing projectiles, browsers simulate terrain and line-of-sight. The
+room checks socket identity, membership, epochs, timing, bounded positions and
+speed, contact range, beam direction, ordered checkpoints and creation ownership.
+This is not server-side terrain simulation or a cheat-proof movement system.

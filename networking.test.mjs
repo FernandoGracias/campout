@@ -105,7 +105,7 @@ test('simultaneous bumps do not restart the reaction or send another impulse', (
   let sends = 0;
   const context = vm.createContext({
     performance: { now: () => now }, axis,
-    winter: { collide: () => false, stop() {} }, sittingFireId: null,
+    winter: { collide: () => false, stop() {} }, sittingFireId: null, minigames: null,
     otherPlayers: { camper: {} }, remoteCampStates: {}, isSleeping: false,
     walkingToTent: true, playerBounceState: null, sendBump() { sends++; },
   });

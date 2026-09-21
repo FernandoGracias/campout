@@ -313,6 +313,7 @@ canvas { display: block; }
 <script type="module">
 import * as THREE from 'three';
 import { createWinter } from './winter.js?v=225';
+import { createMinigames } from './minigames.js';
 import { advanceFireParticle, advanceSmokeParticle } from './fire-particles.js';
 import { createSeasonalSky } from './seasonal-sky.js';
 import { createSwimming } from './swimming.js';
@@ -453,6 +454,8 @@ let signalingWs = null;
 let signalingReconnectTimer = null, signalingReconnectAttempts = 0;
 let lastSignalingDisconnect = null;
 let projectileProtocol = 0;
+let minigameProtocol = 0;
+let sharedMinigame = null;
 let pineconeFireProtocol = 0;
 let environmentProtocol = 0;
 let worldSettingsOwner = false;
@@ -529,17 +532,20 @@ function applyRoomEnvironment(state) {
 }
 
 function updateTeamLeaderboard() {
+  const leaderboard = document.getElementById('team-leaderboard');
+  if (leaderboard) leaderboard.style.display = ['tag', 'hide-seek', 'race', 'sledding'].includes(sharedMinigame?.mode) ? 'none' : 'flex';
+  const scores = ['freeze-tag', 'flashlight-tag'].includes(sharedMinigame?.mode) ? sharedMinigame.scores : teamScores;
   const maxScore = 100;
-  const redPct = Math.min(teamScores.red / maxScore * 50, 50);  // Max 50% width
-  const bluePct = Math.min(teamScores.blue / maxScore * 50, 50);
+  const redPct = Math.max(0, Math.min(scores.red / maxScore * 50, 50));  // Max 50% width
+  const bluePct = Math.max(0, Math.min(scores.blue / maxScore * 50, 50));
   const redBar = document.getElementById('team-red-bar');
   const blueBar = document.getElementById('team-blue-bar');
   if (redBar) redBar.style.width = redPct + '%';
   if (blueBar) blueBar.style.width = bluePct + '%';
   const redScore = document.getElementById('team-red-score');
   const blueScore = document.getElementById('team-blue-score');
-  if (redScore) redScore.textContent = teamScores.red;
-  if (blueScore) blueScore.textContent = teamScores.blue;
+  if (redScore) redScore.textContent = scores.red;
+  if (blueScore) blueScore.textContent = scores.blue;
 }
 
 function addTeamScore(team, amount) {
@@ -564,6 +570,8 @@ function showGameOver(winningTeam) {
 }
 
 function getPlayerTeam(playerId) {
+  if (['tag', 'hide-seek', 'race', 'sledding'].includes(sharedMinigame?.mode)) return null;
+  if (['freeze-tag', 'flashlight-tag'].includes(sharedMinigame?.mode) && sharedMinigame.roster[playerId]) return sharedMinigame.roster[playerId].team;
   return teamAssignments[playerId] || (playerId === localPlayerId ? localTeam : null);
 }
 
@@ -969,6 +977,7 @@ function connectSignaling() {
     const reason = processingError ? `${processingError.messageType}: ${processingError.message}` : event.reason || 'No close reason received';
     multiplayerReady = false;
     projectileProtocol = 0;
+    minigameProtocol = 0;
     pineconeFireProtocol = 0;
     syncWorldSettingsPermissions();
     awaitingTeamDiscovery = false;
@@ -1012,6 +1021,8 @@ async function handleSignalMessage(msg) {
     mpLog('← ' + msg.type + (msg.from ? ' from:' + msg.from.substring(0,6) : '') + (msg.id ? ' id:' + msg.id.substring(0,6) : ''), true);
     switch (msg.type) {
       case 'room-info': {
+        sharedMinigame = null;
+        window.resetMinigames?.();
         const saved = loadSession();
         if (!window.globeRotation && saved?.roomId === roomId && saved.teamScores) teamScores = { ...saved.teamScores };
         localPlayerId = msg.id;
@@ -1049,6 +1060,8 @@ async function handleSignalMessage(msg) {
         // Older workers close sockets on unknown message types. Negotiate
         // support before sending any projectile sync/heartbeat messages.
         projectileProtocol = msg.projectileProtocol === 1 ? 1 : 0;
+        minigameProtocol = msg.minigameProtocol === 1 ? 1 : 0;
+        if (minigameProtocol) window.syncMinigames?.();
         pineconeFireProtocol = msg.pineconeFireProtocol === 1 ? 1 : 0;
         if (projectileProtocol) window.syncProjectiles?.();
         else showToast('Shared projectiles need the updated room server. Other multiplayer features remain connected.', 8000);
@@ -1079,6 +1092,18 @@ async function handleSignalMessage(msg) {
         if (environmentProtocol === 1) applyRoomEnvironment(msg.state);
         break;
       }
+      case 'minigame-state': {
+        if (minigameProtocol && msg.state && Number.isSafeInteger(msg.state.revision)) {
+          sharedMinigame = msg.state;
+          window.receiveMinigameEvent?.(msg);
+          updateTeamLeaderboard();
+        }
+        break;
+      }
+      case 'minigame-notice':
+      case 'minigame-correction':
+        if (minigameProtocol) window.receiveMinigameEvent?.(msg);
+        break;
       case 'turn-creds': {
         applyTurnCredentials(msg);
         break;
@@ -1509,6 +1534,7 @@ function sendBump(peerId, axis) {
 
 // --- GAME INITIALIZATION (called after lobby) ---
 function startGame(seed, onReady = null) {
+let minigames = null;
 
 // Entry waits for the coordinator's assignment; never guess from a partial roster.
 if (!localTeam) return;
@@ -1685,7 +1711,7 @@ const winter = createWinter(THREE, {
   get localId() { return localPlayerId; }, getPlayer: () => player, getPeers: () => otherPlayers,
   serverNow: roomNow,
   projectilesOnline: () => multiplayerReady && projectileProtocol === 1 && signalingWs?.readyState === WebSocket.OPEN,
-  canCarryPinecones: () => !isSleeping && !minigamesOpen,
+  canCarryPinecones: () => !isSleeping && !minigamesOpen && !minigames?.competitive && !minigames?.locked(),
   supportsPineconeFire: () => pineconeFireProtocol === 1,
   isPineconeTouchingFire: mesh => {
     if (!mesh?.visible) return false;
@@ -1711,7 +1737,9 @@ const winter = createWinter(THREE, {
   getRotation: () => globeRotation, getFacing: () => playerFacing,
   getCameraAngle: () => cameraAngle,
   getObstacles: () => [...rockData.map(r => r.obj), ...Array.from(campModels.values(), model => model.tent).filter(tent => tent.visible)],
-  canAct: () => !isSleeping && sittingFireId === null && !walkingToTent && !walkingToFire && !minigamesOpen,
+  canAct: () => !isSleeping && sittingFireId === null && !walkingToTent && !walkingToFire && !minigamesOpen && !minigames?.locked(),
+  canThrow: () => !minigames?.competitive,
+  lockSkates: () => !!minigames?.iceRace,
   toast: message => showToast(message),
   // Get tent owner info for hit detection
   getTentOwner: (tentMesh) => {
@@ -1801,6 +1829,7 @@ const bumpCooldowns = new Map();
 
 // Axis is in the shared globe frame, never the sender's camera/player frame.
 function startPlayerBump(peerId, axis, notify) {
+  if (minigames?.locked() || minigames?.spectator) return;
   const p = otherPlayers[peerId];
   if (winter.collide(peerId)) return;
   const now = performance.now();
@@ -2157,6 +2186,7 @@ function openMinigames() {
   minigamesSelectedIndex = 0;
   const modal = document.getElementById('minigames-modal');
   modal.style.display = 'flex';
+  minigames?.renderMenu();
   updateMinigamesSelection();
 }
 
@@ -2171,17 +2201,11 @@ function updateMinigamesSelection() {
     item.style.background = i === minigamesSelectedIndex ? 'rgba(240,192,64,0.2)' : 'rgba(255,255,255,0.05)';
     item.style.borderColor = i === minigamesSelectedIndex ? 'rgba(240,192,64,0.5)' : 'rgba(255,255,255,0.1)';
   });
+  items[minigamesSelectedIndex]?.scrollIntoView({ block: 'nearest' });
 }
 
 function selectMinigame() {
-  const items = minigameItems();
-  if (items[minigamesSelectedIndex]) {
-    const game = items[minigamesSelectedIndex].dataset.game;
-    if (game !== 'coming-soon') {
-      showToast(`Starting ${game}...`);
-      closeMinigames();
-    }
-  }
+  minigames?.select(minigameItems()[minigamesSelectedIndex]);
 }
 
 document.getElementById('btn-minigames').addEventListener('click', openMinigames);
@@ -2189,9 +2213,13 @@ document.getElementById('minigames-close').addEventListener('click', closeMiniga
 document.getElementById('minigames-modal').addEventListener('click', (e) => {
   if (e.target.id === 'minigames-modal') closeMinigames();
 });
-document.querySelectorAll('.minigame-item').forEach((item, i) => {
-  item.addEventListener('mouseenter', () => { minigamesSelectedIndex = i; updateMinigamesSelection(); });
-  item.addEventListener('click', selectMinigame);
+document.getElementById('minigames-list').addEventListener('pointerover', e => {
+  const item = e.target.closest('.minigame-item');
+  if (item) { minigamesSelectedIndex = [...minigameItems()].indexOf(item); updateMinigamesSelection(); }
+});
+document.getElementById('minigames-list').addEventListener('click', e => {
+  const item = e.target.closest('.minigame-item');
+  if (item) { minigamesSelectedIndex = [...minigameItems()].indexOf(item); selectMinigame(); }
 });
 
 // Detect input mode and show appropriate hints
@@ -2726,6 +2754,7 @@ function ownTentDistance() {
 }
 
 function pitchCamp() {
+  if (minigames?.competitive) { showToast('Vote to return to camping before setting up camp.'); return; }
   if (isSleeping) return;
   if (player.userData.swimming) {
     showToast('Return to shore before placing or picking up your tent.');
@@ -3118,6 +3147,9 @@ document.addEventListener('pointermove', () => { lastCampPromptActivity = perfor
 
 function nearbyCampInteraction() {
   if (minigamesOpen || walkingToTent || walkingToFire) return null;
+  const activity = minigames?.interaction();
+  if (activity) return activity;
+  if (minigames?.competitive) return null;
   const candidates = [];
   const here = new THREE.Vector3(0, 1, 0).applyQuaternion(globeRotation.clone().invert());
   camera.updateMatrixWorld();
@@ -3147,6 +3179,8 @@ function nearbyCampInteraction() {
 
 function interactWithCamp(allowPitch = true) {
   if (minigamesOpen || walkingToTent || walkingToFire) return;
+  if (minigames?.interact()) return;
+  if (minigames?.competitive) return;
   if (isSleeping) { wakeUp(); return; }
   const target = nearbyCampInteraction();
   if (target?.type === 'tent') {
@@ -3182,13 +3216,14 @@ function updateCampInteraction() {
   document.getElementById('hint-pitch').style.display = lastInputMode === 'touch' ? 'none' : 'block';
   if (!target) return;
   const key = lastInputMode === 'gamepad' ? 'A' : lastInputMode === 'touch' ? 'Tap' : 'E';
-  const action = target.type === 'tent' ? (isSleeping ? 'Wake up' : 'Enter tent') : (sittingFireId !== null ? 'Stand up' : 'Sit by fire');
-  campInteraction.textContent = `${key} · ${action}`;
+  const action = target.type === 'minigame' ? target.action : target.type === 'tent' ? (isSleeping ? 'Wake up' : 'Enter tent') : (sittingFireId !== null ? 'Stand up' : 'Sit by fire');
+  campInteraction.textContent = lastInputMode === 'touch' ? action : `${key} · ${action}`;
   campInteraction.style.left = `${(target.screen.x * 0.5 + 0.5) * window.innerWidth}px`;
   campInteraction.style.top = `${(-target.screen.y * 0.5 + 0.5) * window.innerHeight}px`;
 }
 
 function walkToCampfire(id) {
+  if (minigames?.competitive) return;
   if (isSleeping) return;
   if (sittingFireId !== null) { standUp(); return; }
   const center = fireDirection(id);
@@ -3247,6 +3282,7 @@ renderer.domElement.addEventListener('pointercancel', () => { if (lastMouseDownP
 
 renderer.domElement.addEventListener('click', (e) => {
   if (e.button !== 0) return;
+  if (minigames?.competitive) return;
   const ownModel = campModels.get(localPlayerId);
   
   // Ignore if this was a drag (moved more than 10px or held longer than 300ms)
@@ -3292,6 +3328,7 @@ renderer.domElement.addEventListener('click', (e) => {
 });
 
 function enterTent() {
+  if (minigames?.competitive) return;
   standUp();
   clearMovementInput();
   isSleeping = true;
@@ -3416,7 +3453,7 @@ function updateDayNight(delta) {
   const atTent = isSleeping && !!localCampState && campModels.has(localPlayerId);
   if (flashlightOn) {
     flashlightBattery = Math.max(0, flashlightBattery - delta / FLASHLIGHT_DRAIN_TIME);
-  } else if (atTent && flashlightBattery < 1) {
+  } else if ((atTent || minigames?.night) && flashlightBattery < 1) {
     flashlightBattery = Math.min(1, flashlightBattery + delta / FLASHLIGHT_RECHARGE_TIME);
   }
   if (flashlightBattery <= 0) flashlightOn = false;
@@ -3700,7 +3737,7 @@ function animate() {
     }
   }
 
-  const movementLocked = isSleeping || sittingFireId !== null;
+  const movementLocked = isSleeping || sittingFireId !== null || minigamesOpen || !!minigames?.locked();
   if (movementLocked) { moveInput = strafeInput = 0; playerBounceState = null; }
 
   // The camper faces the camera's forward direction in every season.
@@ -3721,7 +3758,8 @@ function animate() {
   const moveSpeed = (player.userData.swimming ? SWIM_SPEED : 0.2) * delta;
 
   const moveFacing = playerFacing;
-  const iceMotion = winter.movement(moveInput, strafeInput, moveFacing, delta,
+  const sledMotion = minigames?.sledMovement(moveInput, strafeInput, moveFacing, delta, movementLocked || !!playerBounceState);
+  const iceMotion = sledMotion || winter.movement(moveInput, strafeInput, moveFacing, delta,
     movementLocked || !!playerBounceState || walkingToTent || !!walkingToFire || minigamesOpen);
   if (!movementLocked && !playerBounceState && (Math.abs(moveInput) > 0.1 || Math.abs(strafeInput) > 0.1 || iceMotion.lengthSq() > 0.000001)) {
     // Forward/back movement
@@ -3730,14 +3768,14 @@ function animate() {
     const strafeStep = moveSpeed * strafeInput;
     const strafeAngle = moveFacing + Math.PI / 2;
     // Combine both movements
-    const totalX = winter.enabled ? iceMotion.x * delta : step * Math.cos(moveFacing) + strafeStep * Math.cos(strafeAngle);
-    const totalZ = winter.enabled ? iceMotion.y * delta : step * Math.sin(moveFacing) + strafeStep * Math.sin(strafeAngle);
+    const totalX = winter.enabled || sledMotion ? iceMotion.x * delta : step * Math.cos(moveFacing) + strafeStep * Math.cos(strafeAngle);
+    const totalZ = winter.enabled || sledMotion ? iceMotion.y * delta : step * Math.sin(moveFacing) + strafeStep * Math.sin(strafeAngle);
     const rotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), totalX);
     const rotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -totalZ);
     const newRotation = globeRotation.clone().premultiply(rotX).premultiply(rotZ);
 
     const playerWorldPos = new THREE.Vector3(0, GLOBE_RADIUS, 0);
-    let canMove = true;
+    let canMove = minigames?.allowMove(newRotation) !== false;
     // Skip own tent collision only when actively walking into it
     const activeColliders = [...collidables, ...tentColliders.filter(c => !c.isOwn || !walkingToTent)];
     for (const c of activeColliders) {
@@ -3756,7 +3794,7 @@ function animate() {
     // Test surface positions, independent of the visual hop and terrain height.
     let playerCollisionId = null;
     let collisionBounceDir = null;
-    if (canMove) {
+    if (canMove && !minigames?.spectator) {
       const localPlayerPos = new THREE.Vector3(0, GLOBE_RADIUS, 0);
       for (const id in otherPlayers) {
         const p = otherPlayers[id];
@@ -3795,7 +3833,7 @@ function animate() {
         const sRotX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), step * 0.8 * Math.cos(slideAngle));
         const sRotZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -step * 0.8 * Math.sin(slideAngle));
         const slideRotation = globeRotation.clone().premultiply(sRotX).premultiply(sRotZ);
-        let slideOk = true;
+        let slideOk = minigames?.allowMove(slideRotation) !== false;
         for (const c of activeColliders) {
           const sObjPos = latLonToWorld(c.lat, c.lon).applyQuaternion(slideRotation);
           const sDist = playerWorldPos.distanceTo(sObjPos);
@@ -3940,7 +3978,7 @@ function animate() {
 
   // Shared room clock continues through dropped frames and background tabs.
   {
-    timeOfDay = sharedHour();
+    timeOfDay = minigames?.night ? 0 : sharedHour();
     document.getElementById('time-slider').value = timeOfDay;
     const h = Math.floor(timeOfDay);
     const m = Math.floor((timeOfDay - h) * 60);
@@ -4084,7 +4122,11 @@ function animate() {
   }
   btnPitch.setAttribute('aria-disabled', String(!!player.userData.swimming || (campPitched && ownTentDistance() > TENT_INTERACTION_DISTANCE)));
   updateCampInteraction();
-  renderer.render(scene, camera);
+  minigames?.update(delta);
+  if (minigames?.blind) {
+    // Reuse the renderer's clear frame while the seeker counts; no new overlay.
+    renderer.setClearColor(0x101018); renderer.clear();
+  } else renderer.render(scene, camera);
   if (onReady) {
     const ready = onReady;
     onReady = null;
@@ -4093,6 +4135,46 @@ function animate() {
 }
 window.syncCamps = syncCamps;
 syncCamps();
+
+minigames = createMinigames({
+  scene, camera, globePivot, globe, player, localLabel: localNameLabel, winter, waterRadius: WATER_RADIUS,
+  get localId() { return localPlayerId; }, getPeers: () => otherPlayers,
+  getRotation: () => globeRotation, getFacing: () => playerFacing,
+  setFacing: facing => { playerFacing = facing; cameraAngle = facing - Math.PI; cameraTargetAngle = cameraAngle; },
+  getTeam: () => localTeam, now: roomNow, latLonToWorld,
+  getColliders: () => [...collidables, ...tentColliders],
+  getObstacles: () => [...trees.map(t => t.obj), ...rockData.map(r => r.obj),
+    ...Array.from(campModels.values(), m => m.tent).filter(t => t.visible)],
+  canEditWorld: () => worldSettingsOwner,
+  canInteract: () => !isSleeping && sittingFireId === null && !walkingToTent && !walkingToFire,
+  restoreVisibility: () => { player.visible = !isSleeping; },
+  online: () => multiplayerReady && minigameProtocol === 1 && signalingWs?.readyState === WebSocket.OPEN,
+  send: message => {
+    if (!multiplayerReady || minigameProtocol !== 1 || signalingWs?.readyState !== WebSocket.OPEN || signalingWs.bufferedAmount > 65536) return false;
+    signalingWs.send(JSON.stringify(message)); return true;
+  },
+  toast: showToast, menuOpen: () => minigamesOpen, closeMenu: closeMinigames,
+  getSelectedKey: () => minigameItems()[minigamesSelectedIndex]?.dataset.key,
+  restoreSelection: key => {
+    const index = [...minigameItems()].findIndex(item => item.dataset.key === key);
+    if (index >= 0) minigamesSelectedIndex = index;
+    minigamesSelectedIndex = Math.min(minigamesSelectedIndex, minigameItems().length - 1);
+    if (minigamesOpen) updateMinigamesSelection();
+  },
+  refreshScores: updateTeamLeaderboard, refreshTeams: updatePlayerHatColors,
+  flashlightOn: () => flashlightOn && flashlightBattery > 0 && !isSleeping && player.visible,
+  readyFlashlight: () => { flashlightBattery = 1; flashlightOn = true; },
+  preparePlayer: () => {
+    if (isSleeping) wakeUp();
+    standUp(); walkingToTent = false; walkingToFire = null;
+    playerBounceState = null; clearMovementInput(); winter.stop(); player.visible = true;
+  },
+});
+window.receiveMinigameEvent = minigames.receive;
+window.syncMinigames = minigames.sync;
+window.resetMinigames = minigames.reset;
+if (sharedMinigame) minigames.receive({ type: 'minigame-state', state: sharedMinigame });
+minigames.sync();
 
 animate();
 

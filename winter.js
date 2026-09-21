@@ -753,7 +753,7 @@ export function createWinter(THREE, world) {
     return { position, velocity: viewDirection.multiplyScalar(throwPower).applyQuaternion(inverse), skyOrbit: true };
   }
   function action(preferredCone = null) {
-    if (!world.canAct() || !projectileReady || !world.projectilesOnline() || pendingPickup !== null || elapsed - lastAction < 0.3 || packing > 0) return;
+    if (!world.canAct() || world.canThrow?.() === false || !projectileReady || !world.projectilesOnline() || pendingPickup !== null || elapsed - lastAction < 0.3 || packing > 0) return;
     const player = world.getPlayer();
     if (!held) {
       if (!enabled) {
@@ -788,7 +788,7 @@ export function createWinter(THREE, world) {
     });
   }
   function interact(pointerRay) {
-    if (!world.canAct()) return false;
+    if (!world.canAct() || world.canThrow?.() === false) return false;
     if (held) { action(); return true; }
     const hit = pointerHit(pointerRay);
     if (!enabled) {
@@ -889,7 +889,7 @@ export function createWinter(THREE, world) {
   }
   function updateCrosshair() {
     let canShow = false;
-    try { canShow = world.canAct(); } catch { /* not yet initialized */ }
+    try { canShow = world.canAct() && world.canThrow?.() !== false; } catch { /* not yet initialized */ }
     crosshair.style.display = canShow ? 'block' : 'none';
     if (canShow) crosshair.innerHTML = held ? targetIcon : dotIcon;
   }
@@ -1164,9 +1164,16 @@ export function createWinter(THREE, world) {
     colors.needsUpdate = true;
   }
   function toggleSkates() {
-    if (!enabled || !world.canAct()) return;
+    if (!enabled || !world.canAct() || world.lockSkates?.()) return;
     if (!skates && !world.getPlayer().userData.onIce) return;
     skates = !skates; world.getPlayer().userData.skating = skates;
+    refreshHints();
+  }
+  function setSkates(value) {
+    const next = enabled && value === true;
+    if (skates === next) return;
+    skates = next;
+    world.getPlayer().userData.skating = skates;
     refreshHints();
   }
   const icon = paths => `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
@@ -1326,11 +1333,12 @@ export function createWinter(THREE, world) {
     spray.visible = true;
     const player = world.getPlayer();
     const canAct = world.canAct();
+    const canThrow = canAct && world.canThrow?.() !== false;
     const canCarry = !enabled && (world.canCarryPinecones?.() ?? canAct);
-    if (!canAct) packing = 0;
+    if (!canThrow) packing = 0;
     const fireNow = projectileNow();
     const heldBurning = !enabled && held && (cones[heldCone]?.burningUntil || 0) > fireNow;
-    equip(player, held && (canAct || canCarry), enabled && skates, velocity.lengthSq() > 0.0001,
+    equip(player, held && (canThrow || canCarry), enabled && skates, velocity.lengthSq() > 0.0001,
       enabled ? 'snowball' : 'pinecone', heldBurning);
     if (canCarry && held && !player.userData.swimming && !heldBurning &&
         world.projectilesOnline() && elapsed - lastIgniteRequest > 1 &&
@@ -1351,7 +1359,7 @@ export function createWinter(THREE, world) {
       if (peer.torch?.visible) peer.mesh.userData.flashlightLens.getWorldPosition(peer.torch.position);
     }
     skatesButton.style.display = enabled && (skates || player.userData.onIce) ? 'flex' : 'none';
-    skatesButton.disabled = !canAct;
+    skatesButton.disabled = !canAct || !!world.lockSkates?.();
     const inverse = world.getRotation().clone().invert();
     flightObstacles = world.getObstacles();
     const lighting = world.getLighting?.();
@@ -1466,11 +1474,11 @@ export function createWinter(THREE, world) {
     updateScores(delta);
   }
   
-  return { configure, movement, update, action, interact, updateHints, toggleSkates,
+  return { configure, movement, update, action, interact, updateHints, toggleSkates, setSkates,
     collide, receiveIceContact, sharedVelocity, receiveProjectileEvent, syncProjectiles,
     get snowy() { return enabled && (cover > 0 || snowfall > 0); },
     stop: () => velocity.set(0, 0),
-    get holding() { return held && (enabled ? world.canAct() : (world.canCarryPinecones?.() ?? world.canAct())); },
+    get holding() { return held && world.canThrow?.() !== false && (enabled ? world.canAct() : (world.canCarryPinecones?.() ?? world.canAct())); },
     get flamingPinecone() { return !enabled && held && (cones[heldCone]?.burningUntil || 0) > projectileNow(); },
     get skating() { return enabled && skates; },
     get enabled() { return enabled; }, iceRadius };
