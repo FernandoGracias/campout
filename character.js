@@ -72,6 +72,7 @@ export function buildPlayer(gender = 'male') {
   brim.position.y = 1.14;
   brim.castShadow = true;
   group.add(brim);
+  group.userData.firstPersonHead = [head, nose, beard, hair, hat, brim];
 
   const legMat = new THREE.MeshStandardMaterial({ color: 0x3d5a80, roughness: 0.8 });
   const rightLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.2, 3, 6), legMat);

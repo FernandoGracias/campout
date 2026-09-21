@@ -81,6 +81,22 @@ test('complete browser module parses', () => {
   assert.equal(result.status, 0, result.stderr);
 });
 
+test('snowball deltas update the current section and reject stale rounds or stages', async () => {
+  const { context, ws } = await admitted();
+  const received = [];
+  context.snapshot = { revision: 1, epoch: 7, creations: [{ id: 'ball', kind: 'snowman', stage: 0, holder: 'camper', complete: false, growth: 0, position: [0, 20, 0] }] };
+  vm.runInContext('minigameProtocol = 1; sharedMinigame = snapshot;', context);
+  context.window.receiveMinigameEvent = m => received.push(m);
+  const delta = { type: 'minigame-snowball', epoch: 7, revision: 2, id: 'ball', stage: 0, holder: 'camper', position: [0.5, 20, 0], growth: 0.1 };
+  ws.message(delta); await tick();
+  assert.equal(context.snapshot.creations[0].growth, 0.1);
+  assert.equal(context.snapshot.revision, 2);
+  for (const bad of [{ revision: 1 }, { epoch: 6, revision: 3 }, { stage: 1, revision: 3 }, { holder: 'other', revision: 3 }]) ws.message({ ...delta, ...bad });
+  await tick();
+  assert.equal(received.length, 1);
+  assert.equal(context.snapshot.revision, 2);
+});
+
 test('bump packets carry a shared 3D axis and dispatch without changing peer membership', () => {
   const { context } = browser();
   const sent = [];

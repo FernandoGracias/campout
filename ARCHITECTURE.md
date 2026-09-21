@@ -22,6 +22,8 @@ There is no build step. Deploy the HTML, CSS and JavaScript files together.
 | `sled-physics.js` | Low-gravity radial flight and terrain-driven takeoff/landing |
 | `snowman-tracks.js` | Bounded terrain-conforming rolling tracks with GPU fading |
 | `decoration-control.js` | Cycling decoration side button and active-input hints |
+| `decoration-anchors.js` | Nearby scenery attachment points for hanging lights/webs |
+| `prop-collisions.js` | Swept, per-mesh oriented collision boxes for creations |
 | `pinecones.js` | Cone geometry, inventory, pickup and raycast resting positions |
 | `pinecone-fire.js` | Pooled fire/smoke trails and impact embers in planet coordinates |
 | `fire-particles.js` | Fire and smoke motion shared by campfires and pinecones |
@@ -121,6 +123,11 @@ stacking anchors the lower balls while the next ball is rolled. Campers can
 resume abandoned snowmen. Rolling sections leave widening terrain-conforming
 grooves visible to each connected camper. New segments alone upload geometry;
 existing tracks fade on the GPU in a bounded shared pool, and thaw clears them.
+Rolling sections follow the local camper's live transform, or the remote
+camper's interpolated transform, every frame. The server sends compact
+`minigame-snowball` position/growth deltas at pose cadence (up to 10 Hz), rather
+than moving the models only when a large room snapshot arrives. Stage, holder,
+and completion changes remain room-authoritative.
 Only an object's creator or the world owner may remove
 it, and only nearby. Live modes/ballots are transient across a Worker restart;
 creations survive. Mode changes preserve the underlying weather and time settings;
@@ -131,3 +138,22 @@ As with existing projectiles, browsers simulate terrain and line-of-sight. The
 room checks socket identity, membership, epochs, timing, bounded positions and
 speed, contact range, beam direction, ordered checkpoints and creation ownership.
 This is not server-side terrain simulation or a cheat-proof movement system.
+
+Lights and webs raycast nearby tree trunks, rocks and tents for attachment
+points. Two supports eliminate posts; one support needs just one post. Without
+nearby support they keep the freestanding form. The server bounds, sanitizes and
+persists the endpoint coordinates, so hanging geometry is consistent for all
+campers. Creations use compound oriented collision boxes around individual
+visible meshes and web strands, updated as rolling balls move/grow. Walking,
+sliding, bumps and automatic camp approaches respect those boxes; a camper's own
+actively rolling section is exempt, while stacked sections remain solid.
+
+## First-person view
+
+Settings → View Mode selects Third person (default) or First person and saves
+the preference locally. First person uses camper eye height with mouse, touch
+and controller look. Third-person orbit/zoom settings are retained when switching
+back. Sleeping uses the established tent camera. Only the local head's color pass
+is suppressed in first person, keeping body/hands/equipment and the full shadow.
+The flashlight follows the view, and activity prompts use the existing prompt
+element in front of the camera instead of above the local camper's head.

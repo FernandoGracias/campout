@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { createNameLabel, updateNameLabel } from './player-labels.js';
 import { disposeObject } from './game-utils.js';
-import { buildMinigameProp } from './minigame-models.js';
+import { buildMinigameProp } from './minigame-models.js?v=231';
 import { createSledFlight } from './sled-physics.js';
 import { createSnowmanTracks } from './snowman-tracks.js';
 import { createDecorationControl } from './decoration-control.js';
+import { findDecorationAnchors } from './decoration-anchors.js';
+import { createPropCollisions } from './prop-collisions.js';
 
 const GAMES = [
   ['tag', 'Tag', 'One camper is IT. Touch someone to pass it on. No immediate tag-backs.'],
@@ -32,6 +34,7 @@ export function createMinigames(world) {
   let sledPose = { lift: 0, pitch: 0 };
   const sledFlight = createSledFlight();
   const props = new Map(), markers = new Map(), sleds = new Map();
+  const propCollisions = createPropCollisions();
   const gates = new THREE.Group();
   world.globePivot.add(gates);
   const list = document.getElementById('minigames-list');
@@ -180,6 +183,14 @@ export function createMinigames(world) {
     world.winter.stop(); sledFlight.reset(); sledPose = { lift: 0, pitch: 0 };
   }
   function receive(message) {
+    if (message.type === 'minigame-snowball') {
+      const object = state?.creations.find(o => o.id === message.id);
+      const model = object && props.get(object.id);
+      if (model?.userData.rolling && object.stage === model.userData.rolling.stage) {
+        model.userData.rolling.growth = Math.max(model.userData.rolling.growth, object.growth);
+      }
+      return;
+    }
     if (message.type === 'minigame-notice') { world.toast(message.message); return; }
     if (message.type === 'minigame-correction') {
       if (state?.epoch === message.epoch && state.iceRace && Array.isArray(message.position)) {
@@ -229,26 +240,77 @@ export function createMinigames(world) {
   function syncProps() {
     snowTracks.update(0, world.winter.enabled && world.winter.snowCover > 0.05, world.getSnowfall());
     const ids = new Set((state?.creations || []).map(o => o.id));
-    for (const [id, model] of props) if (!ids.has(id)) { disposeObject(model); props.delete(id); snowTracks.forget(id); }
+    for (const [id, model] of props) if (!ids.has(id)) { disposeObject(model); props.delete(id); propCollisions.remove(id); snowTracks.forget(id); }
     for (const object of state?.creations || []) {
       let model = props.get(object.id);
-      if (!model) { model = buildMinigameProp(object.kind); props.set(object.id, model); world.globePivot.add(model); }
+      const fresh = !model;
+      if (!model) {
+        const origin = new THREE.Vector3(...object.position);
+        const inverse = new THREE.Quaternion().setFromUnitVectors(UP, origin.clone().normalize()).invert();
+        const local = p => new THREE.Vector3(...p).sub(origin).applyQuaternion(inverse);
+        const anchors = object.anchors?.map(a => ({ point: local(a.point), foot: a.foot ? local(a.foot) : null }));
+        model = buildMinigameProp(object.kind, { anchors }); props.set(object.id, model); world.globePivot.add(model);
+      }
       const position = object.base || object.position;
       place(model, position);
       if (object.kind === 'snowman') {
-        snowTracks.trace(object);
+        const old = model.userData.rolling;
+        if (!old || old.stage !== object.stage || old.holder !== object.holder || object.complete) {
+          model.userData.rolling = { stage: object.stage, holder: object.holder, growth: object.growth,
+            position: new THREE.Vector3(...object.position), lastHolder: null };
+        } else old.growth = Math.max(old.growth, object.growth);
         for (let i = 0; i < 3; i++) {
           const b = model.userData.balls[i];
           b.visible = object.complete || i <= object.stage;
+          b.userData.rollingHolder = !object.complete && i === object.stage ? object.holder : null;
           b.scale.setScalar(!object.complete && i === object.stage ? 0.25 + 0.75 * object.growth : 1);
           b.position.set(0, [0.5, 1.24, 1.79][i], 0);
           if (!object.complete && i === object.stage) {
-            const p = new THREE.Vector3(...object.position).sub(model.position).applyQuaternion(model.quaternion.clone().invert());
-            b.position.copy(p); b.position.y += [0.55, 0.4, 0.28][i] * b.scale.x;
+            const rolling = model.userData.rolling;
+            b.scale.setScalar(0.25 + 0.75 * rolling.growth);
+            const p = rolling.position.clone().addScaledVector(rolling.position.clone().normalize(), [0.55, 0.4, 0.28][i] * b.scale.x);
+            b.position.copy(p).sub(model.position).applyQuaternion(model.quaternion.clone().invert());
           }
         }
         model.userData.accessories.visible = !!object.complete;
       }
+      if (fresh || object.kind === 'snowman') propCollisions.update(object.id, model);
+    }
+  }
+  function updateSnowmen(delta) {
+    for (const object of state?.creations || []) {
+      if (object.kind !== 'snowman' || object.complete || !object.holder) continue;
+      const model = props.get(object.id), rolling = model?.userData.rolling;
+      if (!rolling) continue;
+      const local = object.holder === world.localId;
+      const peer = local ? null : world.getPeers()[object.holder];
+      const camper = local ? world.player : peer?.mesh;
+      if (!camper || !camper.visible || (local ? !world.canInteract() : peer.motion?.sitting || performance.now() - peer.lastUpdateTime > 1500)) continue;
+      const inverse = world.getRotation().clone().invert();
+      const holder = camper.position.clone().applyQuaternion(inverse);
+      const heading = local ? new THREE.Vector3(Math.sin(world.getFacing()), 0, Math.cos(world.getFacing())).applyQuaternion(inverse)
+        : new THREE.Vector3(0, 0, 1).applyQuaternion(camper.quaternion).applyQuaternion(inverse);
+      const travelled = rolling.lastHolder ? rolling.lastHolder.clone().normalize().distanceTo(holder.clone().normalize()) * 20 : 0;
+      rolling.lastHolder = holder.clone();
+      const snowy = world.winter.snowCover > 0.05 && !camper.userData.onIce;
+      if (!snowy) { snowTracks.forget(object.id); continue; }
+      if (snowy && travelled < 1) rolling.growth = Math.min(1, Math.max(object.growth, rolling.growth + travelled / 8));
+      const target = holder.clone().addScaledVector(heading, 0.85).normalize();
+      const height = Math.max(surface(target), world.winter.iceRadius);
+      const position = target.multiplyScalar(height);
+      const distance = rolling.position.distanceTo(position);
+      const ball = model.userData.balls[object.stage];
+      if (distance > 0.001 && distance < 1) {
+        const axis = new THREE.Vector3().crossVectors(position.clone().normalize(), position.clone().sub(rolling.position)).normalize()
+          .applyQuaternion(model.quaternion.clone().invert());
+        ball.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, distance / ([0.55, 0.4, 0.28][object.stage] * ball.scale.x)));
+      }
+      rolling.position.copy(position);
+      ball.scale.setScalar(0.25 + 0.75 * rolling.growth);
+      ball.position.copy(position).addScaledVector(position.clone().normalize(), [0.55, 0.4, 0.28][object.stage] * ball.scale.x)
+        .sub(model.position).applyQuaternion(model.quaternion.clone().invert());
+      if (snowy) snowTracks.trace({ ...object, position: position.toArray(), growth: rolling.growth });
+      if (distance > 0.001 || travelled > 0.001) propCollisions.update(object.id, model);
     }
   }
   function locked() {
@@ -278,9 +340,11 @@ export function createMinigames(world) {
     else if (mode() === 'snowman') {
       const ball = state.creations.find(o => o.holder === world.localId && !o.complete);
       const abandoned = state.creations.some(o => o.kind === 'snowman' && !o.complete && !o.holder && localPoint().distanceTo(new THREE.Vector3(...o.position)) < 2);
-      action = !ball ? abandoned ? 'Continue snowman' : 'Start snowball' : ball.growth < 1 ? `Roll snowball · ${Math.floor(ball.growth * 100)}%` : ball.base && here().distanceTo(new THREE.Vector3(...ball.base).normalize()) * 20 > 2 ? 'Roll back to snowman' : ball.stage === 2 ? 'Finish snowman' : 'Stack snowball';
+      const growth = ball ? props.get(ball.id)?.userData.rolling?.growth ?? ball.growth : 0;
+      action = !ball ? abandoned ? 'Continue snowman' : 'Start snowball' : growth < 1 ? `Roll snowball · ${Math.floor(growth * 100)}%` : ball.base && here().distanceTo(new THREE.Vector3(...ball.base).normalize()) * 20 > 2 ? 'Roll back to snowman' : ball.stage === 2 ? 'Finish snowman' : 'Stack snowball';
     } else return null;
-    const point = world.player.position.clone().add(new THREE.Vector3(0, 1.6, 0)).project(world.camera);
+    const point = (world.isFirstPerson() ? new THREE.Vector3(0, -0.4, -1.4).applyMatrix4(world.camera.matrixWorld)
+      : world.player.position.clone().add(new THREE.Vector3(0, 1.6, 0))).project(world.camera);
     return { type: 'minigame', action, screen: point };
   }
   function interact() {
@@ -292,8 +356,10 @@ export function createMinigames(world) {
     else {
       const forward = new THREE.Vector3(Math.sin(world.getFacing()), 0, Math.cos(world.getFacing())).applyQuaternion(world.getRotation().clone().invert());
       const direction = here().multiplyScalar(20).addScaledVector(forward, 1.1).normalize();
-      if (!clearGround(direction) && !world.player.userData.onIce) { world.toast('Choose clear ground for this decoration.'); return true; }
-      send({ type: 'minigame-build', action: 'place', kind: selectedProp, position: groundPosition(direction).toArray() });
+      const position = groundPosition(direction);
+      const anchors = ['lights', 'web'].includes(selectedProp) ? findDecorationAnchors(position, forward, { ...world, groundPosition }) : null;
+      if (!anchors && !clearGround(direction) && !world.player.userData.onIce) { world.toast('Choose clear ground for this decoration.'); return true; }
+      send({ type: 'minigame-build', action: 'place', kind: selectedProp, position: position.toArray(), ...(anchors ? { anchors } : {}) });
     }
     return true;
   }
@@ -301,9 +367,9 @@ export function createMinigames(world) {
     if (!world.online()) return;
     const inverse = world.getRotation().clone().invert();
     send({ type: 'minigame-pose', position: localPoint().toArray(),
-      heading: new THREE.Vector3(Math.sin(world.getFacing()), 0, Math.cos(world.getFacing())).applyQuaternion(inverse).toArray(),
+      heading: (mode() === 'flashlight-tag' && world.isFirstPerson() ? world.camera.getWorldDirection(new THREE.Vector3()) : new THREE.Vector3(Math.sin(world.getFacing()), 0, Math.cos(world.getFacing()))).applyQuaternion(inverse).toArray(),
       flashlight: world.flashlightOn(), ice: !!world.player.userData.onIce, skates: world.winter.skating, sledding: ridesSled(),
-      snow: world.winter.snowy && !world.player.userData.onIce });
+      snow: world.winter.snowy && !world.player.userData.onIce && world.canInteract() });
   }
   function visibleContact(target, beam) {
     const a = world.player.position.clone().addScaledVector(UP, 0.8);
@@ -311,9 +377,10 @@ export function createMinigames(world) {
     const direction = b.clone().sub(a), distance = direction.length();
     if (distance > (beam ? 9 : 1.2) || distance < 0.01) return false;
     direction.normalize();
-    if (beam && direction.dot(new THREE.Vector3(Math.sin(world.getFacing()), 0, Math.cos(world.getFacing()))) < Math.cos(Math.PI * 0.08)) return false;
+    const aim = world.isFirstPerson() ? world.camera.getWorldDirection(new THREE.Vector3()) : new THREE.Vector3(Math.sin(world.getFacing()), 0, Math.cos(world.getFacing()));
+    if (beam && direction.dot(aim) < Math.cos(Math.PI * 0.08)) return false;
     const ray = new THREE.Raycaster(a, direction, 0, Math.max(0, distance - 0.15));
-    return ray.intersectObjects([world.globe, ...world.getObstacles()], true).length === 0;
+    return ray.intersectObjects([world.globe, ...world.getObstacles(), ...props.values()], true).length === 0;
   }
   function contacts() {
     if (!['tag', 'freeze-tag', 'flashlight-tag', 'hide-seek'].includes(mode()) || !['playing', 'seeking'].includes(state.phase) || locked() || member()?.spectator) return;
@@ -418,6 +485,7 @@ export function createMinigames(world) {
   function update(delta) {
     elapsed += delta;
     snowTracks.update(delta, world.winter.enabled && world.winter.snowCover > 0.05, world.getSnowfall());
+    updateSnowmen(delta);
     decorationControl.update();
     if (mode() && world.online() && elapsed - sentAt > 0.12) { sentAt = elapsed; pose(); }
     if (elapsed - contactedAt > 0.22) { contactedAt = elapsed; contacts(); }
@@ -473,6 +541,12 @@ export function createMinigames(world) {
     const direction = UP.clone().applyQuaternion(rotation.clone().invert());
     return surface(direction) < world.winter.iceRadius;
   }
+  function blocksMovement(rotation) {
+    const height = world.player.position.y;
+    const from = here().multiplyScalar(height);
+    const to = UP.clone().applyQuaternion(rotation.clone().invert()).multiplyScalar(height);
+    return propCollisions.blocks(from, to, world.localId);
+  }
   function sync() { if (world.online()) world.send({ type: 'minigame-sync', active: true, team: world.getTeam() }); }
   function reset() {
     if (previousSkates !== null) world.winter.setSkates(previousSkates);
@@ -484,6 +558,7 @@ export function createMinigames(world) {
   }
   renderMenu();
   return { receive, select, renderMenu, sync, reset, update, locked, interaction, interact, sledMovement, allowMove,
+    blocksMovement, obstacles: () => [...props.values()],
     sledAvailable, toggleSled, ridesSled, sledHeight, cycleDecoration,
     updateHints: inputMode => decorationControl.update(inputMode),
     get sledLift() { return sledPose.lift; }, get sledPitch() { return sledPose.pitch; },

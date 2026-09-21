@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 // Small, static world props. No per-prop lights or per-frame geometry uploads.
-export function buildMinigameProp(kind) {
+export function buildMinigameProp(kind, options = {}) {
   const group = new THREE.Group();
   const materials = new Map();
   const mat = (color, glow = false) => {
@@ -18,10 +18,28 @@ export function buildMinigameProp(kind) {
   const ball = (r, color, x, y, z, glow = false) => mesh(new THREE.SphereGeometry(r, 10, 8), color, x, y, z, glow);
   const box = (w, h, d, color, x, y, z) => mesh(new THREE.BoxGeometry(w, h, d), color, x, y, z);
   const pole = (height, x = 0, z = 0) => mesh(new THREE.CylinderGeometry(0.035, 0.05, height, 6), 0x69452c, x, height / 2, z);
+  const rod = (a, b, radius, color) => {
+    const delta = b.clone().sub(a);
+    const m = mesh(new THREE.CylinderGeometry(radius, radius, delta.length(), 6), color, 0, 0, 0);
+    m.position.copy(a).add(b).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
+    return m;
+  };
+  const anchors = options.anchors;
   if (kind === 'lights') {
-    pole(1.8, -0.9); pole(1.8, 0.9);
-    box(1.8, 0.025, 0.025, 0x233526, 0, 1.7, 0);
-    for (let i = 0; i < 9; i++) ball(0.06, [0xff5959, 0xffd664, 0x63e080, 0x6eb8ff][i % 4], -0.8 + i * 0.2, 1.64, 0, true);
+    const ends = anchors || [{ point: new THREE.Vector3(-0.9, 1.7, 0), foot: new THREE.Vector3(-0.9, 0, 0) },
+      { point: new THREE.Vector3(0.9, 1.7, 0), foot: new THREE.Vector3(0.9, 0, 0) }];
+    for (const a of ends) if (a.foot) rod(a.foot, a.point, 0.04, 0x69452c);
+    const span = ends[0].point.distanceTo(ends[1].point), count = Math.max(8, Math.ceil(span / 0.24));
+    let last = ends[0].point;
+    for (let i = 1; i <= count; i++) {
+      const t = i / count;
+      const p = ends[0].point.clone().lerp(ends[1].point, t);
+      p.y -= Math.sin(t * Math.PI) * Math.min(0.55, span * 0.12);
+      rod(last, p, 0.012, 0x233526);
+      if (i < count) ball(0.06, [0xff5959, 0xffd664, 0x63e080, 0x6eb8ff][i % 4], p.x, p.y - 0.06, p.z, true);
+      last = p;
+    }
   } else if (kind === 'ornament') {
     pole(1.5);
     const ornament = ball(0.25, 0xd82f45, 0, 1.2, 0.22);
@@ -58,16 +76,24 @@ export function buildMinigameProp(kind) {
     for (const x of [-0.1, 0.1]) ball(0.055, 0x242333, x, 1.45, 0.27);
     ball(0.07, 0x242333, 0, 1.26, 0.28);
   } else if (kind === 'web') {
-    pole(1.9, -0.8); pole(1.9, 0.8);
+    const ends = anchors || [{ point: new THREE.Vector3(-0.8, 1.05, 0), foot: new THREE.Vector3(-0.8, 0, 0) },
+      { point: new THREE.Vector3(0.8, 1.05, 0), foot: new THREE.Vector3(0.8, 0, 0) }];
+    for (const a of ends) if (a.foot) rod(a.foot, a.point, 0.04, 0x69452c);
+    const center = ends[0].point.clone().add(ends[1].point).multiplyScalar(0.5);
+    const across = ends[1].point.clone().sub(ends[0].point), width = across.length() / 2;
+    across.normalize();
+    const up = new THREE.Vector3(0, 1, 0).addScaledVector(across, -across.y).normalize();
+    const height = Math.max(0.2, Math.min(1.1, width, center.y - 0.12));
+    const webPoint = (angle, fraction) => center.clone().addScaledVector(across, Math.cos(angle) * width * fraction).addScaledVector(up, Math.sin(angle) * height * fraction).toArray();
     const positions = [];
     const segment = (a, b) => positions.push(...a, ...b);
     for (let i = 0; i < 8; i++) {
       const a = i * Math.PI / 4, b = (i + 1) * Math.PI / 4;
-      segment([0, 1.05, 0], [Math.cos(a) * 0.8, 1.05 + Math.sin(a) * 0.8, 0]);
-      for (const r of [0.2, 0.4, 0.6, 0.8]) segment([Math.cos(a) * r, 1.05 + Math.sin(a) * r, 0], [Math.cos(b) * r, 1.05 + Math.sin(b) * r, 0]);
+      segment(center.toArray(), webPoint(a, 1));
+      for (const r of [0.25, 0.5, 0.75, 1]) segment(webPoint(a, r), webPoint(b, r));
     }
     group.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)), new THREE.LineBasicMaterial({ color: 0xdedee9 })));
-    ball(0.06, 0x222222, 0, 1.05, 0.02);
+    ball(0.06, 0x222222, center.x, center.y, center.z + 0.02);
   } else if (kind === 'snowman') {
     group.userData.balls = [0.55, 0.4, 0.28].map((r, i) => ball(r, 0xf5f9ff, 0, [0.5, 1.24, 1.79][i], 0));
     const accessories = new THREE.Group();
